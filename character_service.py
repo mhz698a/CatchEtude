@@ -29,9 +29,8 @@ ERROR_ALREADY_EXISTS = 183
 CHARS_LEVEL_NAME = "CHARS"
 
 class CharacterService(QtCore.QObject):
-    def __init__(self, main_pid: int):
+    def __init__(self):
         super().__init__()
-        self.main_pid = main_pid
         self.active_generation = 0
         self.active_year = None
         self.pause_event = threading.Event()
@@ -46,9 +45,8 @@ class CharacterService(QtCore.QObject):
         if not self.server.listen(SERVER_NAME):
             self._log_error(f"Character Server could not start: {self.server.errorString()}")
         
-        if self.main_pid:
-            self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
-            self.monitor_thread.start()
+        self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
+        self.monitor_thread.start()
 
     def _log_to_watchdog(self, level, message):
         socket = QtNetwork.QLocalSocket()
@@ -83,9 +81,8 @@ class CharacterService(QtCore.QObject):
                 self.pause_event.set()
                 self._log_info("Character Service: Scanning resumed")
             elif cmd == "update_pid":
-                new_pid = msg.get("pid")
-                self.main_pid = new_pid
-                self._log_info(f"Character Service: Monitored PID updated to {new_pid}")
+                # Deprecated
+                pass
         except Exception as e:
             self._log_error(f"Character Service error reading socket: {e}")
 
@@ -272,7 +269,7 @@ class CharacterService(QtCore.QObject):
             with os.scandir(path_str) as it:
                 for i, entry in enumerate(it):
 
-                    # 🔴 Cada 100 archivos chequeamos cancelación
+                    # 🔴 Cada BATCH_CHECK archivos chequeamos cancelación
                     if i % BATCH_CHECK == 0:
                         # Si cambió generación → abortar inmediatamente
                         if generation != self.active_generation:
@@ -293,16 +290,17 @@ class CharacterService(QtCore.QObject):
 
     def _monitor_process(self):
         while True:
-            current_pid = self.main_pid
-            if not current_pid:
-                time.sleep(1); continue
+            handle = None
             try:
-                os.kill(current_pid, 0)
-            except OSError:
-                if self.main_pid != current_pid: continue
-                QtCore.QCoreApplication.quit()
+                handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+                if not handle:
+                    break
+                win32api.CloseHandle(handle)
+            except Exception:
                 break
-            time.sleep(1)
+            time.sleep(2)
+
+        QtCore.QCoreApplication.quit()
 
 def crash_handler(etype, value, tb):
     err_msg = "".join(traceback.format_exception(etype, value, tb))
@@ -335,8 +333,7 @@ def main():
 
     app = QtCore.QCoreApplication(sys.argv)
     
-    main_pid = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-    service = CharacterService(main_pid)
+    service = CharacterService()
     
     sys.exit(app.exec())
 

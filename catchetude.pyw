@@ -1146,31 +1146,14 @@ def crash_handler(etype, value, tb):
         pass
 
 def start_watchdog():
-    """Starts the parallel watchdog service or updates its PID."""
-    pid = os.getpid()
-
-    # Try to update existing watchdog first
-    socket = QLocalSocket()
-    socket.connectToServer("CatchEtudeLogServer")
-    if socket.waitForConnected(200):
-        data = json.dumps({"cmd": "update_pid", "pid": pid})
-        socket.write(data.encode('utf-8'))
-        socket.waitForBytesWritten(200)
-        socket.disconnectFromServer()
-        return
-
-    # If not running, start it
+    """Starts the parallel watchdog service using os.startfile."""
     try:
         watchdog_script = str(Path(__file__).resolve().parent / "catch_watchdog.py")
-        # Use pythonw.exe to run without console
-        python_exe = sys.executable
-        if python_exe.lower().endswith("python.exe"):
-            python_exe = python_exe[:-10] + "pythonw.exe"
-
-        subprocess.Popen([python_exe, watchdog_script, str(pid)],
-                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        # Use startfile to leverage shell association for .py files
+        os.startfile(watchdog_script)
+        logging.info("Watchdog started via startfile")
     except Exception:
-        logging.exception("Failed to start watchdog")
+        logging.exception("Failed to start watchdog via startfile")
 
 def send_character_service_command(cmd: str, **kwargs):
     """Sends a command to the parallel character service."""
@@ -1184,30 +1167,13 @@ def send_character_service_command(cmd: str, **kwargs):
         socket.disconnectFromServer()
 
 def start_character_service():
-    """Starts the parallel character data service or updates its PID."""
-    pid = os.getpid()
-
-    # Try to update existing service first
-    socket = QLocalSocket()
-    socket.connectToServer("CatchEtudeCharacterServer")
-    if socket.waitForConnected(200):
-        data = json.dumps({"cmd": "update_pid", "pid": pid})
-        socket.write(data.encode('utf-8'))
-        socket.waitForBytesWritten(200)
-        socket.disconnectFromServer()
-        return
-
-    # If not running, start it
+    """Starts the parallel character data service using os.startfile."""
     try:
         service_script = str(Path(__file__).resolve().parent / "character_service.py")
-        python_exe = sys.executable
-        if python_exe.lower().endswith("python.exe"):
-            python_exe = python_exe[:-10] + "pythonw.exe"
-
-        subprocess.Popen([python_exe, service_script, str(pid)],
-                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        os.startfile(service_script)
+        logging.info("Character service started via startfile")
     except Exception:
-        logging.exception("Failed to start character service")
+        logging.exception("Failed to start character service via startfile")
 
 def main():
     sys.excepthook = crash_handler
