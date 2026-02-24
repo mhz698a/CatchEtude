@@ -181,7 +181,13 @@ class CharacterService(QtCore.QObject):
 
             # PASS 1 & 2: Validation
             for idx, abs_p, entry_name in needs_validation:
+
+                # 🔴 Si cambió generación, abortar
+                if generation != self.active_generation:
+                    return
+
                 self.pause_event.wait()
+
                 try:
                     st = os.stat(abs_p)
                     mtime_ns = st.st_mtime_ns
@@ -196,6 +202,10 @@ class CharacterService(QtCore.QObject):
                 if do_full_scan:
                     self._log_char(f"Deep scanning: {entry_name}")
                     count, size = self._scan_folder_scandir(abs_p, generation)
+
+                    if count is None:
+                        return  # cancelado
+
                     # Note: count/size will not be None because we removed early return from scan_folder_scandir below
 
                     try:
@@ -257,16 +267,26 @@ class CharacterService(QtCore.QObject):
         return age_str, size_mb_str
 
     def _scan_folder_scandir(self, path_str: str, generation: int):
-        total_size = 0; total_count = 0
+        total_size = 0; total_count = 0; BATCH_CHECK = 50
         try:
             with os.scandir(path_str) as it:
-                for entry in it:
-                    self.pause_event.wait()
+                for i, entry in enumerate(it):
+
+                    # 🔴 Cada 100 archivos chequeamos cancelación
+                    if i % BATCH_CHECK == 0:
+                        # Si cambió generación → abortar inmediatamente
+                        if generation != self.active_generation:
+                            return None, None
+
+                        # Pausa cooperativa
+                        self.pause_event.wait()
+
                     try:
                         if entry.is_file(follow_symlinks=False):
                             st = entry.stat(follow_symlinks=False)
                             total_size += st.st_size
                             total_count += 1
+
                     except (PermissionError, FileNotFoundError, OSError): continue
         except Exception: pass
         return total_count, total_size
