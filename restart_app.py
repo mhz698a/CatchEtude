@@ -9,6 +9,8 @@ import time
 import subprocess
 import traceback
 import ctypes
+import win32event
+import win32api
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
 from config import APP_NAME, ICON_PATH, MYAPPID
@@ -78,24 +80,31 @@ class RestartWorker(QtCore.QThread):
 
     def run(self):
         try:
-            # 1. Wait for the process to exit
+            # 1. Wait for the process to exit using the Mutex
+            # We poll until we can create the mutex without it already existing
             while True:
-                try:
-                    os.kill(self.pid, 0)
-                except OSError:
-                    # Process is gone
+                handle = win32event.CreateMutex(None, False, APP_NAME)
+                last_err = win32api.GetLastError()
+                win32api.CloseHandle(handle)
+
+                if last_err == 0:
+                    # Successfully created without ERROR_ALREADY_EXISTS (183)
+                    # This means the previous instance is gone.
                     break
+
                 time.sleep(0.5)
 
             # 2. Attempt restart
             # Use CREATE_NEW_PROCESS_GROUP (0x00000010). 
             # Avoid DETACHED_PROCESS (0x00000008) in GUI context as it may cause WinError 87.
-            if self.script_path.endswith('.pyw'):
-                python_exe = sys.executable.replace("python.exe", "pythonw.exe")
+            python_exe = sys.executable
+            if self.script_path.lower().endswith('.pyw'):
+                if python_exe.lower().endswith("python.exe"):
+                    python_exe = python_exe[:-10] + "pythonw.exe"
                 subprocess.Popen([python_exe, self.script_path], 
                                  creationflags=0x00000010)
             else:
-                subprocess.Popen([sys.executable, self.script_path], 
+                subprocess.Popen([python_exe, self.script_path],
                                  creationflags=0x00000010)
             
             self.finished.emit()
