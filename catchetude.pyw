@@ -478,6 +478,10 @@ class MainWindow(QWidget):
         order_pending_action.triggered.connect(self._on_order_pending_clicked)
         self.tray_menu.addAction(order_pending_action)
 
+        run_pendings_action = QAction(self.loc.get("tray_run_pendings"), self)
+        run_pendings_action.triggered.connect(self._run_pendings)
+        self.tray_menu.addAction(run_pendings_action)
+
         undo_action = QAction(self.loc.get("tray_undo"), self)
         undo_action.triggered.connect(self._on_undo_clicked)
         self.tray_menu.addAction(undo_action)
@@ -553,6 +557,20 @@ class MainWindow(QWidget):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Process", str(DOWNLOADS))
         if folder:
             self._process_pending_folder(Path(folder))
+
+    def _run_pendings(self):
+        """Runs the pendings_exec.pyw script without console."""
+        try:
+            pendings_script = str(Path(__file__).resolve().parent / "pendings_exec.pyw")
+            # Use pythonw.exe to run without console
+            python_exe = sys.executable
+            if "python.exe" in python_exe.lower():
+                python_exe = python_exe.lower().replace("python.exe", "pythonw.exe")
+
+            subprocess.Popen([python_exe, pendings_script], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+            logging.info(f"Started pendings_exec.pyw with {python_exe}")
+        except Exception:
+            logging.exception("Failed to run pendings script")
 
     def _process_pending_folder(self, folder: Path):
         """Recursively enqueues files from a folder."""
@@ -1129,7 +1147,10 @@ def start_watchdog():
     try:
         watchdog_script = str(Path(__file__).resolve().parent / "catch_watchdog.py")
         # Use pythonw.exe to run without console
-        python_exe = sys.executable.replace("python.exe", "pythonw.exe")
+        python_exe = sys.executable
+        if "python.exe" in python_exe.lower():
+            python_exe = python_exe.lower().replace("python.exe", "pythonw.exe")
+
         subprocess.Popen([python_exe, watchdog_script, str(pid)], 
                          creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
     except Exception:
@@ -1152,7 +1173,10 @@ def start_character_service():
     # If not running, start it
     try:
         service_script = str(Path(__file__).resolve().parent / "character_service.py")
-        python_exe = sys.executable.replace("python.exe", "pythonw.exe")
+        python_exe = sys.executable
+        if "python.exe" in python_exe.lower():
+            python_exe = python_exe.lower().replace("python.exe", "pythonw.exe")
+
         subprocess.Popen([python_exe, service_script, str(pid)], 
                          creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
     except Exception:
