@@ -1212,6 +1212,10 @@ def start_character_service():
 def main():
     sys.excepthook = crash_handler
 
+    app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(ICON_PATH))
+    app.setQuitOnLastWindowClosed(False)
+
     try:
         # Clear previous crash report
         if CRASH_REPORT_PATH.exists():
@@ -1226,10 +1230,6 @@ def main():
         state_manager = StateManager()
         signals = AppSignals()
         state_manager.notifier = signals
-
-        app = QApplication(sys.argv)
-        app.setWindowIcon(QIcon(ICON_PATH))
-        app.setQuitOnLastWindowClosed(False)
 
         watcher = WatcherThread(state_manager.enqueue_file)
         app.aboutToQuit.connect(watcher.stop)
