@@ -1148,8 +1148,8 @@ def crash_handler(etype, value, tb):
 def start_watchdog():
     """Starts the parallel watchdog service using os.startfile."""
     try:
-        watchdog_script = str(Path(__file__).resolve().parent / "catch_watchdog.py")
-        # Use startfile to leverage shell association for .py files
+        watchdog_script = str(Path(__file__).resolve().parent / "catch_watchdog.pyw")
+        # Use startfile to leverage shell association for .pyw files
         os.startfile(watchdog_script)
         logging.info("Watchdog started via startfile")
     except Exception:
@@ -1169,7 +1169,7 @@ def send_character_service_command(cmd: str, **kwargs):
 def start_character_service():
     """Starts the parallel character data service using os.startfile."""
     try:
-        service_script = str(Path(__file__).resolve().parent / "character_service.py")
+        service_script = str(Path(__file__).resolve().parent / "character_service.pyw")
         os.startfile(service_script)
         logging.info("Character service started via startfile")
     except Exception:
