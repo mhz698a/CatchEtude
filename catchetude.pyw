@@ -422,21 +422,29 @@ class MainWindow(QWidget):
         """Sends the current file to the recycle bin."""
         if not self.filepath: return
 
-        if delete_to_recycle_bin(self.filepath):
-            logging.info(f"File sent to recycle bin: {self.filepath}")
-            self.state_manager.discard_active_file()
-            self.progress.setValue(0)
-        else:
-            QtWidgets.QMessageBox.warning(self, "Error", "Could not delete file.")
+        send_character_service_command("pause")
+        try:
+            if delete_to_recycle_bin(self.filepath):
+                logging.info(f"File sent to recycle bin: {self.filepath}")
+                self.state_manager.discard_active_file()
+                self.progress.setValue(0)
+            else:
+                QtWidgets.QMessageBox.warning(self, "Error", "Could not delete file.")
+        finally:
+            send_character_service_command("resume")
 
     def _on_undo_clicked(self):
         """Handles the Undo action."""
-        if self.state_manager.undo_last_move():
-            # If successful, StateManager will enqueue the original file,
-            # which will trigger on_file_detected and show the window if needed.
-            pass
-        else:
-            QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
+        send_character_service_command("pause")
+        try:
+            if self.state_manager.undo_last_move():
+                # If successful, StateManager will enqueue the original file,
+                # which will trigger on_file_detected and show the window if needed.
+                pass
+            else:
+                QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
+        finally:
+            send_character_service_command("resume")
 
     def _on_exit_clicked(self):
         """Handles the exit confirmation dialog."""
@@ -1008,6 +1016,9 @@ class MainWindow(QWidget):
         src = self.filepath
         if not src: return
 
+        # Pause character service scanning to avoid I/O contention
+        send_character_service_command("pause")
+
         try:
             # Capture metadata immediately to avoid race conditions if file is moved
             src_stat = src.stat()
@@ -1035,6 +1046,8 @@ class MainWindow(QWidget):
                             logging.error(f"SHFileOperation failed for {src}")
                     except Exception:
                         logging.exception(f"Exception in background fast_move for {src}")
+                    finally:
+                        send_character_service_command("resume")
 
                 threading.Thread(target=fast_move, daemon=True).start()
 
@@ -1044,12 +1057,14 @@ class MainWindow(QWidget):
 
         except FileNotFoundError:
             logging.warning(f"File not found when starting move task: {src}. It may have been moved already.")
+            send_character_service_command("resume")
             # Discard and move on
             self.state_manager.discard_active_file()
             self.progress.setValue(0)
             return
         except Exception:
             logging.exception(f"Unexpected error in _start_move_task preparation for {src}")
+            send_character_service_command("resume")
             self.state_manager.discard_active_file()
             self.progress.setValue(0)
             return
@@ -1070,6 +1085,7 @@ class MainWindow(QWidget):
         worker.progress.connect(update_progress)
 
         def on_finished(ok: bool, copied_path: Path, msg: str):
+            send_character_service_command("resume")
             if ok:
                 # Finalize in background thread
                 threading.Thread(target=self.state_manager.finalize_background_move,
@@ -1155,6 +1171,17 @@ def start_watchdog():
                          creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
     except Exception:
         logging.exception("Failed to start watchdog")
+
+def send_character_service_command(cmd: str, **kwargs):
+    """Sends a command to the parallel character service."""
+    socket = QLocalSocket()
+    socket.connectToServer("CatchEtudeCharacterServer")
+    if socket.waitForConnected(200):
+        data = {"cmd": cmd}
+        data.update(kwargs)
+        socket.write(json.dumps(data).encode('utf-8'))
+        socket.waitForBytesWritten(200)
+        socket.disconnectFromServer()
 
 def start_character_service():
     """Starts the parallel character data service or updates its PID."""

@@ -34,6 +34,8 @@ class CharacterService(QtCore.QObject):
         self.main_pid = main_pid
         self.active_generation = 0
         self.active_year = None
+        self.pause_event = threading.Event()
+        self.pause_event.set() # Set means NOT paused (allowed to run)
         self.task_queue = queue.Queue()
         self.worker_thread = threading.Thread(target=self._queue_worker, daemon=True)
         self.worker_thread.start()
@@ -74,6 +76,12 @@ class CharacterService(QtCore.QObject):
                 year = msg.get("year")
                 gen = msg.get("generation")
                 self._handle_load_request(year, gen, socket)
+            elif cmd == "pause":
+                self.pause_event.clear()
+                self._log_info("Character Service: Scanning paused")
+            elif cmd == "resume":
+                self.pause_event.set()
+                self._log_info("Character Service: Scanning resumed")
             elif cmd == "update_pid":
                 new_pid = msg.get("pid")
                 self.main_pid = new_pid
@@ -173,6 +181,7 @@ class CharacterService(QtCore.QObject):
 
             # PASS 1 & 2: Validation
             for idx, abs_p, entry_name in needs_validation:
+                self.pause_event.wait()
                 try:
                     st = os.stat(abs_p)
                     mtime_ns = st.st_mtime_ns
@@ -252,6 +261,7 @@ class CharacterService(QtCore.QObject):
         try:
             with os.scandir(path_str) as it:
                 for entry in it:
+                    self.pause_event.wait()
                     try:
                         if entry.is_file(follow_symlinks=False):
                             st = entry.stat(follow_symlinks=False)
