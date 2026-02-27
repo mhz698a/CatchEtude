@@ -586,7 +586,7 @@ class MainWindow(QWidget):
         self.tray_menu = QMenu(self)
 
         show_action = QAction(self.loc.get("tray_show"), self)
-        show_action.triggered.connect(self.show)
+        show_action.triggered.connect(self._bring_and_center)
         self.tray_menu.addAction(show_action)
 
         hide_action = QAction(self.loc.get("tray_hide"), self)
