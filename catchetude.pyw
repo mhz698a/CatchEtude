@@ -34,17 +34,17 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt
 
 from config import ( # type: ignore
-    APP_NAME, ERROR_ALREADY_EXISTS, 
+    APP_NAME, ERROR_ALREADY_EXISTS,
     LOG_PATH, BASE_INTERNAL, CRASH_REPORT_PATH,
-    ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA, 
-    YEARS, ICON_PATH, 
-    CONFIG_PATH, 
+    ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA,
+    YEARS, ICON_PATH,
+    CONFIG_PATH,
     MYAPPID, DOWNLOADS,
     IMAGES_FOLDER, MUSIC_FOLDER, OVERWORLD_FOLDER,
     CHAR_PANEL_ALWAYS, BLUR_LEVEL
-) 
+)
 from utils import (
-    resolve_duplicate, flatten_downloads_root, 
+    resolve_duplicate, flatten_downloads_root,
     configure_dwm_thumbnail_behavior, is_internal_available,
     sanitize_windows_filename, is_temporary, is_file_locked,
     is_same_drive, move_file_shfileop, delete_to_recycle_bin
@@ -67,7 +67,7 @@ except Exception:
 
 # Ensure single instance
 mutex = win32event.CreateMutex(None, False, APP_NAME)
-if win32api.GetLastError() == ERROR_ALREADY_EXISTS: 
+if win32api.GetLastError() == ERROR_ALREADY_EXISTS:
     print("The service is already running")
     sys.exit()
 
@@ -84,45 +84,45 @@ class MainWindow(QWidget):
         self.state_manager = state_manager
         self.signals = signals
         self.loc = LocalizationManager()
-        
+
         # Set of active move tasks (to prevent GC)
         self._active_workers = set()
-        
+
         # Connect signals
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
-        
+
         self.setWindowTitle(APP_NAME)
-        
+
         # Window flags: Tool window, stays on top, custom hints
         flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint
         flags |= QtCore.Qt.WindowType.Tool
         self.setWindowFlags(flags)
         self.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
-        
+
         self.base_width = 820
         self.base_height = 580
         self.setMinimumSize(self.base_width, self.base_height)
         self.resize(self.base_width, self.base_height)
-        
+
         self._left_panel_visible = False
         self._internal_warned = False
         self.filepath: Optional[Path] = None
-        
+
         # Check if internal drive E: is available at startup
         # Verificar si la unidad interna E: está disponible al iniciar
         self._internal_available_at_start = is_internal_available()
-        
+
         self._hide_secure = False
         self._load_config()
-        
+
         self._setup_server()
-        
+
         self._build_ui()
         self._build_tray()
-        
+
         configure_dwm_thumbnail_behavior(self.winId().__int__())
-        
+
         # Debounce timer for character loading
         self._year_load_timer = QtCore.QTimer(self)
         self._year_load_timer.setSingleShot(True)
@@ -133,37 +133,37 @@ class MainWindow(QWidget):
     def _build_ui(self):
         """Builds the main user interface."""
         main_vbox = QVBoxLayout()
-        
+
         # Header Row
         header_layout = QHBoxLayout()
-        
+
         self.btn_delete_header = QPushButton(self.loc.get("btn_header_delete"))
         self.btn_delete_header.setFixedHeight(25)
         self.btn_delete_header.clicked.connect(self._on_delete_clicked)
         header_layout.addWidget(self.btn_delete_header)
-        
+
         header_layout.addStretch()
 
         self.btn_undo = QPushButton(self.loc.get("btn_history"))
         self.btn_undo.setFixedHeight(25)
         self.btn_undo.clicked.connect(self._on_undo_clicked)
-        
+
         self.btn_lang = QPushButton(self.loc.get("lang_toggle"))
         self.btn_lang.setFixedWidth(40)
         self.btn_lang.setFixedHeight(25)
         self.btn_lang.clicked.connect(self._on_lang_toggle)
-        
+
         header_layout.addStretch()
         header_layout.addWidget(self.btn_undo)
         header_layout.addWidget(self.btn_lang)
         main_vbox.addLayout(header_layout)
 
         root = QHBoxLayout()
-        
+
         # Selection Panel (Left)
         selection_layout = QVBoxLayout()
         top_row = QHBoxLayout()
-        
+
         # Type Column
         v_type = QVBoxLayout()
         self.lbl_type = QLabel(self.loc.get("lbl_type"))
@@ -199,7 +199,7 @@ class MainWindow(QWidget):
 
         for y in YEARS:
             self.list_year.addItem(str(y))
-        
+
         # Default to 2004
         idx2004 = 0
         for i in range(self.list_year.count()):
@@ -220,7 +220,7 @@ class MainWindow(QWidget):
         self.list_sub.setEnabled(False)
         self.list_sub.clicked.connect(self._move_to_subfolder)
         v_sub.addWidget(self.list_sub)
-        
+
         selection_layout.addLayout(top_row)
         selection_layout.addLayout(v_sub)
 
@@ -230,7 +230,7 @@ class MainWindow(QWidget):
 
         # Action Panel (Right)
         layout = QVBoxLayout()
-        
+
         # Preview Section
         self.preview_label = QLabel()
         self.preview_label.setFixedSize(320, 180)
@@ -283,7 +283,7 @@ class MainWindow(QWidget):
 
         # Apply loaded state
         self.hide_secure_cb.setChecked(self._hide_secure)
-                   
+
         self.right_panel = QWidget()
         self.right_panel.setLayout(layout)
         root.addWidget(self.right_panel)
@@ -292,7 +292,7 @@ class MainWindow(QWidget):
         self.left_panel = QWidget() # This is the character panel, renamed for legacy
         self.left_panel.setFixedWidth(380)
         self.left_panel.setVisible(False)
-        
+
         lv = QVBoxLayout(self.left_panel)
         self.char_model = CharacterListModel()
         self.char_view = QtWidgets.QListView()
@@ -304,9 +304,9 @@ class MainWindow(QWidget):
         self.lbl_chars = QLabel(self.loc.get("lbl_characters"))
         lv.addWidget(self.lbl_chars)
         lv.addWidget(self.char_view)
-        
+
         root.addWidget(self.left_panel)
-        
+
         main_vbox.addLayout(root)
         self.setLayout(main_vbox)
         self.retranslate_ui()
@@ -315,7 +315,7 @@ class MainWindow(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_preview()
-    
+
     def _update_preview(self):
         """Updates the preview pixmap when window is resized."""
         if self.filepath and not self.preview_hidden:
@@ -338,9 +338,9 @@ class MainWindow(QWidget):
             if CONFIG_PATH.exists():
                 with CONFIG_PATH.open('r', encoding='utf-8') as f:
                     data = json.load(f)
-            
+
             data["hide_secure"] = self._hide_secure
-            
+
             with CONFIG_PATH.open('w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
         except Exception:
@@ -374,12 +374,12 @@ class MainWindow(QWidget):
             cmd = json.loads(data)
             path = cmd.get("path")
             hide_secure = cmd.get("hide_secure", True)
-            
+
             if path and os.path.exists(path):
                 self.hide_secure_cb.setChecked(hide_secure)
                 self._hide_secure = hide_secure
                 self._save_config()
-                
+
                 p = Path(path)
                 if p.is_dir():
                     self._process_pending_folder(p)
@@ -403,7 +403,7 @@ class MainWindow(QWidget):
         self.btn_custom.setText(self.loc.get("btn_apply_custom"))
         self.btn_move.setText(self.loc.get("btn_apply"))
         self.lbl_chars.setText(self.loc.get("lbl_characters"))
-        
+
         # Update types list
         curr = self.list_type.currentRow()
         self.list_type.blockSignals(True)
@@ -421,22 +421,30 @@ class MainWindow(QWidget):
     def _on_delete_clicked(self):
         """Sends the current file to the recycle bin."""
         if not self.filepath: return
-        
-        if delete_to_recycle_bin(self.filepath):
-            logging.info(f"File sent to recycle bin: {self.filepath}")
-            self.state_manager.discard_active_file()
-            self.progress.setValue(0)
-        else:
-            QtWidgets.QMessageBox.warning(self, "Error", "Could not delete file.")
+
+        send_character_service_command("pause")
+        try:
+            if delete_to_recycle_bin(self.filepath):
+                logging.info(f"File sent to recycle bin: {self.filepath}")
+                self.state_manager.discard_active_file()
+                self.progress.setValue(0)
+            else:
+                QtWidgets.QMessageBox.warning(self, "Error", "Could not delete file.")
+        finally:
+            send_character_service_command("resume")
 
     def _on_undo_clicked(self):
         """Handles the Undo action."""
-        if self.state_manager.undo_last_move():
-            # If successful, StateManager will enqueue the original file,
-            # which will trigger on_file_detected and show the window if needed.
-            pass
-        else:
-            QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
+        send_character_service_command("pause")
+        try:
+            if self.state_manager.undo_last_move():
+                # If successful, StateManager will enqueue the original file,
+                # which will trigger on_file_detected and show the window if needed.
+                pass
+            else:
+                QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
+        finally:
+            send_character_service_command("resume")
 
     def _on_exit_clicked(self):
         """Handles the exit confirmation dialog."""
@@ -459,13 +467,13 @@ class MainWindow(QWidget):
         if not hasattr(self, 'tray'):
             self.tray = QSystemTrayIcon(icon, self)
             self.tray.setToolTip(APP_NAME)
-        
+
         self.tray_menu = QMenu(self)
 
         show_action = QAction(self.loc.get("tray_show"), self)
         show_action.triggered.connect(self.show)
         self.tray_menu.addAction(show_action)
-        
+
         hide_action = QAction(self.loc.get("tray_hide"), self)
         hide_action.triggered.connect(self.hide)
         self.tray_menu.addAction(hide_action)
@@ -477,6 +485,10 @@ class MainWindow(QWidget):
         order_pending_action = QAction(self.loc.get("tray_order_pending"), self)
         order_pending_action.triggered.connect(self._on_order_pending_clicked)
         self.tray_menu.addAction(order_pending_action)
+
+        run_pendings_action = QAction(self.loc.get("tray_run_pendings"), self)
+        run_pendings_action.triggered.connect(self._run_pendings)
+        self.tray_menu.addAction(run_pendings_action)
 
         undo_action = QAction(self.loc.get("tray_undo"), self)
         undo_action.triggered.connect(self._on_undo_clicked)
@@ -527,7 +539,7 @@ class MainWindow(QWidget):
         pid = os.getpid()
         script_path = str(Path(__file__).resolve())
         restart_script = str(Path(__file__).resolve().parent / "restart_app.py")
-        
+
         # Start the restart script decoupled from the current process group
         # Using CREATE_NEW_PROCESS_GROUP (0x10) which is safer for Windows.
         # DETACHED_PROCESS (0x08) often causes WinError 87 in GUI apps.
@@ -537,7 +549,7 @@ class MainWindow(QWidget):
         except Exception:
             logging.exception("Failed to start restart script with flags, trying without.")
             subprocess.Popen([sys.executable, restart_script, str(pid), script_path])
-        
+
         # Exit the current process
         QApplication.quit()
 
@@ -554,6 +566,20 @@ class MainWindow(QWidget):
         if folder:
             self._process_pending_folder(Path(folder))
 
+    def _run_pendings(self):
+        """Runs the pendings_exec.pyw script without console."""
+        try:
+            pendings_script = str(Path(__file__).resolve().parent / "pendings_exec.pyw")
+            # Use pythonw.exe to run without console
+            python_exe = sys.executable
+            if python_exe.lower().endswith("python.exe"):
+                python_exe = python_exe[:-10] + "pythonw.exe"
+
+            subprocess.Popen([python_exe, pendings_script], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+            logging.info(f"Started pendings_exec.pyw with {python_exe}")
+        except Exception:
+            logging.exception("Failed to run pendings script")
+
     def _process_pending_folder(self, folder: Path):
         """Recursively enqueues files from a folder."""
         def worker():
@@ -562,7 +588,7 @@ class MainWindow(QWidget):
                 if f.is_file() and not is_temporary(f):
                     self.state_manager.enqueue_file(f)
         threading.Thread(target=worker, daemon=True).start()
-        
+
     def _warn_internal_missing(self):
         if self._internal_warned:
             return
@@ -596,23 +622,23 @@ class MainWindow(QWidget):
         self.rename_input.setText(p.stem)
         self._load_preview(p)
         self.progress.setValue(0)
-        
+
         # Enable buttons
         self.btn_custom.setEnabled(True)
-        
+
         # Refresh UI state based on current selection
         self._on_type_changed(self.list_type.currentRow())
-        
+
         # Update subfolders if needed (keep current type/year)
         self._refresh_classification_ui()
-        
+
         # Show window (only if internal drive was available at start)
         # Mostrar ventana (solo si la unidad interna estaba disponible al inicio)
         if not self.isVisible() and self._internal_available_at_start:
             self.show()
             self.raise_()
             self.activateWindow()
-        
+
         # Update character panel visibility
         is_char_type = (self.list_type.currentRow() + 1 == 2)
         self._update_panel_layout(is_char_type)
@@ -684,35 +710,35 @@ class MainWindow(QWidget):
 
         # Create a blurred version of the entire image
         # Using a simple scaling trick for fast blur if QGraphicsBlurEffect is too heavy for direct QImage
-        
+
         # Method: Scale down and up for a blur effect
         # We'll use a small size for the blurred part
-        blur_radius = BLUR_LEVEL 
-        small = image.scaled(image.width() // blur_radius, image.height() // blur_radius, 
+        blur_radius = BLUR_LEVEL
+        small = image.scaled(image.width() // blur_radius, image.height() // blur_radius,
                              Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        blurred = small.scaled(image.width(), image.height(), 
+        blurred = small.scaled(image.width(), image.height(),
                                Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
         # Now create the final image combining blurred (90% top) and original (bottom)
         result = QtGui.QImage(image.size(), QtGui.QImage.Format.Format_ARGB32)
         result.fill(Qt.GlobalColor.transparent)
-        
+
         painter = QtGui.QPainter(result)
-        
+
         # Define the reveal area (bottom 15% for example)
         reveal_height = int(image.height() * 0.15)
         blur_height = image.height() - reveal_height
-        
+
         # Draw blurred part
-        painter.drawImage(QtCore.QRect(0, 0, image.width(), blur_height), 
-                          blurred, 
+        painter.drawImage(QtCore.QRect(0, 0, image.width(), blur_height),
+                          blurred,
                           QtCore.QRect(0, 0, image.width(), blur_height))
-        
+
         # Draw original part at the bottom
-        painter.drawImage(QtCore.QRect(0, blur_height, image.width(), reveal_height), 
-                          image, 
+        painter.drawImage(QtCore.QRect(0, blur_height, image.width(), reveal_height),
+                          image,
                           QtCore.QRect(0, blur_height, image.width(), reveal_height))
-        
+
         painter.end()
         return result
 
@@ -739,7 +765,7 @@ class MainWindow(QWidget):
             return
 
         self._update_panel_layout(t == 2)
-        
+
         # Disable Apply button for fast-move types
         self.btn_move.setEnabled(t not in (2, 3, 4, 6, 8))
 
@@ -757,7 +783,7 @@ class MainWindow(QWidget):
             self.list_year.setEnabled(False)
             self.list_sub.clear()
             self.list_sub.setEnabled(False)
-        
+
         self._update_name_completer()
 
     def _on_year_changed(self, idx):
@@ -765,25 +791,25 @@ class MainWindow(QWidget):
             self.list_sub.clear()
             self.list_sub.setEnabled(False)
             return
-        
+
         try:
             item = self.list_year.currentItem()
             if not item: return
             year = int(item.text())
         except ValueError:
             return
-        
+
         t = self.list_type.currentRow() + 1
         if t in (2, 3, 4, 8):
             self._populate_subs_for_year(year)
-        
+
         if t == 2:
             self._pending_year = year
             self._year_load_timer.start(400) # Debounce load
-            
+
     def _populate_subs_for_year(self, year: int):
         """
-        Finds the appropriate base folder for the given year and type, 
+        Finds the appropriate base folder for the given year and type,
         then populates the subfolders list.
         """
         year_dir = BASE_INTERNAL / str(year)
@@ -792,17 +818,17 @@ class MainWindow(QWidget):
             self.list_sub.clear()
             self.list_sub.setEnabled(False)
             return
-            
+
         prefix = f"{year - 2003:02d}"
         t = self.list_type.currentRow() + 1
         base = None
-        
+
         try:
             # Multi-pattern search for better robustness
             for child in sorted(year_dir.iterdir()):
                 if not child.is_dir():
                     continue
-                
+
                 name = child.name.lower()
                 if t == 2: # Characters
                     if (prefix in name and IMAGES_FOLDER in name) or (IMAGES_FOLDER in name):
@@ -848,7 +874,7 @@ class MainWindow(QWidget):
     def _populate_subfolders(self, base: Path):
         """Populates list_sub with subdirectories from the base path."""
         self.list_sub.clear()
-        
+
         try:
             if base.exists() and base.is_dir():
                 subs = [c.name for c in sorted(base.iterdir()) if c.is_dir()]
@@ -881,7 +907,7 @@ class MainWindow(QWidget):
             self.rename_input.setCompleter(None)
             self.name_completer = None
             return
-        
+
         try:
             item_year = self.list_year.currentItem()
             if not item_year: return
@@ -892,12 +918,12 @@ class MainWindow(QWidget):
 
             prefix = f"{year - 2003:02d}"
             base = None
-            
+
             # Use matching logic consistent with _populate_subs_for_year
             for child in sorted(year_dir.iterdir()):
                 if not child.is_dir():
                     continue
-                
+
                 name = child.name.lower()
                 if t == 2: # Characters
                     if (prefix in name and IMAGES_FOLDER in name) or (IMAGES_FOLDER in name):
@@ -911,10 +937,10 @@ class MainWindow(QWidget):
                     if (prefix in name and MUSIC_FOLDER in name) or (MUSIC_FOLDER in name):
                         base = child
                         break
-            
+
             # With buttons, there is no single "selected" subfolder for the completer
             # so we'll just use the base folder for now.
-            
+
             if base and base.exists():
                 names = [f.stem for f in base.iterdir() if f.is_file()]
                 if names:
@@ -925,15 +951,15 @@ class MainWindow(QWidget):
                     return
         except Exception:
             pass
-        
+
         self.rename_input.setCompleter(None)
 
     def _on_move(self):
         """Handles the standard 'Apply' action."""
         if not self.filepath: return
-        
+
         item_year = self.list_year.currentItem()
-        
+
         decision = {
             'action': 'move',
             'movement_type': self.list_type.currentRow() + 1,
@@ -950,12 +976,12 @@ class MainWindow(QWidget):
         Mueve el archivo a la subcarpeta especificada inmediatamente.
         """
         if not self.filepath: return
-        
+
         # Disable subfolder list while moving
         self.list_sub.setEnabled(False)
-        
+
         item_year = self.list_year.currentItem()
-        
+
         decision = {
             'action': 'move',
             'movement_type': self.list_type.currentRow() + 1,
@@ -971,7 +997,7 @@ class MainWindow(QWidget):
         if not self.filepath: return
         folder = QFileDialog.getExistingDirectory(self, "Select Destination Folder", str(self.filepath.parent))
         if not folder: return
-        
+
         decision = {
             'action': 'move_custom',
             'custom_dir': folder,
@@ -986,9 +1012,12 @@ class MainWindow(QWidget):
         # Disable buttons while we transition
         self.btn_custom.setEnabled(False)
         self.btn_move.setEnabled(False)
-        
+
         src = self.filepath
         if not src: return
+
+        # Pause character service scanning to avoid I/O contention
+        send_character_service_command("pause")
 
         try:
             # Capture metadata immediately to avoid race conditions if file is moved
@@ -1005,45 +1034,49 @@ class MainWindow(QWidget):
 
             if same_drive:
                 logging.info(f"Same drive detected for {src.name}. Using SHFileOperation.")
-                
+
                 def fast_move():
                     try:
                         # Ensure destination directory exists
                         final_dest.parent.mkdir(parents=True, exist_ok=True)
-                        
+
                         if move_file_shfileop(src, final_dest):
                             self.state_manager.finalize_background_move(src, final_dest, src_meta)
                         else:
                             logging.error(f"SHFileOperation failed for {src}")
                     except Exception:
                         logging.exception(f"Exception in background fast_move for {src}")
-                
+                    finally:
+                        send_character_service_command("resume")
+
                 threading.Thread(target=fast_move, daemon=True).start()
-                
+
                 self.state_manager.handover_active_file()
                 self.progress.setValue(0)
                 return
 
         except FileNotFoundError:
             logging.warning(f"File not found when starting move task: {src}. It may have been moved already.")
+            send_character_service_command("resume")
             # Discard and move on
             self.state_manager.discard_active_file()
             self.progress.setValue(0)
             return
         except Exception:
             logging.exception(f"Unexpected error in _start_move_task preparation for {src}")
+            send_character_service_command("resume")
             self.state_manager.discard_active_file()
             self.progress.setValue(0)
             return
-        
+
         # Create worker and thread
         worker_thread = QtCore.QThread(self)
         worker = FileMoveWorker(src, final_dest)
         worker.moveToThread(worker_thread)
-        
+
         # Keep references
         self._active_workers.add((worker, worker_thread))
-        
+
         worker_thread.started.connect(worker.run)
         # Use a local reference for progress if it's still the active file
         def update_progress(val):
@@ -1052,9 +1085,10 @@ class MainWindow(QWidget):
         worker.progress.connect(update_progress)
 
         def on_finished(ok: bool, copied_path: Path, msg: str):
+            send_character_service_command("resume")
             if ok:
                 # Finalize in background thread
-                threading.Thread(target=self.state_manager.finalize_background_move, 
+                threading.Thread(target=self.state_manager.finalize_background_move,
                                  args=(src, copied_path, src_meta), daemon=True).start()
             else:
                 logging.error(f"Copy failed for {src}: {msg}")
@@ -1066,19 +1100,19 @@ class MainWindow(QWidget):
         worker.finished.connect(on_finished)
         worker.finished.connect(worker.deleteLater)
         worker_thread.finished.connect(worker_thread.deleteLater)
-        
+
         def cleanup_refs():
             self._active_workers.discard((worker, worker_thread))
             # If no more files and no active workers, we can check for idle hide
             if not self._active_workers:
                 self._hide_if_idle()
-            
+
         worker_thread.finished.connect(cleanup_refs)
         worker_thread.start()
 
         # HOT-SWAP: Tell StateManager we are ready for the next file IMMEDIATELY
         self.state_manager.handover_active_file()
-        
+
         # Reset UI fields for next file (will be overwritten if another is detected)
         self.progress.setValue(0)
 
@@ -1112,55 +1146,42 @@ def crash_handler(etype, value, tb):
         pass
 
 def start_watchdog():
-    """Starts the parallel watchdog service or updates its PID."""
-    pid = os.getpid()
-    
-    # Try to update existing watchdog first
-    socket = QLocalSocket()
-    socket.connectToServer("CatchEtudeLogServer")
-    if socket.waitForConnected(200):
-        data = json.dumps({"cmd": "update_pid", "pid": pid})
-        socket.write(data.encode('utf-8'))
-        socket.waitForBytesWritten(200)
-        socket.disconnectFromServer()
-        return
-
-    # If not running, start it
+    """Starts the parallel watchdog service using os.startfile."""
     try:
-        watchdog_script = str(Path(__file__).resolve().parent / "catch_watchdog.py")
-        # Use pythonw.exe to run without console
-        python_exe = sys.executable.replace("python.exe", "pythonw.exe")
-        subprocess.Popen([python_exe, watchdog_script, str(pid)], 
-                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        watchdog_script = str(Path(__file__).resolve().parent / "catch_watchdog.pyw")
+        # Use startfile to leverage shell association for .pyw files
+        os.startfile(watchdog_script)
+        logging.info("Watchdog started via startfile")
     except Exception:
-        logging.exception("Failed to start watchdog")
+        logging.exception("Failed to start watchdog via startfile")
 
-def start_character_service():
-    """Starts the parallel character data service or updates its PID."""
-    pid = os.getpid()
-    
-    # Try to update existing service first
+def send_character_service_command(cmd: str, **kwargs):
+    """Sends a command to the parallel character service."""
     socket = QLocalSocket()
     socket.connectToServer("CatchEtudeCharacterServer")
     if socket.waitForConnected(200):
-        data = json.dumps({"cmd": "update_pid", "pid": pid})
-        socket.write(data.encode('utf-8'))
+        data = {"cmd": cmd}
+        data.update(kwargs)
+        socket.write(json.dumps(data).encode('utf-8'))
         socket.waitForBytesWritten(200)
         socket.disconnectFromServer()
-        return
 
-    # If not running, start it
+def start_character_service():
+    """Starts the parallel character data service using os.startfile."""
     try:
-        service_script = str(Path(__file__).resolve().parent / "character_service.py")
-        python_exe = sys.executable.replace("python.exe", "pythonw.exe")
-        subprocess.Popen([python_exe, service_script, str(pid)], 
-                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        service_script = str(Path(__file__).resolve().parent / "character_service.pyw")
+        os.startfile(service_script)
+        logging.info("Character service started via startfile")
     except Exception:
-        logging.exception("Failed to start character service")
+        logging.exception("Failed to start character service via startfile")
 
 def main():
     sys.excepthook = crash_handler
-    
+
+    app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(ICON_PATH))
+    app.setQuitOnLastWindowClosed(False)
+
     try:
         # Clear previous crash report
         if CRASH_REPORT_PATH.exists():
@@ -1175,31 +1196,27 @@ def main():
         state_manager = StateManager()
         signals = AppSignals()
         state_manager.notifier = signals
-        
-        app = QApplication(sys.argv)
-        app.setWindowIcon(QIcon(ICON_PATH))
-        app.setQuitOnLastWindowClosed(False)
-        
+
         watcher = WatcherThread(state_manager.enqueue_file)
         app.aboutToQuit.connect(watcher.stop)
         watcher.start()
-        
+
         threading.Thread(target=lambda: (flatten_downloads_root(), scan_existing_downloads(state_manager)), daemon=True).start()
 
         win = MainWindow(state_manager, signals) #noqa
-        
+
         maintenance_timer = QtCore.QTimer()
         maintenance_timer.setInterval(3000)
         maintenance_timer.timeout.connect(state_manager.maintenance_tick)
         maintenance_timer.start()
-        
+
         # Periodic rescan every 30 minutes / Reescaneo periódico cada 30 minutos
         rescan_timer = QtCore.QTimer()
         rescan_timer.setInterval(30 * 60 * 1000)
         rescan_timer.timeout.connect(lambda: threading.Thread(
             target=scan_existing_downloads, args=(state_manager,), daemon=True).start())
         rescan_timer.start()
-        
+
         # Startup
         mypath = str(Path(__file__).resolve())
         try:

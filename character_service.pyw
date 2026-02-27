@@ -8,6 +8,7 @@ import os
 import json
 import time
 import threading
+import queue
 import traceback
 import win32event
 import win32api
@@ -28,11 +29,15 @@ ERROR_ALREADY_EXISTS = 183
 CHARS_LEVEL_NAME = "CHARS"
 
 class CharacterService(QtCore.QObject):
-    def __init__(self, main_pid: int):
+    def __init__(self):
         super().__init__()
-        self.main_pid = main_pid
         self.active_generation = 0
         self.active_year = None
+        self.pause_event = threading.Event()
+        self.pause_event.set() # Set means NOT paused (allowed to run)
+        self.task_queue = queue.Queue()
+        self.worker_thread = threading.Thread(target=self._queue_worker, daemon=True)
+        self.worker_thread.start()
         
         self.server = QtNetwork.QLocalServer(self)
         self.server.newConnection.connect(self._on_new_connection)
@@ -40,9 +45,8 @@ class CharacterService(QtCore.QObject):
         if not self.server.listen(SERVER_NAME):
             self._log_error(f"Character Server could not start: {self.server.errorString()}")
         
-        if self.main_pid:
-            self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
-            self.monitor_thread.start()
+        self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
+        self.monitor_thread.start()
 
     def _log_to_watchdog(self, level, message):
         socket = QtNetwork.QLocalSocket()
@@ -70,26 +74,32 @@ class CharacterService(QtCore.QObject):
                 year = msg.get("year")
                 gen = msg.get("generation")
                 self._handle_load_request(year, gen, socket)
+            elif cmd == "pause":
+                self.pause_event.clear()
+                self._log_info("Character Service: Scanning paused")
+            elif cmd == "resume":
+                self.pause_event.set()
+                self._log_info("Character Service: Scanning resumed")
             elif cmd == "update_pid":
-                new_pid = msg.get("pid")
-                self.main_pid = new_pid
-                self._log_info(f"Character Service: Monitored PID updated to {new_pid}")
+                # Deprecated
+                pass
         except Exception as e:
             self._log_error(f"Character Service error reading socket: {e}")
 
     def _handle_load_request(self, year, gen, request_socket):
-        # We start a background thread for the specific load request
-        # If a newer request for the same year comes, we cancel the old one via generation
         self.active_generation = gen
         self.active_year = year
-        
-        # We need a dedicated socket to send updates because the request_socket might close
-        # Actually, for the batch (Pass 0) we can use the current socket if it stays open, 
-        # but for Pass 1/2 updates, we should probably connect back or keep it open.
-        # Strategy: Send Pass 0 immediately. Then start a thread that uses a NEW socket to send updates.
-        
-        thread = threading.Thread(target=self._loader_worker, args=(year, gen), daemon=True)
-        thread.start()
+        self.task_queue.put((year, gen))
+
+    def _queue_worker(self):
+        while True:
+            year, gen = self.task_queue.get()
+            try:
+                self._loader_worker(year, gen)
+            except Exception:
+                self._log_error(f"Error in Character Service queue worker: {traceback.format_exc()}")
+            finally:
+                self.task_queue.task_done()
 
     def _send_update(self, msg_dict):
         """Sends an update back to the main app via a new connection."""
@@ -137,7 +147,6 @@ class CharacterService(QtCore.QObject):
                 entries = sorted([e for e in it if e.is_dir()], key=lambda e: e.name)
 
             for entry in entries:
-                if generation != self.active_generation: return
                 abs_p = entry.path
                 active_paths.add(abs_p)
                 
@@ -164,28 +173,41 @@ class CharacterService(QtCore.QObject):
                 needs_validation.append((len(items_data)-1, abs_p, entry.name))
 
             # PASS 0: Send Batch
-            if generation != self.active_generation: return
-            self._send_update({"cmd": "batch", "generation": generation, "items": items_data})
+            if generation == self.active_generation:
+                self._send_update({"cmd": "batch", "generation": generation, "items": items_data})
 
             # PASS 1 & 2: Validation
             for idx, abs_p, entry_name in needs_validation:
-                if generation != self.active_generation: return
-                
+
+                # 🔴 Si cambió generación, abortar
+                if generation != self.active_generation:
+                    return
+
+                self.pause_event.wait()
+
                 try:
                     st = os.stat(abs_p)
                     mtime_ns = st.st_mtime_ns
-                    current_entry_count = sum(1 for _ in os.scandir(abs_p))
                 except Exception: continue
 
                 cached = cache_mgr.get_folder_data(abs_p)
                 do_full_scan = True
-                if cached and cached.get("mtime_ns") == mtime_ns and cached.get("entry_count") == current_entry_count:
+                # Trusting mtime and checking existence in cache
+                if cached and cached.get("mtime_ns") == mtime_ns:
                     do_full_scan = False
                 
                 if do_full_scan:
                     self._log_char(f"Deep scanning: {entry_name}")
                     count, size = self._scan_folder_scandir(abs_p, generation)
-                    if count is None: return 
+
+                    if count is None:
+                        return  # cancelado
+
+                    # Note: count/size will not be None because we removed early return from scan_folder_scandir below
+
+                    try:
+                        current_entry_count = sum(1 for _ in os.scandir(abs_p))
+                    except Exception: current_entry_count = 0
 
                     meta = self._parse_name_metadata(entry_name)
                     age_str, size_mb_str = self._format_ui_strings(meta["birthday_iso"], size)
@@ -197,16 +219,19 @@ class CharacterService(QtCore.QObject):
                     item["size_mb_str"] = size_mb_str
                     
                     cache_mgr.update_folder(abs_p, mtime_ns, current_entry_count, count, size, meta, age_str, size_mb_str)
-                    self._send_update({"cmd": "update", "generation": generation, "index": idx, "item": item})
+                    if generation == self.active_generation:
+                        self._send_update({"cmd": "update", "generation": generation, "index": idx, "item": item})
                 else:
-                    if items_data[idx]["size_mb_str"] == "...":
-                        self._send_update({"cmd": "update", "generation": generation, "index": idx, "item": items_data[idx]})
+                    if generation == self.active_generation:
+                        if items_data[idx]["size_mb_str"] == "...":
+                            self._send_update({"cmd": "update", "generation": generation, "index": idx, "item": items_data[idx]})
                 
                 if idx % 10 == 0: time.sleep(0.01)
 
+            # Always save cache after processing all items for this year
+            cache_mgr.remove_stale_entries(active_paths)
+            cache_mgr.save()
             if generation == self.active_generation:
-                cache_mgr.remove_stale_entries(active_paths)
-                cache_mgr.save()
                 self._log_char(f"Character loading complete for year {year}")
 
         except Exception as e:
@@ -239,32 +264,43 @@ class CharacterService(QtCore.QObject):
         return age_str, size_mb_str
 
     def _scan_folder_scandir(self, path_str: str, generation: int):
-        total_size = 0; total_count = 0
+        total_size = 0; total_count = 0; BATCH_CHECK = 50
         try:
             with os.scandir(path_str) as it:
-                for entry in it:
-                    if generation != self.active_generation: return None, None
+                for i, entry in enumerate(it):
+
+                    # 🔴 Cada BATCH_CHECK archivos chequeamos cancelación
+                    if i % BATCH_CHECK == 0:
+                        # Si cambió generación → abortar inmediatamente
+                        if generation != self.active_generation:
+                            return None, None
+
+                        # Pausa cooperativa
+                        self.pause_event.wait()
+
                     try:
                         if entry.is_file(follow_symlinks=False):
                             st = entry.stat(follow_symlinks=False)
                             total_size += st.st_size
                             total_count += 1
+
                     except (PermissionError, FileNotFoundError, OSError): continue
         except Exception: pass
         return total_count, total_size
 
     def _monitor_process(self):
         while True:
-            current_pid = self.main_pid
-            if not current_pid:
-                time.sleep(1); continue
+            handle = None
             try:
-                os.kill(current_pid, 0)
-            except OSError:
-                if self.main_pid != current_pid: continue
-                QtCore.QCoreApplication.quit()
+                handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+                if not handle:
+                    break
+                win32api.CloseHandle(handle)
+            except Exception:
                 break
-            time.sleep(1)
+            time.sleep(2)
+
+        QtCore.QCoreApplication.quit()
 
 def crash_handler(etype, value, tb):
     err_msg = "".join(traceback.format_exception(etype, value, tb))
@@ -297,8 +333,7 @@ def main():
 
     app = QtCore.QCoreApplication(sys.argv)
     
-    main_pid = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-    service = CharacterService(main_pid)
+    service = CharacterService()
     
     sys.exit(app.exec())
 

@@ -22,9 +22,8 @@ LOG_SERVER_NAME = "CatchEtudeLogServer"
 ERROR_ALREADY_EXISTS = 183
 
 class WatchdogService(QtCore.QObject):
-    def __init__(self, main_pid: int):
+    def __init__(self):
         super().__init__()
-        self.main_pid = main_pid
         self.log_viewer = LogViewerWindow()
         self.log_viewer.setWindowTitle("CatchEtude - Watchdog & Logs")
         self.log_viewer.setWindowIcon(QIcon(ICON_PATH))
@@ -35,13 +34,6 @@ class WatchdogService(QtCore.QObject):
         if not self.server.listen(LOG_SERVER_NAME):
             print(f"Server could not start: {self.server.errorString()}")
         
-        self.monitor_thread = None
-        if self.main_pid:
-            self._start_monitor()
-
-    def _start_monitor(self):
-        if self.monitor_thread and self.monitor_thread.is_alive():
-            return
         self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
         self.monitor_thread.start()
 
@@ -63,35 +55,32 @@ class WatchdogService(QtCore.QObject):
                 self.log_viewer.raise_()
                 self.log_viewer.activateWindow()
             elif cmd == "update_pid":
-                new_pid = msg.get("pid")
-                print(f"Updating monitored PID to: {new_pid}")
-                self.main_pid = new_pid
-                self._start_monitor()
+                # Deprecated but kept for compatibility during transition
+                pass
         except Exception as e:
             print(f"Error reading socket: {e}")
         socket.disconnectFromServer()
 
     def _monitor_process(self):
-        print(f"Monitoring PID: {self.main_pid}")
+        print(f"Monitoring main app via Mutex: {APP_NAME}")
         while True:
-            current_pid = self.main_pid
-            if not current_pid:
-                time.sleep(1)
-                continue
-                
+            handle = None
             try:
-                # Check if process exists
-                os.kill(current_pid, 0)
-            except OSError:
-                # Process terminated
-                # Check if it was updated in the meantime
-                if self.main_pid != current_pid:
-                    continue
-                    
-                print(f"Main process {current_pid} terminated.")
-                self._handle_termination()
+                # Try to open the main app mutex
+                handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+                if not handle:
+                    # Main app is gone
+                    break
+                win32api.CloseHandle(handle)
+            except Exception:
+                # Mutex does not exist or cannot be opened, app is likely closed
                 break
-            time.sleep(1)
+            time.sleep(2)
+
+        print("Main process terminated (Mutex gone).")
+        self._handle_termination()
+        # Exit service
+        QtCore.QCoreApplication.quit()
 
     def _handle_termination(self):
         if CRASH_REPORT_PATH.exists():
@@ -122,8 +111,7 @@ def main():
         # For now, just exit.
         return
 
-    main_pid = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-    service = WatchdogService(main_pid)
+    service = WatchdogService()
     
     sys.exit(app.exec())
 
