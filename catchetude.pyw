@@ -207,7 +207,7 @@ class MainWindow(QWidget):
         self.setWindowFlags(flags)
         self.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
 
-        self.base_width = 820
+        self.base_width = 1200
         self.base_height = 580
         self.setMinimumSize(self.base_width, self.base_height)
         self.resize(self.base_width, self.base_height)
@@ -281,14 +281,13 @@ class MainWindow(QWidget):
         self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(1, 9)])
         self.list_type.currentRowChanged.connect(self._on_type_changed)
         v_type.addWidget(self.list_type)
-        top_row.addLayout(v_type)
+        top_row.addLayout(v_type, 1) # Equal stretch
 
         # Year Column
         v_year = QVBoxLayout()
         self.lbl_year = QLabel(self.loc.get("lbl_years"))
         v_year.addWidget(self.lbl_year)
         self.list_year = QListWidget()
-        self.list_year.setFixedWidth(200)
         self.list_year.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
         self.list_year.setFlow(QtWidgets.QListView.Flow.LeftToRight)
         self.list_year.setWrapping(True)
@@ -318,7 +317,7 @@ class MainWindow(QWidget):
         self.list_year.currentRowChanged.connect(self._on_year_changed)
         self.list_year.setEnabled(False)
         v_year.addWidget(self.list_year)
-        top_row.addLayout(v_year)
+        top_row.addLayout(v_year, 1) # Equal stretch
 
         # Subfolder Column
         v_sub = QVBoxLayout()
@@ -334,14 +333,14 @@ class MainWindow(QWidget):
 
         self.selection_panel = QWidget()
         self.selection_panel.setLayout(selection_layout)
-        root.addWidget(self.selection_panel)
+        root.addWidget(self.selection_panel, 1)
 
         # Action Panel (Right)
         layout = QVBoxLayout()
 
         # Preview Section
         self.preview_label = QLabel()
-        self.preview_label.setFixedSize(320, 180)
+        self.preview_label.setMinimumSize(320, 180)
         self.preview_label.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.preview_label.setScaledContents(False)
         self.preview_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -394,11 +393,10 @@ class MainWindow(QWidget):
 
         self.right_panel = QWidget()
         self.right_panel.setLayout(layout)
-        root.addWidget(self.right_panel)
+        root.addWidget(self.right_panel, 1)
 
         # Character/Queue Panel
         self.left_panel = QWidget()
-        self.left_panel.setFixedWidth(380)
         # Always visible now
         self.left_panel.setVisible(True)
         self._left_panel_visible = True
@@ -422,7 +420,7 @@ class MainWindow(QWidget):
         self.char_model.modelReset.connect(self._update_character_buttons)
         self.char_model.dataChanged.connect(self._update_character_buttons)
 
-        root.addWidget(self.left_panel)
+        root.addWidget(self.left_panel, 1)
 
         main_vbox.addLayout(root)
         self.setLayout(main_vbox)
@@ -749,17 +747,12 @@ class MainWindow(QWidget):
         # Update subfolders if needed (keep current type/year)
         self._refresh_classification_ui()
 
-        # Show window (only if internal drive was available at start)
-        # Mostrar ventana (solo si la unidad interna estaba disponible al inicio)
-        if not self.isVisible() and self._internal_available_at_start:
-            self.resize(self.base_width + self.left_panel.width(), self.height())
-            self.show()
-            self.raise_()
-            self.activateWindow()
+        # Ensure window is visible and centered
+        if self._internal_available_at_start:
+            self._bring_and_center()
 
-        # Update character panel visibility
-        is_char_type = (self.list_type.currentRow() + 1 == 2)
-        self._update_panel_layout(is_char_type)
+        # Update UI layout
+        self._update_panel_layout()
         self._update_name_completer()
 
     def _refresh_classification_ui(self):
@@ -780,12 +773,11 @@ class MainWindow(QWidget):
             self.list_sub.clear()
             self.list_sub.setEnabled(False)
 
-    def _update_panel_layout(self, show_left: bool):
+    def _update_panel_layout(self):
         """Updates the window size and panel visibility."""
         # Always show left panel now as it contains the queue
         if not self._left_panel_visible:
             self.left_panel.setVisible(True)
-            self.resize(self.base_width + self.left_panel.width(), self.height())
             self._left_panel_visible = True
 
     def _load_preview(self, p: Path):
@@ -876,7 +868,7 @@ class MainWindow(QWidget):
             self.list_year.setEnabled(False)
             return
 
-        self._update_panel_layout(t == 2)
+        self._update_panel_layout()
 
         # Disable Apply button for fast-move types
         self.btn_move.setEnabled(t not in (2, 3, 4, 6, 8))
