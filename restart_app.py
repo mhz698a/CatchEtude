@@ -86,12 +86,12 @@ class RestartWorker(QtCore.QThread):
                 handle = win32event.CreateMutex(None, False, APP_NAME)
                 last_err = win32api.GetLastError()
                 win32api.CloseHandle(handle)
-
+                
                 if last_err == 0:
                     # Successfully created without ERROR_ALREADY_EXISTS (183)
                     # This means the previous instance is gone.
                     break
-
+                
                 time.sleep(0.5)
 
             # 2. Attempt restart
@@ -104,7 +104,7 @@ class RestartWorker(QtCore.QThread):
                 subprocess.Popen([python_exe, self.script_path], 
                                  creationflags=0x00000010)
             else:
-                subprocess.Popen([python_exe, self.script_path],
+                subprocess.Popen([python_exe, self.script_path], 
                                  creationflags=0x00000010)
             
             self.finished.emit()

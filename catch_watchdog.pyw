@@ -76,7 +76,7 @@ class WatchdogService(QtCore.QObject):
                 # Mutex does not exist or cannot be opened, app is likely closed
                 break
             time.sleep(2)
-
+            
         print("Main process terminated (Mutex gone).")
         self._handle_termination()
         # Exit service
