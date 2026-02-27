@@ -59,6 +59,67 @@ from subfolder_list_mgr import SubfolderButtonList # type: ignore
 from localization import LocalizationManager # type: ignore
 from log_mgr import setup_logging, log_signals # type: ignore
 
+class QueueDelegate(QtWidgets.QStyledItemDelegate):
+    """Delegate for rendering the download queue with thumbnails/icons."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._thumb_cache = {}
+
+    def paint(self, painter, option, index):
+        painter.save()
+
+        path_str = index.data(Qt.ItemDataRole.UserRole)
+        is_active = index.data(Qt.ItemDataRole.UserRole + 1)
+        p = Path(path_str)
+
+        rect = option.rect
+
+        if is_active:
+            # Highlight active file
+            painter.fillRect(rect, QtGui.QColor("#e1f5fe"))
+            painter.setPen(QtGui.QColor("#01579b"))
+        elif option.state & QtWidgets.QStyle.StateFlag.State_Selected:
+            painter.fillRect(rect, option.palette.highlight())
+            painter.setPen(option.palette.highlightedText().color())
+        else:
+            painter.setPen(option.palette.text().color())
+
+        # Draw icon/thumbnail
+        icon_rect = QtCore.QRect(rect.left() + 5, rect.top() + 5, 40, 40)
+
+        if path_str not in self._thumb_cache:
+            if p.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}:
+                reader = QtGui.QImageReader(path_str)
+                reader.setAutoTransform(True)
+                img_size = reader.size()
+                if img_size.isValid():
+                    reader.setScaledSize(img_size.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio))
+                img = reader.read()
+                if not img.isNull():
+                    self._thumb_cache[path_str] = QtGui.QPixmap.fromImage(img)
+                else:
+                    self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+            else:
+                self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+
+        obj = self._thumb_cache[path_str]
+        if isinstance(obj, QtGui.QPixmap):
+            # Center pixmap in icon_rect
+            pix_rect = obj.rect()
+            pix_rect.moveCenter(icon_rect.center())
+            painter.drawPixmap(pix_rect.topLeft(), obj)
+        else:
+            obj.paint(painter, icon_rect)
+
+        # Draw text
+        text_rect = rect.adjusted(55, 0, -5, 0)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, p.name)
+
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        return QtCore.QSize(200, 50)
+
 class SubfolderScanner(QtCore.QThread):
     """Background scanner to find the first file in subfolders."""
     result_ready = QtCore.pyqtSignal(str, str)
@@ -335,23 +396,29 @@ class MainWindow(QWidget):
         self.right_panel.setLayout(layout)
         root.addWidget(self.right_panel)
 
-        # Character Panel (Dynamic)
-        self.left_panel = QWidget() # This is the character panel, renamed for legacy
+        # Character/Queue Panel
+        self.left_panel = QWidget()
         self.left_panel.setFixedWidth(380)
-        self.left_panel.setVisible(False)
+        # Always visible now
+        self.left_panel.setVisible(True)
+        self._left_panel_visible = True
 
         lv = QVBoxLayout(self.left_panel)
+
+        # Download Queue (Top of left panel)
+        self.lbl_queue = QLabel(self.loc.get("lbl_queue"))
+        lv.addWidget(self.lbl_queue)
+
+        self.queue_list_widget = QListWidget()
+        self.queue_list_widget.setItemDelegate(QueueDelegate(self))
+        self.queue_list_widget.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
+        # Remove fixed height to let it expand when char_view is hidden
+        lv.addWidget(self.queue_list_widget)
+
+        self.signals.queue_updated.connect(self._on_queue_updated)
+
+        # Character Model (Needed for buttons)
         self.char_model = CharacterListModel()
-        self.char_view = QtWidgets.QListView()
-        self.char_view.setModel(self.char_model)
-        self.char_view.setItemDelegate(CharacterDelegate())
-        self.char_view.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
-        self.char_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        self.lbl_chars = QLabel(self.loc.get("lbl_characters"))
-        lv.addWidget(self.lbl_chars)
-        lv.addWidget(self.char_view)
-
         self.char_model.modelReset.connect(self._update_character_buttons)
         self.char_model.dataChanged.connect(self._update_character_buttons)
 
@@ -452,7 +519,7 @@ class MainWindow(QWidget):
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
         self.btn_custom.setText(self.loc.get("btn_apply_custom"))
         self.btn_move.setText(self.loc.get("btn_apply"))
-        self.lbl_chars.setText(self.loc.get("lbl_characters"))
+        self.lbl_queue.setText(self.loc.get("lbl_queue"))
 
         # Update types list
         curr = self.list_type.currentRow()
@@ -685,6 +752,7 @@ class MainWindow(QWidget):
         # Show window (only if internal drive was available at start)
         # Mostrar ventana (solo si la unidad interna estaba disponible al inicio)
         if not self.isVisible() and self._internal_available_at_start:
+            self.resize(self.base_width + self.left_panel.width(), self.height())
             self.show()
             self.raise_()
             self.activateWindow()
@@ -714,22 +782,11 @@ class MainWindow(QWidget):
 
     def _update_panel_layout(self, show_left: bool):
         """Updates the window size and panel visibility."""
-        actual_show = show_left or CHAR_PANEL_ALWAYS
-        if actual_show:
-            if not self._left_panel_visible:
-                self.left_panel.setVisible(True)
-                self.resize(self.base_width + self.left_panel.width(), self.height())
-                self._left_panel_visible = True
-
-            t = self.list_type.currentRow() + 1
-            is_type_2 = (t == 2)
-            self.char_view.setVisible(not is_type_2)
-            self.lbl_chars.setVisible(not is_type_2)
-        else:
-            if self._left_panel_visible:
-                self.left_panel.setVisible(False)
-                self.resize(self.base_width, self.height())
-                self._left_panel_visible = False
+        # Always show left panel now as it contains the queue
+        if not self._left_panel_visible:
+            self.left_panel.setVisible(True)
+            self.resize(self.base_width + self.left_panel.width(), self.height())
+            self._left_panel_visible = True
 
     def _load_preview(self, p: Path):
         """Loads a preview of the file (image or icon)."""
@@ -969,6 +1026,16 @@ class MainWindow(QWidget):
         # Clear the model immediately to show the user that a new year is loading
         self.char_model.clear_data()
         self.char_model.request_characters(self._pending_year, self._char_load_generation)
+
+    @QtCore.pyqtSlot(list, str)
+    def _on_queue_updated(self, queue_list: list[Path], active_path_str: str):
+        """Updates the download queue UI list."""
+        self.queue_list_widget.clear()
+        for p in queue_list:
+            item = QtWidgets.QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, str(p))
+            item.setData(Qt.ItemDataRole.UserRole + 1, str(p) == active_path_str)
+            self.queue_list_widget.addItem(item)
 
     def _update_character_buttons(self):
         """Updates subfolder buttons with character metadata."""
