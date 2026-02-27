@@ -14,29 +14,29 @@ class SubfolderButton(QtWidgets.QPushButton):
         super().__init__(parent)
         self.name = name
         self.setToolTip(name)
-
+        
         self._layout = QtWidgets.QVBoxLayout(self)
         self._layout.setContentsMargins(8, 2, 8, 2)
         self._layout.setSpacing(0)
         self._layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignVCenter)
-
+        
         self.lbl_name = QtWidgets.QLabel(name)
         self.lbl_name.setStyleSheet("font-weight: normal; background: transparent; border: none;")
         self.lbl_name.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._layout.addWidget(self.lbl_name)
-
+        
         self.lbl_extra1 = QtWidgets.QLabel("")
         self.lbl_extra1.setStyleSheet("font-style: italic; background: transparent; border: none;")
         self.lbl_extra1.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.lbl_extra1.hide()
         self._layout.addWidget(self.lbl_extra1)
-
+        
         self.lbl_extra2 = QtWidgets.QLabel("")
         self.lbl_extra2.setStyleSheet("color: gray; background: transparent; border: none;")
         self.lbl_extra2.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.lbl_extra2.hide()
         self._layout.addWidget(self.lbl_extra2)
-
+        
         self.setFixedHeight(30)
         self.setStyleSheet("QPushButton { text-align: left; }")
 
@@ -50,13 +50,13 @@ class SubfolderButton(QtWidgets.QPushButton):
             self.lbl_extra1.show()
         else:
             self.lbl_extra1.hide()
-
+            
         if line3:
             self.lbl_extra2.setText(line3)
             self.lbl_extra2.show()
         else:
             self.lbl_extra2.hide()
-
+            
         # Adjust height based on content
         if line2 and line3:
             self.setFixedHeight(60)

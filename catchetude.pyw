@@ -34,17 +34,17 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt
 
 from config import ( # type: ignore
-    APP_NAME, ERROR_ALREADY_EXISTS,
+    APP_NAME, ERROR_ALREADY_EXISTS, 
     LOG_PATH, BASE_INTERNAL, CRASH_REPORT_PATH,
-    ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA,
-    YEARS, ICON_PATH,
-    CONFIG_PATH,
+    ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA, 
+    YEARS, ICON_PATH, 
+    CONFIG_PATH, 
     MYAPPID, DOWNLOADS,
     IMAGES_FOLDER, MUSIC_FOLDER, OVERWORLD_FOLDER,
     CHAR_PANEL_ALWAYS, BLUR_LEVEL
-)
+) 
 from utils import (
-    resolve_duplicate, flatten_downloads_root,
+    resolve_duplicate, flatten_downloads_root, 
     configure_dwm_thumbnail_behavior, is_internal_available,
     sanitize_windows_filename, is_temporary, is_file_locked,
     is_same_drive, move_file_shfileop, delete_to_recycle_bin
@@ -67,13 +67,13 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         painter.save()
-
+        
         path_str = index.data(Qt.ItemDataRole.UserRole)
         is_active = index.data(Qt.ItemDataRole.UserRole + 1)
         p = Path(path_str)
-
+        
         rect = option.rect
-
+        
         if is_active:
             # Highlight active file
             painter.fillRect(rect, QtGui.QColor("#e1f5fe"))
@@ -83,10 +83,10 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
             painter.setPen(option.palette.highlightedText().color())
         else:
             painter.setPen(option.palette.text().color())
-
+            
         # Draw icon/thumbnail
         icon_rect = QtCore.QRect(rect.left() + 5, rect.top() + 5, 40, 40)
-
+        
         if path_str not in self._thumb_cache:
             if p.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}:
                 reader = QtGui.QImageReader(path_str)
@@ -101,7 +101,7 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
                     self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
             else:
                 self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
-
+        
         obj = self._thumb_cache[path_str]
         if isinstance(obj, QtGui.QPixmap):
             # Center pixmap in icon_rect
@@ -110,11 +110,11 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
             painter.drawPixmap(pix_rect.topLeft(), obj)
         else:
             obj.paint(painter, icon_rect)
-
+        
         # Draw text
         text_rect = rect.adjusted(55, 0, -5, 0)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, p.name)
-
+        
         painter.restore()
 
     def sizeHint(self, option, index):
@@ -136,7 +136,7 @@ class SubfolderScanner(QtCore.QThread):
         try:
             if not self.base_path.exists():
                 return
-
+            
             try:
                 with os.scandir(str(self.base_path)) as it:
                     subs = sorted([e.path for e in it if e.is_dir()])
@@ -146,7 +146,7 @@ class SubfolderScanner(QtCore.QThread):
             for sub_path in subs:
                 if self._abort:
                     break
-
+                
                 first_file = "---"
                 try:
                     files = []
@@ -161,7 +161,7 @@ class SubfolderScanner(QtCore.QThread):
                         first_file = files[0]
                 except Exception:
                     pass
-
+                
                 self.result_ready.emit(Path(sub_path).name, first_file)
         except Exception:
             logging.exception("Error in SubfolderScanner")
@@ -174,7 +174,7 @@ except Exception:
 
 # Ensure single instance
 mutex = win32event.CreateMutex(None, False, APP_NAME)
-if win32api.GetLastError() == ERROR_ALREADY_EXISTS:
+if win32api.GetLastError() == ERROR_ALREADY_EXISTS: 
     print("The service is already running")
     sys.exit()
 
@@ -191,46 +191,46 @@ class MainWindow(QWidget):
         self.state_manager = state_manager
         self.signals = signals
         self.loc = LocalizationManager()
-
+        
         # Set of active move tasks (to prevent GC)
         self._active_workers = set()
-
+        
         # Connect signals
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
-
+        
         self.setWindowTitle(APP_NAME)
-
+        
         # Window flags: Tool window, stays on top, custom hints
         flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint
         flags |= QtCore.Qt.WindowType.Tool
         self.setWindowFlags(flags)
         self.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
-
-        self.base_width = 1200
+        
+        self.base_width = 820
         self.base_height = 580
         self.setMinimumSize(self.base_width, self.base_height)
         self.resize(self.base_width, self.base_height)
-
+        
         self._left_panel_visible = False
         self._internal_warned = False
         self.filepath: Optional[Path] = None
-
+        
         # Check if internal drive E: is available at startup
         # Verificar si la unidad interna E: está disponible al iniciar
         self._internal_available_at_start = is_internal_available()
-
+        
         self._hide_secure = False
         self._load_config()
-
+        
         self._setup_server()
         self._sub_scanner = None
-
+        
         self._build_ui()
         self._build_tray()
-
+        
         configure_dwm_thumbnail_behavior(self.winId().__int__())
-
+        
         # Debounce timer for character loading
         self._year_load_timer = QtCore.QTimer(self)
         self._year_load_timer.setSingleShot(True)
@@ -241,37 +241,37 @@ class MainWindow(QWidget):
     def _build_ui(self):
         """Builds the main user interface."""
         main_vbox = QVBoxLayout()
-
+        
         # Header Row
         header_layout = QHBoxLayout()
-
+        
         self.btn_delete_header = QPushButton(self.loc.get("btn_header_delete"))
         self.btn_delete_header.setFixedHeight(25)
         self.btn_delete_header.clicked.connect(self._on_delete_clicked)
         header_layout.addWidget(self.btn_delete_header)
-
+        
         header_layout.addStretch()
 
         self.btn_undo = QPushButton(self.loc.get("btn_history"))
         self.btn_undo.setFixedHeight(25)
         self.btn_undo.clicked.connect(self._on_undo_clicked)
-
+        
         self.btn_lang = QPushButton(self.loc.get("lang_toggle"))
         self.btn_lang.setFixedWidth(40)
         self.btn_lang.setFixedHeight(25)
         self.btn_lang.clicked.connect(self._on_lang_toggle)
-
+        
         header_layout.addStretch()
         header_layout.addWidget(self.btn_undo)
         header_layout.addWidget(self.btn_lang)
         main_vbox.addLayout(header_layout)
 
         root = QHBoxLayout()
-
+        
         # Selection Panel (Left)
         selection_layout = QVBoxLayout()
         top_row = QHBoxLayout()
-
+        
         # Type Column
         v_type = QVBoxLayout()
         self.lbl_type = QLabel(self.loc.get("lbl_type"))
@@ -281,13 +281,14 @@ class MainWindow(QWidget):
         self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(1, 9)])
         self.list_type.currentRowChanged.connect(self._on_type_changed)
         v_type.addWidget(self.list_type)
-        top_row.addLayout(v_type, 1) # Equal stretch
+        top_row.addLayout(v_type)
 
         # Year Column
         v_year = QVBoxLayout()
         self.lbl_year = QLabel(self.loc.get("lbl_years"))
         v_year.addWidget(self.lbl_year)
         self.list_year = QListWidget()
+        self.list_year.setFixedWidth(200)
         self.list_year.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
         self.list_year.setFlow(QtWidgets.QListView.Flow.LeftToRight)
         self.list_year.setWrapping(True)
@@ -306,7 +307,7 @@ class MainWindow(QWidget):
 
         for y in YEARS:
             self.list_year.addItem(str(y))
-
+        
         # Default to 2004
         idx2004 = 0
         for i in range(self.list_year.count()):
@@ -317,7 +318,7 @@ class MainWindow(QWidget):
         self.list_year.currentRowChanged.connect(self._on_year_changed)
         self.list_year.setEnabled(False)
         v_year.addWidget(self.list_year)
-        top_row.addLayout(v_year, 1) # Equal stretch
+        top_row.addLayout(v_year)
 
         # Subfolder Column
         v_sub = QVBoxLayout()
@@ -327,20 +328,20 @@ class MainWindow(QWidget):
         self.list_sub.setEnabled(False)
         self.list_sub.clicked.connect(self._move_to_subfolder)
         v_sub.addWidget(self.list_sub)
-
+        
         selection_layout.addLayout(top_row)
         selection_layout.addLayout(v_sub)
 
         self.selection_panel = QWidget()
         self.selection_panel.setLayout(selection_layout)
-        root.addWidget(self.selection_panel, 1)
+        root.addWidget(self.selection_panel)
 
         # Action Panel (Right)
         layout = QVBoxLayout()
-
+        
         # Preview Section
         self.preview_label = QLabel()
-        self.preview_label.setMinimumSize(320, 180)
+        self.preview_label.setFixedSize(320, 180)
         self.preview_label.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.preview_label.setScaledContents(False)
         self.preview_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -390,23 +391,24 @@ class MainWindow(QWidget):
 
         # Apply loaded state
         self.hide_secure_cb.setChecked(self._hide_secure)
-
+                   
         self.right_panel = QWidget()
         self.right_panel.setLayout(layout)
-        root.addWidget(self.right_panel, 1)
+        root.addWidget(self.right_panel)
 
         # Character/Queue Panel
         self.left_panel = QWidget()
+        self.left_panel.setFixedWidth(380)
         # Always visible now
         self.left_panel.setVisible(True)
         self._left_panel_visible = True
-
+        
         lv = QVBoxLayout(self.left_panel)
-
+        
         # Download Queue (Top of left panel)
         self.lbl_queue = QLabel(self.loc.get("lbl_queue"))
         lv.addWidget(self.lbl_queue)
-
+        
         self.queue_list_widget = QListWidget()
         self.queue_list_widget.setItemDelegate(QueueDelegate(self))
         self.queue_list_widget.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -419,9 +421,9 @@ class MainWindow(QWidget):
         self.char_model = CharacterListModel()
         self.char_model.modelReset.connect(self._update_character_buttons)
         self.char_model.dataChanged.connect(self._update_character_buttons)
-
-        root.addWidget(self.left_panel, 1)
-
+        
+        root.addWidget(self.left_panel)
+        
         main_vbox.addLayout(root)
         self.setLayout(main_vbox)
         self.retranslate_ui()
@@ -430,7 +432,7 @@ class MainWindow(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_preview()
-
+    
     def _update_preview(self):
         """Updates the preview pixmap when window is resized."""
         if self.filepath and not self.preview_hidden:
@@ -453,9 +455,9 @@ class MainWindow(QWidget):
             if CONFIG_PATH.exists():
                 with CONFIG_PATH.open('r', encoding='utf-8') as f:
                     data = json.load(f)
-
+            
             data["hide_secure"] = self._hide_secure
-
+            
             with CONFIG_PATH.open('w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
         except Exception:
@@ -489,12 +491,12 @@ class MainWindow(QWidget):
             cmd = json.loads(data)
             path = cmd.get("path")
             hide_secure = cmd.get("hide_secure", True)
-
+            
             if path and os.path.exists(path):
                 self.hide_secure_cb.setChecked(hide_secure)
                 self._hide_secure = hide_secure
                 self._save_config()
-
+                
                 p = Path(path)
                 if p.is_dir():
                     self._process_pending_folder(p)
@@ -518,7 +520,7 @@ class MainWindow(QWidget):
         self.btn_custom.setText(self.loc.get("btn_apply_custom"))
         self.btn_move.setText(self.loc.get("btn_apply"))
         self.lbl_queue.setText(self.loc.get("lbl_queue"))
-
+        
         # Update types list
         curr = self.list_type.currentRow()
         self.list_type.blockSignals(True)
@@ -536,7 +538,7 @@ class MainWindow(QWidget):
     def _on_delete_clicked(self):
         """Sends the current file to the recycle bin."""
         if not self.filepath: return
-
+        
         send_character_service_command("pause")
         try:
             if delete_to_recycle_bin(self.filepath):
@@ -582,13 +584,13 @@ class MainWindow(QWidget):
         if not hasattr(self, 'tray'):
             self.tray = QSystemTrayIcon(icon, self)
             self.tray.setToolTip(APP_NAME)
-
+        
         self.tray_menu = QMenu(self)
 
         show_action = QAction(self.loc.get("tray_show"), self)
-        show_action.triggered.connect(self._bring_and_center)
+        show_action.triggered.connect(self.show)
         self.tray_menu.addAction(show_action)
-
+        
         hide_action = QAction(self.loc.get("tray_hide"), self)
         hide_action.triggered.connect(self.hide)
         self.tray_menu.addAction(hide_action)
@@ -654,7 +656,7 @@ class MainWindow(QWidget):
         pid = os.getpid()
         script_path = str(Path(__file__).resolve())
         restart_script = str(Path(__file__).resolve().parent / "restart_app.py")
-
+        
         # Start the restart script decoupled from the current process group
         # Using CREATE_NEW_PROCESS_GROUP (0x10) which is safer for Windows.
         # DETACHED_PROCESS (0x08) often causes WinError 87 in GUI apps.
@@ -664,7 +666,7 @@ class MainWindow(QWidget):
         except Exception:
             logging.exception("Failed to start restart script with flags, trying without.")
             subprocess.Popen([sys.executable, restart_script, str(pid), script_path])
-
+        
         # Exit the current process
         QApplication.quit()
 
@@ -689,7 +691,7 @@ class MainWindow(QWidget):
             python_exe = sys.executable
             if python_exe.lower().endswith("python.exe"):
                 python_exe = python_exe[:-10] + "pythonw.exe"
-
+            
             subprocess.Popen([python_exe, pendings_script], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
             logging.info(f"Started pendings_exec.pyw with {python_exe}")
         except Exception:
@@ -703,7 +705,7 @@ class MainWindow(QWidget):
                 if f.is_file() and not is_temporary(f):
                     self.state_manager.enqueue_file(f)
         threading.Thread(target=worker, daemon=True).start()
-
+        
     def _warn_internal_missing(self):
         if self._internal_warned:
             return
@@ -737,22 +739,27 @@ class MainWindow(QWidget):
         self.rename_input.setText(p.stem)
         self._load_preview(p)
         self.progress.setValue(0)
-
+        
         # Enable buttons
         self.btn_custom.setEnabled(True)
-
+        
         # Refresh UI state based on current selection
         self._on_type_changed(self.list_type.currentRow())
-
+        
         # Update subfolders if needed (keep current type/year)
         self._refresh_classification_ui()
-
-        # Ensure window is visible and centered
-        if self._internal_available_at_start:
-            self._bring_and_center()
-
-        # Update UI layout
-        self._update_panel_layout()
+        
+        # Show window (only if internal drive was available at start)
+        # Mostrar ventana (solo si la unidad interna estaba disponible al inicio)
+        if not self.isVisible() and self._internal_available_at_start:
+            self.resize(self.base_width + self.left_panel.width(), self.height())
+            self.show()
+            self.raise_()
+            self.activateWindow()
+        
+        # Update character panel visibility
+        is_char_type = (self.list_type.currentRow() + 1 == 2)
+        self._update_panel_layout(is_char_type)
         self._update_name_completer()
 
     def _refresh_classification_ui(self):
@@ -773,11 +780,12 @@ class MainWindow(QWidget):
             self.list_sub.clear()
             self.list_sub.setEnabled(False)
 
-    def _update_panel_layout(self):
+    def _update_panel_layout(self, show_left: bool):
         """Updates the window size and panel visibility."""
         # Always show left panel now as it contains the queue
         if not self._left_panel_visible:
             self.left_panel.setVisible(True)
+            self.resize(self.base_width + self.left_panel.width(), self.height())
             self._left_panel_visible = True
 
     def _load_preview(self, p: Path):
@@ -814,35 +822,35 @@ class MainWindow(QWidget):
 
         # Create a blurred version of the entire image
         # Using a simple scaling trick for fast blur if QGraphicsBlurEffect is too heavy for direct QImage
-
+        
         # Method: Scale down and up for a blur effect
         # We'll use a small size for the blurred part
-        blur_radius = BLUR_LEVEL
-        small = image.scaled(image.width() // blur_radius, image.height() // blur_radius,
+        blur_radius = BLUR_LEVEL 
+        small = image.scaled(image.width() // blur_radius, image.height() // blur_radius, 
                              Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        blurred = small.scaled(image.width(), image.height(),
+        blurred = small.scaled(image.width(), image.height(), 
                                Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
         # Now create the final image combining blurred (90% top) and original (bottom)
         result = QtGui.QImage(image.size(), QtGui.QImage.Format.Format_ARGB32)
         result.fill(Qt.GlobalColor.transparent)
-
+        
         painter = QtGui.QPainter(result)
-
+        
         # Define the reveal area (bottom 15% for example)
         reveal_height = int(image.height() * 0.15)
         blur_height = image.height() - reveal_height
-
+        
         # Draw blurred part
-        painter.drawImage(QtCore.QRect(0, 0, image.width(), blur_height),
-                          blurred,
+        painter.drawImage(QtCore.QRect(0, 0, image.width(), blur_height), 
+                          blurred, 
                           QtCore.QRect(0, 0, image.width(), blur_height))
-
+        
         # Draw original part at the bottom
-        painter.drawImage(QtCore.QRect(0, blur_height, image.width(), reveal_height),
-                          image,
+        painter.drawImage(QtCore.QRect(0, blur_height, image.width(), reveal_height), 
+                          image, 
                           QtCore.QRect(0, blur_height, image.width(), reveal_height))
-
+        
         painter.end()
         return result
 
@@ -868,8 +876,8 @@ class MainWindow(QWidget):
             self.list_year.setEnabled(False)
             return
 
-        self._update_panel_layout()
-
+        self._update_panel_layout(t == 2)
+        
         # Disable Apply button for fast-move types
         self.btn_move.setEnabled(t not in (2, 3, 4, 6, 8))
 
@@ -887,7 +895,7 @@ class MainWindow(QWidget):
             self.list_year.setEnabled(False)
             self.list_sub.clear()
             self.list_sub.setEnabled(False)
-
+        
         self._update_name_completer()
 
     def _on_year_changed(self, idx):
@@ -895,25 +903,25 @@ class MainWindow(QWidget):
             self.list_sub.clear()
             self.list_sub.setEnabled(False)
             return
-
+        
         try:
             item = self.list_year.currentItem()
             if not item: return
             year = int(item.text())
         except ValueError:
             return
-
+        
         t = self.list_type.currentRow() + 1
         if t in (2, 3, 4, 8):
             self._populate_subs_for_year(year)
-
+        
         if t == 2:
             self._pending_year = year
             self._year_load_timer.start(400) # Debounce load
-
+            
     def _populate_subs_for_year(self, year: int):
         """
-        Finds the appropriate base folder for the given year and type,
+        Finds the appropriate base folder for the given year and type, 
         then populates the subfolders list.
         """
         year_dir = BASE_INTERNAL / str(year)
@@ -922,17 +930,17 @@ class MainWindow(QWidget):
             self.list_sub.clear()
             self.list_sub.setEnabled(False)
             return
-
+            
         prefix = f"{year - 2003:02d}"
         t = self.list_type.currentRow() + 1
         base = None
-
+        
         try:
             # Multi-pattern search for better robustness
             for child in sorted(year_dir.iterdir()):
                 if not child.is_dir():
                     continue
-
+                
                 name = child.name.lower()
                 if t == 2: # Characters
                     if (prefix in name and IMAGES_FOLDER in name) or (IMAGES_FOLDER in name):
@@ -978,7 +986,7 @@ class MainWindow(QWidget):
     def _populate_subfolders(self, base: Path):
         """Populates list_sub with subdirectories from the base path."""
         self.list_sub.clear()
-
+        
         if self._sub_scanner:
             self._sub_scanner.abort()
             self._sub_scanner.wait()
@@ -991,7 +999,7 @@ class MainWindow(QWidget):
                     self.list_sub.add_subfolders(subs)
                     self.list_sub.setEnabled(True)
                     logging.info(f"Populated {len(subs)} subfolders from {base.name}")
-
+                    
                     t = self.list_type.currentRow() + 1
                     if t == 3:
                         self._sub_scanner = SubfolderScanner(base)
@@ -1034,25 +1042,25 @@ class MainWindow(QWidget):
         t = self.list_type.currentRow() + 1
         if t != 2:
             return
-
+            
         for c in self.char_model.items:
             folder_name = Path(c.path).name
-
+            
             try:
                 birthday = datetime.fromisoformat(c.birthday_iso)
             except Exception:
                 birthday = datetime(1970, 1, 1)
-
+                
             birthday_fix = "" if not birthday or birthday.year == 1970 else f" · {birthday.strftime('%Y-%m-%d')}"
             num_char = f" · {c.num:02d}" if c.num != 0 else ""
             alter_sh = f"/{c.alter}" if c.name != '_' else ""
             line2 = f"{c.year}{num_char} · {c.name if c.name != '_' else c.alter}{alter_sh}{birthday_fix}"
-
+            
             real_age = f"{c.age_str} | " if c.age_str else ""
             distance = "" if c.origin_age == 0 else f"d: {(c.year - 2003) - c.origin_age} | "
-            oring_age_fix = "" if c.origin_age == 0 else f"a: {c.origin_age} | "
+            oring_age_fix = "" if c.origin_age == 0 else f"a: {c.origin_age} | "       
             line3 = f"{real_age}{distance}{oring_age_fix}Files: {c.file_count} | {c.size_mb_str}"
-
+            
             self.list_sub.update_button(folder_name, line2, line3)
 
     def _update_name_completer(self):
@@ -1062,7 +1070,7 @@ class MainWindow(QWidget):
             self.rename_input.setCompleter(None)
             self.name_completer = None
             return
-
+        
         try:
             item_year = self.list_year.currentItem()
             if not item_year: return
@@ -1073,12 +1081,12 @@ class MainWindow(QWidget):
 
             prefix = f"{year - 2003:02d}"
             base = None
-
+            
             # Use matching logic consistent with _populate_subs_for_year
             for child in sorted(year_dir.iterdir()):
                 if not child.is_dir():
                     continue
-
+                
                 name = child.name.lower()
                 if t == 2: # Characters
                     if (prefix in name and IMAGES_FOLDER in name) or (IMAGES_FOLDER in name):
@@ -1092,10 +1100,10 @@ class MainWindow(QWidget):
                     if (prefix in name and MUSIC_FOLDER in name) or (MUSIC_FOLDER in name):
                         base = child
                         break
-
+            
             # With buttons, there is no single "selected" subfolder for the completer
             # so we'll just use the base folder for now.
-
+            
             if base and base.exists():
                 names = [f.stem for f in base.iterdir() if f.is_file()]
                 if names:
@@ -1106,15 +1114,15 @@ class MainWindow(QWidget):
                     return
         except Exception:
             pass
-
+        
         self.rename_input.setCompleter(None)
 
     def _on_move(self):
         """Handles the standard 'Apply' action."""
         if not self.filepath: return
-
+        
         item_year = self.list_year.currentItem()
-
+        
         decision = {
             'action': 'move',
             'movement_type': self.list_type.currentRow() + 1,
@@ -1131,12 +1139,12 @@ class MainWindow(QWidget):
         Mueve el archivo a la subcarpeta especificada inmediatamente.
         """
         if not self.filepath: return
-
+        
         # Disable subfolder list while moving
         self.list_sub.setEnabled(False)
-
+        
         item_year = self.list_year.currentItem()
-
+        
         decision = {
             'action': 'move',
             'movement_type': self.list_type.currentRow() + 1,
@@ -1152,7 +1160,7 @@ class MainWindow(QWidget):
         if not self.filepath: return
         folder = QFileDialog.getExistingDirectory(self, "Select Destination Folder", str(self.filepath.parent))
         if not folder: return
-
+        
         decision = {
             'action': 'move_custom',
             'custom_dir': folder,
@@ -1167,7 +1175,7 @@ class MainWindow(QWidget):
         # Disable buttons while we transition
         self.btn_custom.setEnabled(False)
         self.btn_move.setEnabled(False)
-
+        
         src = self.filepath
         if not src: return
 
@@ -1189,12 +1197,12 @@ class MainWindow(QWidget):
 
             if same_drive:
                 logging.info(f"Same drive detected for {src.name}. Using SHFileOperation.")
-
+                
                 def fast_move():
                     try:
                         # Ensure destination directory exists
                         final_dest.parent.mkdir(parents=True, exist_ok=True)
-
+                        
                         if move_file_shfileop(src, final_dest):
                             self.state_manager.finalize_background_move(src, final_dest, src_meta)
                         else:
@@ -1203,9 +1211,9 @@ class MainWindow(QWidget):
                         logging.exception(f"Exception in background fast_move for {src}")
                     finally:
                         send_character_service_command("resume")
-
+                
                 threading.Thread(target=fast_move, daemon=True).start()
-
+                
                 self.state_manager.handover_active_file()
                 self.progress.setValue(0)
                 return
@@ -1223,15 +1231,15 @@ class MainWindow(QWidget):
             self.state_manager.discard_active_file()
             self.progress.setValue(0)
             return
-
+        
         # Create worker and thread
         worker_thread = QtCore.QThread(self)
         worker = FileMoveWorker(src, final_dest)
         worker.moveToThread(worker_thread)
-
+        
         # Keep references
         self._active_workers.add((worker, worker_thread))
-
+        
         worker_thread.started.connect(worker.run)
         # Use a local reference for progress if it's still the active file
         def update_progress(val):
@@ -1243,7 +1251,7 @@ class MainWindow(QWidget):
             send_character_service_command("resume")
             if ok:
                 # Finalize in background thread
-                threading.Thread(target=self.state_manager.finalize_background_move,
+                threading.Thread(target=self.state_manager.finalize_background_move, 
                                  args=(src, copied_path, src_meta), daemon=True).start()
             else:
                 logging.error(f"Copy failed for {src}: {msg}")
@@ -1255,19 +1263,19 @@ class MainWindow(QWidget):
         worker.finished.connect(on_finished)
         worker.finished.connect(worker.deleteLater)
         worker_thread.finished.connect(worker_thread.deleteLater)
-
+        
         def cleanup_refs():
             self._active_workers.discard((worker, worker_thread))
             # If no more files and no active workers, we can check for idle hide
             if not self._active_workers:
                 self._hide_if_idle()
-
+            
         worker_thread.finished.connect(cleanup_refs)
         worker_thread.start()
 
         # HOT-SWAP: Tell StateManager we are ready for the next file IMMEDIATELY
         self.state_manager.handover_active_file()
-
+        
         # Reset UI fields for next file (will be overwritten if another is detected)
         self.progress.setValue(0)
 
@@ -1332,11 +1340,11 @@ def start_character_service():
 
 def main():
     sys.excepthook = crash_handler
-
+    
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(ICON_PATH))
     app.setQuitOnLastWindowClosed(False)
-
+    
     try:
         # Clear previous crash report
         if CRASH_REPORT_PATH.exists():
@@ -1351,27 +1359,27 @@ def main():
         state_manager = StateManager()
         signals = AppSignals()
         state_manager.notifier = signals
-
+        
         watcher = WatcherThread(state_manager.enqueue_file)
         app.aboutToQuit.connect(watcher.stop)
         watcher.start()
-
+        
         threading.Thread(target=lambda: (flatten_downloads_root(), scan_existing_downloads(state_manager)), daemon=True).start()
 
         win = MainWindow(state_manager, signals) #noqa
-
+        
         maintenance_timer = QtCore.QTimer()
         maintenance_timer.setInterval(3000)
         maintenance_timer.timeout.connect(state_manager.maintenance_tick)
         maintenance_timer.start()
-
+        
         # Periodic rescan every 30 minutes / Reescaneo periódico cada 30 minutos
         rescan_timer = QtCore.QTimer()
         rescan_timer.setInterval(30 * 60 * 1000)
         rescan_timer.timeout.connect(lambda: threading.Thread(
             target=scan_existing_downloads, args=(state_manager,), daemon=True).start())
         rescan_timer.start()
-
+        
         # Startup
         mypath = str(Path(__file__).resolve())
         try:
