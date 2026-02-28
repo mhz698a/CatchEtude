@@ -346,6 +346,7 @@ class MainWindow(QWidget):
         self.action_panel.set_progress(0)
 
         # Sync panels
+        self.selection_panel.refresh_classification_ui()
         sel = self.selection_panel.get_selection()
         self._on_type_changed(sel['type'])
 
