@@ -121,6 +121,7 @@ class MainWindow(QWidget):
         # Selection Panel
         self.selection_panel = SelectionPanel()
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
+        self.selection_panel.subfolders_refreshed.connect(self._update_character_buttons)
         self.selection_panel.type_changed.connect(self._on_type_changed)
         self.selection_panel.year_changed.connect(self._on_year_changed)
         root.addWidget(self.selection_panel)
@@ -356,6 +357,11 @@ class MainWindow(QWidget):
         self._update_name_completer()
 
     def _on_type_changed(self, t: int):
+        if t == 2:
+            sel = self.selection_panel.get_selection()
+            if sel['year']:
+                self._on_year_changed(sel['year'])
+
         if t in (2, 3, 4, 7, 8) and not is_internal_available():
             if not self._internal_warned:
                 self._internal_warned = True
@@ -539,6 +545,10 @@ class MainWindow(QWidget):
 
         self.state_manager.handover_active_file()
         self.action_panel.set_progress(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.action_panel.load_preview()
 
     def _hide_if_idle(self):
         if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work():

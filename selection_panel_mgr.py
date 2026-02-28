@@ -20,6 +20,7 @@ class SelectionPanel(QWidget):
     Panel para seleccionar el tipo de clasificación, año y subcarpeta.
     """
     subfolder_clicked = QtCore.pyqtSignal(str)
+    subfolders_refreshed = QtCore.pyqtSignal()
     type_changed = QtCore.pyqtSignal(int)
     year_changed = QtCore.pyqtSignal(int)
 
@@ -165,6 +166,8 @@ class SelectionPanel(QWidget):
                             lambda name, ffile: self.list_sub.update_button(name, ffile)
                         )
                         self._sub_scanner.start()
+
+                    self.subfolders_refreshed.emit()
                     return
         except Exception:
             logging.exception(f"Failed to populate subfolders from {base}")
