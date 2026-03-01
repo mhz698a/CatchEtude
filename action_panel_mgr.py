@@ -13,6 +13,7 @@ from PyQt6.QtGui import QDrag, QPixmap
 
 from config import BLUR_LEVEL, ICON_PATH
 from localization import LocalizationManager
+from ui_utils_mgr import apply_secure_blur
 
 class DragLabel(QLabel):
     """
@@ -174,7 +175,7 @@ class ActionPanel(QWidget):
                 img = reader.read()
                 if not img.isNull():
                     if self._hide_secure:
-                        img = self._apply_secure_blur(img)
+                        img = apply_secure_blur(img)
                     self.preview_label.setPixmap(QtGui.QPixmap.fromImage(img))
                     return
 
@@ -182,28 +183,11 @@ class ActionPanel(QWidget):
             pixmap = provider.icon(QtCore.QFileInfo(str(p))).pixmap(64, 64)
             if self._hide_secure:
                 img = pixmap.toImage()
-                img = self._apply_secure_blur(img)
+                img = apply_secure_blur(img)
                 pixmap = QtGui.QPixmap.fromImage(img)
             self.preview_label.setPixmap(pixmap)
         except Exception:
             logging.exception("Error loading preview")
-
-    def _apply_secure_blur(self, image: QtGui.QImage) -> QtGui.QImage:
-        if image.isNull(): return image
-        blur_radius = BLUR_LEVEL 
-        small = image.scaled(image.width() // blur_radius, image.height() // blur_radius, 
-                             Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        blurred = small.scaled(image.width(), image.height(), 
-                               Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        result = QtGui.QImage(image.size(), QtGui.QImage.Format.Format_ARGB32)
-        result.fill(Qt.GlobalColor.transparent)
-        painter = QtGui.QPainter(result)
-        reveal_height = int(image.height() * 0.15)
-        blur_height = image.height() - reveal_height
-        painter.drawImage(QtCore.QRect(0, 0, image.width(), blur_height), blurred, QtCore.QRect(0, 0, image.width(), blur_height))
-        painter.drawImage(QtCore.QRect(0, blur_height, image.width(), reveal_height), image, QtCore.QRect(0, blur_height, image.width(), reveal_height))
-        painter.end()
-        return result
 
     def _toggle_preview(self, event):
         if not self.filepath: return

@@ -135,6 +135,7 @@ class MainWindow(QWidget):
 
         # Queue / Character Panel
         self.queue_panel = QueuePanel()
+        self.queue_panel.set_hide_secure(self._hide_secure)
         self.queue_panel.characters_updated.connect(self._update_character_buttons)
         root.addWidget(self.queue_panel)
         
@@ -167,6 +168,7 @@ class MainWindow(QWidget):
 
     def _on_secure_changed(self, hide_secure):
         self._hide_secure = hide_secure
+        self.queue_panel.set_hide_secure(hide_secure)
         self._save_config()
 
     def _setup_server(self):

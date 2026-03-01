@@ -22,6 +22,7 @@ class QueuePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.loc = LocalizationManager()
+        self._hide_secure = False
         self._build_ui()
 
     def _build_ui(self):
@@ -44,6 +45,11 @@ class QueuePanel(QWidget):
 
     def retranslate_ui(self):
         self.lbl_queue.setText(self.loc.get("lbl_queue"))
+
+    def set_hide_secure(self, enabled: bool):
+        self._hide_secure = enabled
+        self.queue_list_widget.itemDelegate().set_hide_secure(enabled)
+        self.queue_list_widget.viewport().update()
 
     def update_queue(self, queue_list: list[Path], active_path_str: str):
         """Updates the download queue UI list."""
