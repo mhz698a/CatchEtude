@@ -52,6 +52,15 @@ STRINGS = {
         "type_6": "6 Familiar y Tramites",
         "type_7": "7 Documentacion lineal",
         "type_8": "8 Overworld",
+        "menu_create_folder": "Crear nueva carpeta aqui",
+        "menu_rename_folder": "Renombrar esta carpeta",
+        "menu_delete_folder": "Eliminar esta carpeta vacía",
+        "dlg_create_title": "Nueva carpeta",
+        "dlg_create_label": "Nombre de la carpeta:",
+        "dlg_rename_title": "Renombrar carpeta",
+        "dlg_rename_label": "Nuevo nombre:",
+        "dlg_delete_title": "Eliminar carpeta",
+        "dlg_delete_confirm": "¿Estás seguro de que deseas eliminar esta carpeta?",
     },
     "en": {
         "btn_keep": "Keep",
@@ -96,6 +105,15 @@ STRINGS = {
         "type_6": "6 Family and Procedures",
         "type_7": "7 Linear Documentation",
         "type_8": "8 Overworld",
+        "menu_create_folder": "Create new folder here",
+        "menu_rename_folder": "Rename this folder",
+        "menu_delete_folder": "Delete this empty folder",
+        "dlg_create_title": "New folder",
+        "dlg_create_label": "Folder name:",
+        "dlg_rename_title": "Rename folder",
+        "dlg_rename_label": "New name:",
+        "dlg_delete_title": "Delete folder",
+        "dlg_delete_confirm": "Are you sure you want to delete this folder?",
     }
 }
 
