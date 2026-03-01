@@ -16,7 +16,7 @@ from typing import Optional
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QCompleter, QFileDialog,
-    QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu
+    QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, QLabel
 )
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtGui import QIcon, QAction
@@ -60,12 +60,12 @@ class PendingDialog(QtWidgets.QDialog):
         self.setStyleSheet("""
             #PendingDialog {
                 border: 5px solid #28a745;
-                background-color: white;
+                background-color: palette(window);
             }
             QLabel {
                 font-weight: bold;
                 font-size: 14px;
-                color: #333;
+                color: palette(windowtext);
             }
             QPushButton {
                 padding: 8px 16px;
