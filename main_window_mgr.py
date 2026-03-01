@@ -192,6 +192,7 @@ class MainWindow(QWidget):
         self.selection_panel = SelectionPanel()
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
         self.selection_panel.subfolders_refreshed.connect(self._update_character_buttons)
+        self.selection_panel.folder_structure_changed.connect(self._on_folder_structure_changed)
         self.selection_panel.type_changed.connect(self._on_type_changed)
         self.selection_panel.year_changed.connect(self._on_year_changed)
         root.addWidget(self.selection_panel)
@@ -461,6 +462,15 @@ class MainWindow(QWidget):
         if t == 2:
             self._pending_year = year
             self._year_load_timer.start(400)
+        self._update_name_completer()
+
+    def _on_folder_structure_changed(self):
+        sel = self.selection_panel.get_selection()
+        t = sel['type']
+        year = sel['year']
+        if t == 2 and year:
+            self._pending_year = year
+            self._year_load_timer.start(200) # Faster refresh on manual change
         self._update_name_completer()
 
     def _load_characters_for_year(self):

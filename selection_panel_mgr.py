@@ -23,6 +23,7 @@ class SelectionPanel(QWidget):
     """
     subfolder_clicked = QtCore.pyqtSignal(str)
     subfolders_refreshed = QtCore.pyqtSignal()
+    folder_structure_changed = QtCore.pyqtSignal()
     type_changed = QtCore.pyqtSignal(int)
     year_changed = QtCore.pyqtSignal(int)
 
@@ -238,6 +239,7 @@ class SelectionPanel(QWidget):
             try:
                 new_path.mkdir(parents=True, exist_ok=True)
                 self.refresh_classification_ui()
+                self.folder_structure_changed.emit()
             except Exception:
                 logging.exception(f"Failed to create folder: {new_path}")
 
@@ -251,6 +253,7 @@ class SelectionPanel(QWidget):
             try:
                 folder_path.rename(new_path)
                 self.refresh_classification_ui()
+                self.folder_structure_changed.emit()
             except Exception:
                 logging.exception(f"Failed to rename folder: {folder_path} -> {new_path}")
 
@@ -267,5 +270,6 @@ class SelectionPanel(QWidget):
                     # Fallback to shutil if recycle bin fails for some reason
                     shutil.rmtree(folder_path)
                     self.refresh_classification_ui()
+                self.folder_structure_changed.emit()
             except Exception:
                 logging.exception(f"Failed to delete folder: {folder_path}")
