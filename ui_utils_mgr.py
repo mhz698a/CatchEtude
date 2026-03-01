@@ -9,11 +9,40 @@ from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import QFileIconProvider
 from PyQt6.QtCore import Qt
 
+from config import BLUR_LEVEL
+
+def apply_secure_blur(image: QtGui.QImage) -> QtGui.QImage:
+    """
+    Applies a secure blur to the top 85% of an image.
+    Aplica un desenfoque de seguridad al 85% superior de una imagen.
+    """
+    if image.isNull(): return image
+    blur_radius = BLUR_LEVEL
+    small = image.scaled(image.width() // blur_radius, image.height() // blur_radius,
+                         Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    blurred = small.scaled(image.width(), image.height(),
+                           Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    result = QtGui.QImage(image.size(), QtGui.QImage.Format.Format_ARGB32)
+    result.fill(Qt.GlobalColor.transparent)
+    painter = QtGui.QPainter(result)
+    reveal_height = int(image.height() * 0.15)
+    blur_height = image.height() - reveal_height
+    painter.drawImage(QtCore.QRect(0, 0, image.width(), blur_height), blurred, QtCore.QRect(0, 0, image.width(), blur_height))
+    painter.drawImage(QtCore.QRect(0, blur_height, image.width(), reveal_height), image, QtCore.QRect(0, blur_height, image.width(), reveal_height))
+    painter.end()
+    return result
+
 class QueueDelegate(QtWidgets.QStyledItemDelegate):
     """Delegate for rendering the download queue with thumbnails/icons."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self._thumb_cache = {}
+        self._hide_secure = False
+
+    def set_hide_secure(self, enabled: bool):
+        if self._hide_secure != enabled:
+            self._hide_secure = enabled
+            self._thumb_cache.clear()
 
     def paint(self, painter, option, index):
         painter.save()
@@ -46,6 +75,8 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
                     reader.setScaledSize(img_size.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio))
                 img = reader.read()
                 if not img.isNull():
+                    if self._hide_secure:
+                        img = apply_secure_blur(img)
                     self._thumb_cache[path_str] = QtGui.QPixmap.fromImage(img)
                 else:
                     self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
