@@ -44,6 +44,70 @@ from action_panel_mgr import ActionPanel
 from queue_panel_mgr import QueuePanel
 from service_mgr import send_character_service_command
 
+class PendingDialog(QtWidgets.QDialog):
+    """
+    Dialog shown when the window is hidden but there are still pending files.
+    Diálogo que se muestra cuando la ventana se oculta pero aún hay archivos pendientes.
+    """
+    def __init__(self, loc_manager, on_show_clicked, parent=None):
+        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.loc = loc_manager
+        self.on_show_clicked = on_show_clicked
+        self._build_ui()
+
+    def _build_ui(self):
+        self.setObjectName("PendingDialog")
+        self.setStyleSheet("""
+            #PendingDialog {
+                border: 5px solid #28a745;
+                background-color: white;
+            }
+            QLabel {
+                font-weight: bold;
+                font-size: 14px;
+                color: #333;
+            }
+            QPushButton {
+                padding: 8px 16px;
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        self.lbl_msg = QLabel(self.loc.get("msg_pending_files"))
+        self.lbl_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.lbl_msg)
+
+        self.btn_show = QPushButton(self.loc.get("btn_show_again"))
+        self.btn_show.clicked.connect(self.on_show_clicked)
+        layout.addWidget(self.btn_show, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        self.setFixedSize(250, 150)
+
+    def retranslate_ui(self):
+        self.lbl_msg.setText(self.loc.get("msg_pending_files"))
+        self.btn_show.setText(self.loc.get("btn_show_again"))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Center on screen
+        screen = self.screen().availableGeometry()
+        self.move(
+            (screen.width() - self.width()) // 2,
+            (screen.height() - self.height()) // 2
+        )
+
+
 class MainWindow(QWidget):
     """
     Main UI window for CatchEtude.
@@ -81,6 +145,7 @@ class MainWindow(QWidget):
         self._setup_server()
         
         self._build_ui()
+        self._pending_dialog = PendingDialog(self.loc, self._bring_and_center)
         self._build_tray()
         
         configure_dwm_thumbnail_behavior(self.winId().__int__())
@@ -102,6 +167,10 @@ class MainWindow(QWidget):
         header_layout.addWidget(self.btn_delete_header)
         header_layout.addStretch()
 
+        self.btn_hide = QPushButton(self.loc.get("btn_hide"))
+        self.btn_hide.setFixedHeight(25)
+        self.btn_hide.clicked.connect(self._manual_hide)
+
         self.btn_undo = QPushButton(self.loc.get("btn_history"))
         self.btn_undo.setFixedHeight(25)
         self.btn_undo.clicked.connect(self._on_undo_clicked)
@@ -112,6 +181,7 @@ class MainWindow(QWidget):
         self.btn_lang.clicked.connect(self._on_lang_toggle)
         
         header_layout.addStretch()
+        header_layout.addWidget(self.btn_hide)
         header_layout.addWidget(self.btn_undo)
         header_layout.addWidget(self.btn_lang)
         main_vbox.addLayout(header_layout)
@@ -203,11 +273,14 @@ class MainWindow(QWidget):
 
     def retranslate_ui(self):
         self.btn_delete_header.setText(self.loc.get("btn_header_delete"))
+        self.btn_hide.setText(self.loc.get("btn_hide"))
         self.btn_undo.setText(self.loc.get("btn_history"))
         self.btn_lang.setText(self.loc.get("lang_toggle"))
         self.selection_panel.retranslate_ui()
         self.action_panel.retranslate_ui()
         self.queue_panel.retranslate_ui()
+        if hasattr(self, '_pending_dialog'):
+            self._pending_dialog.retranslate_ui()
 
     def _on_lang_toggle(self):
         self.loc.toggle_lang()
@@ -243,6 +316,11 @@ class MainWindow(QWidget):
         if reply == QtWidgets.QMessageBox.StandardButton.Yes:
             QApplication.quit()
 
+    def _manual_hide(self):
+        self.hide()
+        if self.state_manager.has_pending_work():
+            self._pending_dialog.show()
+
     def _build_tray(self):
         icon = QIcon.fromTheme("folder-downloads")
         if icon.isNull(): icon = QIcon(ICON_PATH)
@@ -251,10 +329,10 @@ class MainWindow(QWidget):
             self.tray.setToolTip(APP_NAME)
         self.tray_menu = QMenu(self)
         show_action = QAction(self.loc.get("tray_show"), self)
-        show_action.triggered.connect(self.show)
+        show_action.triggered.connect(self._bring_and_center)
         self.tray_menu.addAction(show_action)
         hide_action = QAction(self.loc.get("tray_hide"), self)
-        hide_action.triggered.connect(self.hide)
+        hide_action.triggered.connect(self._manual_hide)
         self.tray_menu.addAction(hide_action)
         rescan_action = QAction(self.loc.get("tray_rescan"), self)
         rescan_action.triggered.connect(self._rescan_downloads)
@@ -292,6 +370,8 @@ class MainWindow(QWidget):
             socket.disconnectFromServer()
 
     def _bring_and_center(self):
+        if hasattr(self, '_pending_dialog'):
+            self._pending_dialog.hide()
         self.show()
         screen = self.screen().availableGeometry()
         size = self.geometry()
@@ -556,4 +636,6 @@ class MainWindow(QWidget):
         if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work():
             self.action_panel.clear()
             self.filepath = None
+            if hasattr(self, '_pending_dialog'):
+                self._pending_dialog.hide()
             self.hide()
