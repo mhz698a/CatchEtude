@@ -79,7 +79,7 @@ class PendingDialog(QtWidgets.QDialog):
                 background-color: #218838;
             }
         """)
-
+        
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)

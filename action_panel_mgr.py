@@ -28,7 +28,7 @@ class DragLabel(QLabel):
         self.setToolTip("Arrastrar archivo / Drag file")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("border: 1px dashed #ccc; border-radius: 4px;")
-
+        
         # We'll use a standard icon for dragging
         # Using a system icon or a placeholder if ICON_PATH fails
         provider = QFileIconProvider()
@@ -54,18 +54,18 @@ class DragLabel(QLabel):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             drag = QDrag(self)
             mime_data = QMimeData()
-
+            
             # Use absolute path with backslashes for Windows
             url = QtCore.QUrl.fromLocalFile(str(self.filepath.absolute()))
             mime_data.setUrls([url])
-
+            
             drag.setMimeData(mime_data)
-
+            
             # Create a drag pixmap
             pixmap = self.pixmap().scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             drag.setPixmap(pixmap)
             drag.setHotSpot(QtCore.QPoint(pixmap.width() // 2, pixmap.height() // 2))
-
+            
             drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
             self.setCursor(Qt.CursorShape.SizeAllCursor)
 
@@ -125,7 +125,7 @@ class ActionPanel(QWidget):
         self.drag_icon = DragLabel()
         self.drag_icon.setEnabled(False)
         footer.addWidget(self.drag_icon)
-
+        
         self.hide_secure_cb = QCheckBox(self.loc.get("btn_secure"))
         self.hide_secure_cb.stateChanged.connect(self._on_hide_secure_changed)
         footer.addWidget(self.hide_secure_cb)

@@ -17,10 +17,10 @@ def apply_secure_blur(image: QtGui.QImage) -> QtGui.QImage:
     Aplica un desenfoque de seguridad al 85% superior de una imagen.
     """
     if image.isNull(): return image
-    blur_radius = BLUR_LEVEL
-    small = image.scaled(image.width() // blur_radius, image.height() // blur_radius,
+    blur_radius = BLUR_LEVEL 
+    small = image.scaled(image.width() // blur_radius, image.height() // blur_radius, 
                          Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-    blurred = small.scaled(image.width(), image.height(),
+    blurred = small.scaled(image.width(), image.height(), 
                            Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
     result = QtGui.QImage(image.size(), QtGui.QImage.Format.Format_ARGB32)
     result.fill(Qt.GlobalColor.transparent)
