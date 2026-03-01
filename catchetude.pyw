@@ -16,7 +16,7 @@ from PyQt6.QtGui import QIcon
 
 from config import (
     APP_NAME, LOG_PATH, ICON_PATH, CONFIG_PATH, DOWNLOADS
-)
+) 
 from utils import flatten_downloads_root
 from state_manager import StateManager, scan_existing_downloads
 from watcher_mgr import WatcherThread
@@ -32,18 +32,18 @@ from PyQt6 import QtCore
 def main():
     # Set exception hook for crash reporting
     sys.excepthook = crash_handler
-
+    
     # Initialize Application
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(ICON_PATH))
     app.setQuitOnLastWindowClosed(False)
-
+    
     # Ensure single instance
     mutex = ensure_single_instance() # noqa: F841
-
+    
     # Setup logging
     setup_logging(LOG_PATH)
-
+    
     try:
         # Start background services
         start_watchdog()
@@ -53,33 +53,33 @@ def main():
         state_manager = StateManager()
         signals = AppSignals()
         state_manager.notifier = signals
-
+        
         # Start Watcher
         watcher = WatcherThread(state_manager.enqueue_file)
         app.aboutToQuit.connect(watcher.stop)
         watcher.start()
-
+        
         # Initial scan and flattening
         threading.Thread(
-            target=lambda: (flatten_downloads_root(), scan_existing_downloads(state_manager)),
+            target=lambda: (flatten_downloads_root(), scan_existing_downloads(state_manager)), 
             daemon=True
         ).start()
 
         # Create Main Window
         win = MainWindow(state_manager, signals) # noqa: F841
-
+        
         # Maintenance timers
         maintenance_timer = QtCore.QTimer()
         maintenance_timer.setInterval(3000)
         maintenance_timer.timeout.connect(state_manager.maintenance_tick)
         maintenance_timer.start()
-
+        
         rescan_timer = QtCore.QTimer()
         rescan_timer.setInterval(30 * 60 * 1000)
         rescan_timer.timeout.connect(lambda: threading.Thread(
             target=scan_existing_downloads, args=(state_manager,), daemon=True).start())
         rescan_timer.start()
-
+        
         # Startup registration
         mypath = str(Path(sys.argv[0]).resolve())
         try:

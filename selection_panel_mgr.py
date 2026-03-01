@@ -33,9 +33,9 @@ class SelectionPanel(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-
+        
         top_row = QHBoxLayout()
-
+        
         # Type Column
         v_type = QVBoxLayout()
         self.lbl_type = QLabel(self.loc.get("lbl_type"))
@@ -65,7 +65,7 @@ class SelectionPanel(QWidget):
 
         for y in YEARS:
             self.list_year.addItem(str(y))
-
+        
         # Default to 2004
         idx2004 = 0
         for i in range(self.list_year.count()):
@@ -86,7 +86,7 @@ class SelectionPanel(QWidget):
         self.list_sub.setEnabled(False)
         self.list_sub.clicked.connect(self.subfolder_clicked.emit)
         v_sub.addWidget(self.list_sub)
-
+        
         layout.addLayout(top_row)
         layout.addLayout(v_sub)
 
@@ -94,7 +94,7 @@ class SelectionPanel(QWidget):
         self.lbl_type.setText(self.loc.get("lbl_type"))
         self.lbl_year.setText(self.loc.get("lbl_years"))
         self.lbl_sub.setText(self.loc.get("lbl_subfolders"))
-
+        
         curr = self.list_type.currentRow()
         self.list_type.blockSignals(True)
         self.list_type.clear()
@@ -158,7 +158,7 @@ class SelectionPanel(QWidget):
                 if subs:
                     self.list_sub.add_subfolders(subs)
                     self.list_sub.setEnabled(True)
-
+                    
                     t = self.list_type.currentRow() + 1
                     if t == 3: # Episodes
                         self._sub_scanner = SubfolderScanner(base)
@@ -166,7 +166,7 @@ class SelectionPanel(QWidget):
                             lambda name, ffile: self.list_sub.update_button(name, ffile)
                         )
                         self._sub_scanner.start()
-
+                    
                     self.subfolders_refreshed.emit()
                     return
         except Exception:
@@ -176,6 +176,6 @@ class SelectionPanel(QWidget):
 
     def update_subfolder_button(self, name, line2=None, line3=None):
         self.list_sub.update_button(name, line2, line3)
-
+        
     def set_subfolders_enabled(self, enabled):
         self.list_sub.setEnabled(enabled)

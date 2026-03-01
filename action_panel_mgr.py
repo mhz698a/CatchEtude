@@ -34,7 +34,7 @@ class ActionPanel(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-
+        
         # Preview Section
         self.preview_label = QLabel()
         self.preview_label.setFixedSize(320, 180)
@@ -129,10 +129,10 @@ class ActionPanel(QWidget):
 
     def _apply_secure_blur(self, image: QtGui.QImage) -> QtGui.QImage:
         if image.isNull(): return image
-        blur_radius = BLUR_LEVEL
-        small = image.scaled(image.width() // blur_radius, image.height() // blur_radius,
+        blur_radius = BLUR_LEVEL 
+        small = image.scaled(image.width() // blur_radius, image.height() // blur_radius, 
                              Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        blurred = small.scaled(image.width(), image.height(),
+        blurred = small.scaled(image.width(), image.height(), 
                                Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
         result = QtGui.QImage(image.size(), QtGui.QImage.Format.Format_ARGB32)
         result.fill(Qt.GlobalColor.transparent)
@@ -170,7 +170,7 @@ class ActionPanel(QWidget):
 
     def set_apply_enabled(self, enabled):
         self.btn_move.setEnabled(enabled)
-
+        
     def clear(self):
         self.filepath = None
         self.preview_label.clear()

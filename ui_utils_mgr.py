@@ -17,13 +17,13 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         painter.save()
-
+        
         path_str = index.data(Qt.ItemDataRole.UserRole)
         is_active = index.data(Qt.ItemDataRole.UserRole + 1)
         p = Path(path_str)
-
+        
         rect = option.rect
-
+        
         if is_active:
             # Highlight active file
             painter.fillRect(rect, QtGui.QColor("#e1f5fe"))
@@ -33,10 +33,10 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
             painter.setPen(option.palette.highlightedText().color())
         else:
             painter.setPen(option.palette.text().color())
-
+            
         # Draw icon/thumbnail
         icon_rect = QtCore.QRect(rect.left() + 5, rect.top() + 5, 40, 40)
-
+        
         if path_str not in self._thumb_cache:
             if p.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}:
                 reader = QtGui.QImageReader(path_str)
@@ -51,7 +51,7 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
                     self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
             else:
                 self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
-
+        
         obj = self._thumb_cache[path_str]
         if isinstance(obj, QtGui.QPixmap):
             # Center pixmap in icon_rect
@@ -60,11 +60,11 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
             painter.drawPixmap(pix_rect.topLeft(), obj)
         else:
             obj.paint(painter, icon_rect)
-
+        
         # Draw text
         text_rect = rect.adjusted(55, 0, -5, 0)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, p.name)
-
+        
         painter.restore()
 
     def sizeHint(self, option, index):

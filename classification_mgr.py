@@ -25,7 +25,7 @@ class SubfolderScanner(QtCore.QThread):
         try:
             if not self.base_path.exists():
                 return
-
+            
             try:
                 with os.scandir(str(self.base_path)) as it:
                     subs = sorted([e.path for e in it if e.is_dir()])
@@ -35,7 +35,7 @@ class SubfolderScanner(QtCore.QThread):
             for sub_path in subs:
                 if self._abort:
                     break
-
+                
                 first_file = "---"
                 try:
                     files = []
@@ -50,7 +50,7 @@ class SubfolderScanner(QtCore.QThread):
                         first_file = files[0]
                 except Exception:
                     pass
-
+                
                 self.result_ready.emit(Path(sub_path).name, first_file)
         except Exception:
             logging.exception("Error in SubfolderScanner")
@@ -61,15 +61,15 @@ def get_base_path_for_type_year(movement_type: int, year: int) -> Path:
     if not (year_dir.exists() and year_dir.is_dir()):
         logging.warning(f"Year directory not found: {year_dir}")
         return year_dir
-
+        
     prefix = f"{year - 2003:02d}"
     base = None
-
+    
     try:
         for child in sorted(year_dir.iterdir()):
             if not child.is_dir():
                 continue
-
+            
             name = child.name.lower()
             if movement_type == 2: # Characters
                 if (prefix in name and IMAGES_FOLDER in name) or (IMAGES_FOLDER in name):
@@ -99,7 +99,7 @@ def get_base_path_for_type_year(movement_type: int, year: int) -> Path:
             base = year_dir / f"{prefix}. {OVERWORLD_FOLDER}"
         else:
             base = year_dir
-
+            
     return base
 
 def get_base_path_for_docs(movement_type: int) -> Path:

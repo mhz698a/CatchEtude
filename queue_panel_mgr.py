@@ -27,11 +27,11 @@ class QueuePanel(QWidget):
     def _build_ui(self):
         self.setFixedWidth(380)
         layout = QVBoxLayout(self)
-
+        
         # Download Queue
         self.lbl_queue = QLabel(self.loc.get("lbl_queue"))
         layout.addWidget(self.lbl_queue)
-
+        
         self.queue_list_widget = QListWidget()
         self.queue_list_widget.setItemDelegate(QueueDelegate(self))
         self.queue_list_widget.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)

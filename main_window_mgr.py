@@ -26,9 +26,9 @@ from config import (
     APP_NAME, LOG_PATH, CRASH_REPORT_PATH,
     YEARS, ICON_PATH, CONFIG_PATH, MYAPPID, DOWNLOADS,
     BASE_INTERNAL, IMAGES_FOLDER, MUSIC_FOLDER,
-)
+) 
 from utils import (
-    resolve_duplicate, flatten_downloads_root,
+    resolve_duplicate, flatten_downloads_root, 
     configure_dwm_thumbnail_behavior, is_internal_available,
     sanitize_windows_filename, is_temporary,
     is_same_drive, move_file_shfileop, delete_to_recycle_bin
@@ -54,37 +54,37 @@ class MainWindow(QWidget):
         self.state_manager = state_manager
         self.signals = signals
         self.loc = LocalizationManager()
-
+        
         self._active_workers = set()
-
+        
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
         self.signals.queue_updated.connect(self._on_queue_updated)
-
+        
         self.setWindowTitle(APP_NAME)
-
+        
         flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint
         flags |= QtCore.Qt.WindowType.Tool
         self.setWindowFlags(flags)
         self.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
-
+        
         self.base_width = 820
         self.base_height = 580
         self.setMinimumSize(self.base_width, self.base_height)
-
+        
         self._internal_warned = False
         self.filepath: Optional[Path] = None
         self._internal_available_at_start = is_internal_available()
         self._hide_secure = False
         self._load_config()
-
+        
         self._setup_server()
-
+        
         self._build_ui()
         self._build_tray()
-
+        
         configure_dwm_thumbnail_behavior(self.winId().__int__())
-
+        
         self._year_load_timer = QtCore.QTimer(self)
         self._year_load_timer.setSingleShot(True)
         self._year_load_timer.timeout.connect(self._load_characters_for_year)
@@ -93,7 +93,7 @@ class MainWindow(QWidget):
 
     def _build_ui(self):
         main_vbox = QVBoxLayout(self)
-
+        
         # Header Row
         header_layout = QHBoxLayout()
         self.btn_delete_header = QPushButton(self.loc.get("btn_header_delete"))
@@ -105,19 +105,19 @@ class MainWindow(QWidget):
         self.btn_undo = QPushButton(self.loc.get("btn_history"))
         self.btn_undo.setFixedHeight(25)
         self.btn_undo.clicked.connect(self._on_undo_clicked)
-
+        
         self.btn_lang = QPushButton(self.loc.get("lang_toggle"))
         self.btn_lang.setFixedWidth(40)
         self.btn_lang.setFixedHeight(25)
         self.btn_lang.clicked.connect(self._on_lang_toggle)
-
+        
         header_layout.addStretch()
         header_layout.addWidget(self.btn_undo)
         header_layout.addWidget(self.btn_lang)
         main_vbox.addLayout(header_layout)
 
         root = QHBoxLayout()
-
+        
         # Selection Panel
         self.selection_panel = SelectionPanel()
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
@@ -137,10 +137,10 @@ class MainWindow(QWidget):
         self.queue_panel = QueuePanel()
         self.queue_panel.characters_updated.connect(self._update_character_buttons)
         root.addWidget(self.queue_panel)
-
+        
         main_vbox.addLayout(root)
         self.retranslate_ui()
-
+        
         # Initial size adjustment
         self.resize(self.base_width + self.queue_panel.width(), self.base_height)
 
@@ -303,7 +303,7 @@ class MainWindow(QWidget):
         pid = os.getpid()
         script_path = str(Path(sys.argv[0]).resolve())
         restart_script = str(Path(__file__).resolve().parent / "restart_app.py")
-        flags = 0x00000010
+        flags = 0x00000010 
         try:
             subprocess.Popen([sys.executable, restart_script, str(pid), script_path], creationflags=flags)
         except Exception:
@@ -345,15 +345,15 @@ class MainWindow(QWidget):
         self.filepath = p
         self.action_panel.set_file(p, self._hide_secure)
         self.action_panel.set_progress(0)
-
+        
         # Sync panels
         self.selection_panel.refresh_classification_ui()
         sel = self.selection_panel.get_selection()
         self._on_type_changed(sel['type'])
-
+        
         if not self.isVisible() and self._internal_available_at_start:
             self._bring_and_center()
-
+        
         self._update_name_completer()
 
     def _on_type_changed(self, t: int):
@@ -393,7 +393,7 @@ class MainWindow(QWidget):
     def _update_character_buttons(self):
         t = self.selection_panel.get_selection()['type']
         if t != 2: return
-
+            
         for c in self.queue_panel.get_characters():
             folder_name = Path(c.path).name
             try:
@@ -406,7 +406,7 @@ class MainWindow(QWidget):
             line2 = f"{c.year}{num_char} · {c.name if c.name != '_' else c.alter}{alter_sh}{birthday_fix}"
             real_age = f"{c.age_str} | " if c.age_str else ""
             distance = "" if c.origin_age == 0 else f"d: {(c.year - 2003) - c.origin_age} | "
-            oring_age_fix = "" if c.origin_age == 0 else f"a: {c.origin_age} | "
+            oring_age_fix = "" if c.origin_age == 0 else f"a: {c.origin_age} | "       
             line3 = f"{real_age}{distance}{oring_age_fix}Files: {c.file_count} | {c.size_mb_str}"
             self.selection_panel.update_subfolder_button(folder_name, line2, line3)
 
@@ -416,7 +416,7 @@ class MainWindow(QWidget):
         if t not in (2, 3, 4):
             self.action_panel.rename_input.setCompleter(None)
             return
-
+        
         try:
             year = sel['year']
             if not year: return
@@ -436,7 +436,7 @@ class MainWindow(QWidget):
                 elif t == 4: # Music
                     if (prefix in name and MUSIC_FOLDER in name) or (MUSIC_FOLDER in name):
                         base = child; break
-
+            
             if base and base.exists():
                 names = [f.stem for f in base.iterdir() if f.is_file()]
                 if names:
@@ -491,7 +491,7 @@ class MainWindow(QWidget):
     def _start_move_task(self, decision: dict, final_dest: Path):
         self.action_panel.btn_custom.setEnabled(False)
         self.action_panel.btn_move.setEnabled(False)
-
+        
         src = self.filepath
         if not src: return
         send_character_service_command("pause")
@@ -522,7 +522,7 @@ class MainWindow(QWidget):
             self.state_manager.discard_active_file()
             self.action_panel.set_progress(0)
             return
-
+        
         worker_thread = QtCore.QThread(self)
         worker = FileMoveWorker(src, final_dest)
         worker.moveToThread(worker_thread)
@@ -533,7 +533,7 @@ class MainWindow(QWidget):
         def on_finished(ok: bool, copied_path: Path, msg: str):
             send_character_service_command("resume")
             if ok:
-                threading.Thread(target=self.state_manager.finalize_background_move,
+                threading.Thread(target=self.state_manager.finalize_background_move, 
                                  args=(src, copied_path, src_meta), daemon=True).start()
             worker_thread.quit()
 
