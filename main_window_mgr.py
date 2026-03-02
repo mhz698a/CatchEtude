@@ -50,7 +50,7 @@ class PendingDialog(QtWidgets.QDialog):
     Diálogo que se muestra cuando la ventana se oculta pero aún hay archivos pendientes.
     """
     def __init__(self, loc_manager, on_show_clicked, parent=None):
-        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.loc = loc_manager
         self.on_show_clicked = on_show_clicked
         self._build_ui()
@@ -468,7 +468,7 @@ class MainWindow(QWidget):
         sel = self.selection_panel.get_selection()
         t = sel['type']
         year = sel['year']
-        if t == 2 and year:
+        if t in (2, 3) and year:
             self._pending_year = year
             self._year_load_timer.start(200) # Faster refresh on manual change
         self._update_name_completer()

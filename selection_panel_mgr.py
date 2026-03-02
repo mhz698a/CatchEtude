@@ -217,7 +217,7 @@ class SelectionPanel(QWidget):
             self._handle_create_folder(base)
         elif action == act_rename:
             self._handle_rename_folder(target_folder)
-        elif action == act_delete and act_delete:
+        elif action == act_delete:
             self._handle_delete_folder(target_folder)
 
     def _is_folder_empty(self, path: Path) -> bool:
