@@ -468,7 +468,7 @@ class MainWindow(QWidget):
         sel = self.selection_panel.get_selection()
         t = sel['type']
         year = sel['year']
-        if t in (2, 3) and year:
+        if t == 2 and year:
             self._pending_year = year
             self._year_load_timer.start(200) # Faster refresh on manual change
         self._update_name_completer()

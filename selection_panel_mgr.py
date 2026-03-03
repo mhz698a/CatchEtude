@@ -188,7 +188,7 @@ class SelectionPanel(QWidget):
         t = self.list_type.currentRow() + 1
         item = self.list_year.currentItem()
         year = int(item.text()) if item else None
-
+        
         if t in (2, 3, 4, 8) and year:
             base = get_base_path_for_type_year(t, year)
         elif t in (5, 6):
@@ -201,10 +201,10 @@ class SelectionPanel(QWidget):
             return
 
         menu = QtWidgets.QMenu(self)
-
+        
         act_create = menu.addAction(self.loc.get("menu_create_folder"))
         act_rename = menu.addAction(self.loc.get("menu_rename_folder"))
-
+        
         # Only show delete if empty
         is_empty = self._is_folder_empty(target_folder)
         act_delete = None
@@ -212,12 +212,12 @@ class SelectionPanel(QWidget):
             act_delete = menu.addAction(self.loc.get("menu_delete_folder"))
 
         action = menu.exec(pos)
-
+        
         if action == act_create:
             self._handle_create_folder(base)
         elif action == act_rename:
             self._handle_rename_folder(target_folder)
-        elif action == act_delete:
+        elif action == act_delete and act_delete:
             self._handle_delete_folder(target_folder)
 
     def _is_folder_empty(self, path: Path) -> bool:
