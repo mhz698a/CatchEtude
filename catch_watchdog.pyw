@@ -54,6 +54,8 @@ class WatchdogService(QtCore.QObject):
                 self.log_viewer.show()
                 self.log_viewer.raise_()
                 self.log_viewer.activateWindow()
+            elif cmd == "quit":
+                QtCore.QCoreApplication.quit()
             elif cmd == "update_pid":
                 # Deprecated but kept for compatibility during transition
                 pass
@@ -63,21 +65,24 @@ class WatchdogService(QtCore.QObject):
 
     def _monitor_process(self):
         print(f"Monitoring main app via Mutex: {APP_NAME}")
+
         while True:
-            handle = None
             try:
-                # Try to open the main app mutex
                 handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
-                if not handle:
-                    # Main app is gone
+                if handle:
+                    # Use WaitForSingleObject to wait efficiently until the mutex is released (app terminates)
+                    win32event.WaitForSingleObject(handle, win32event.INFINITE)
+                    win32api.CloseHandle(handle)
+                    # Main app terminated
                     break
-                win32api.CloseHandle(handle)
+                else:
+                    # Main app not running yet, wait and try again
+                    time.sleep(1)
             except Exception:
                 # Mutex does not exist or cannot be opened, app is likely closed
                 break
-            time.sleep(2)
             
-        print("Main process terminated (Mutex gone).")
+        print("Main process terminated (Mutex signal).")
         self._handle_termination()
         # Exit service
         QtCore.QCoreApplication.quit()
@@ -109,6 +114,17 @@ def main():
     if win32api.GetLastError() == ERROR_ALREADY_EXISTS:
         # If already running, and we have a "show" arg, signal it?
         # For now, just exit.
+        return
+
+    # Detect if main service is running
+    try:
+        handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+        if not handle:
+            print("Main app not running, watchdog exiting.")
+            return
+        win32api.CloseHandle(handle)
+    except Exception:
+        print("Main app not running, watchdog exiting.")
         return
 
     service = WatchdogService()

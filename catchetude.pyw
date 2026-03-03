@@ -24,7 +24,7 @@ from app_signals_mgr import AppSignals
 from log_mgr import setup_logging
 from service_mgr import (
     ensure_single_instance, add_to_startup, crash_handler,
-    start_watchdog, start_character_service
+    start_watchdog, start_character_service, stop_parallel_services
 )
 from main_window_mgr import MainWindow
 from PyQt6 import QtCore
@@ -45,6 +45,9 @@ def main():
     setup_logging(LOG_PATH)
     
     try:
+        # Stop any lingering parallel services before starting new ones
+        stop_parallel_services()
+
         # Start background services
         start_watchdog()
         start_character_service()
@@ -90,6 +93,7 @@ def main():
         sys.exit(app.exec())
     except Exception:
         logging.exception("Unhandled exception in main")
+        crash_handler(*sys.exc_info())
 
 if __name__ == "__main__":
     main()

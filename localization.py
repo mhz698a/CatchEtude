@@ -61,6 +61,10 @@ STRINGS = {
         "dlg_rename_label": "Nuevo nombre:",
         "dlg_delete_title": "Eliminar carpeta",
         "dlg_delete_confirm": "¿Estás seguro de que deseas eliminar esta carpeta?",
+        "crash_title": "CatchEtude - Error Crítico",
+        "crash_msg": "La aplicación se ha cerrado inesperadamente.",
+        "lbl_traceback": "Detalles del error (Traceback):",
+        "btn_restart_service": "Reiniciar servicio",
     },
     "en": {
         "btn_keep": "Keep",
@@ -114,6 +118,10 @@ STRINGS = {
         "dlg_rename_label": "New name:",
         "dlg_delete_title": "Delete folder",
         "dlg_delete_confirm": "Are you sure you want to delete this folder?",
+        "crash_title": "CatchEtude - Critical Error",
+        "crash_msg": "The application closed unexpectedly.",
+        "lbl_traceback": "Error details (Traceback):",
+        "btn_restart_service": "Restart Service",
     }
 }
 
