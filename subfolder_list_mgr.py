@@ -10,6 +10,8 @@ class SubfolderButton(QtWidgets.QPushButton):
     A custom button that can display up to three lines of text with different styles.
     Botón personalizado que puede mostrar hasta tres líneas de texto con diferentes estilos.
     """
+    rightClicked = QtCore.pyqtSignal(str, QtCore.QPoint)
+
     def __init__(self, name, parent=None):
         super().__init__(parent)
         self.name = name
@@ -39,6 +41,11 @@ class SubfolderButton(QtWidgets.QPushButton):
         
         self.setFixedHeight(30)
         self.setStyleSheet("QPushButton { text-align: left; }")
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.RightButton:
+            self.rightClicked.emit(self.name, event.globalPosition().toPoint())
+        super().mousePressEvent(event)
 
     def set_data(self, line2=None, line3=None):
         """
@@ -71,6 +78,7 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
     Un widget que muestra una lista de botones, uno para cada subcarpeta.
     """
     clicked = QtCore.pyqtSignal(str)
+    rightClicked = QtCore.pyqtSignal(str, QtCore.QPoint)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -100,6 +108,7 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
             btn = SubfolderButton(name)
             # Use a lambda with a default argument to capture the current name
             btn.clicked.connect(lambda checked, n=name: self.clicked.emit(n))
+            btn.rightClicked.connect(lambda n, pos: self.rightClicked.emit(n, pos))
             self.layout.insertWidget(self.layout.count() - 1, btn)
             self._buttons[name] = btn
         

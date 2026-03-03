@@ -3,6 +3,8 @@ Selection panel component for CatchEtude.
 Componente del panel de selección para CatchEtude.
 """
 
+import os
+import shutil
 import logging
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets
@@ -12,7 +14,7 @@ from config import YEARS, ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA
 from localization import LocalizationManager
 from subfolder_list_mgr import SubfolderButtonList
 from classification_mgr import get_base_path_for_type_year, get_base_path_for_docs, SubfolderScanner
-from utils import is_internal_available
+from utils import is_internal_available, delete_to_recycle_bin
 
 class SelectionPanel(QWidget):
     """
@@ -21,6 +23,7 @@ class SelectionPanel(QWidget):
     """
     subfolder_clicked = QtCore.pyqtSignal(str)
     subfolders_refreshed = QtCore.pyqtSignal()
+    folder_structure_changed = QtCore.pyqtSignal()
     type_changed = QtCore.pyqtSignal(int)
     year_changed = QtCore.pyqtSignal(int)
 
@@ -85,6 +88,7 @@ class SelectionPanel(QWidget):
         self.list_sub = SubfolderButtonList()
         self.list_sub.setEnabled(False)
         self.list_sub.clicked.connect(self.subfolder_clicked.emit)
+        self.list_sub.rightClicked.connect(self._on_subfolder_right_clicked)
         v_sub.addWidget(self.list_sub)
         
         layout.addLayout(top_row)
@@ -179,3 +183,93 @@ class SelectionPanel(QWidget):
         
     def set_subfolders_enabled(self, enabled):
         self.list_sub.setEnabled(enabled)
+
+    def _on_subfolder_right_clicked(self, name, pos):
+        t = self.list_type.currentRow() + 1
+        item = self.list_year.currentItem()
+        year = int(item.text()) if item else None
+
+        if t in (2, 3, 4, 8) and year:
+            base = get_base_path_for_type_year(t, year)
+        elif t in (5, 6):
+            base = get_base_path_for_docs(t)
+        else:
+            return
+
+        target_folder = base / name
+        if not target_folder.exists():
+            return
+
+        menu = QtWidgets.QMenu(self)
+
+        act_create = menu.addAction(self.loc.get("menu_create_folder"))
+        act_rename = menu.addAction(self.loc.get("menu_rename_folder"))
+
+        # Only show delete if empty
+        is_empty = self._is_folder_empty(target_folder)
+        act_delete = None
+        if is_empty:
+            act_delete = menu.addAction(self.loc.get("menu_delete_folder"))
+
+        action = menu.exec(pos)
+
+        if action == act_create:
+            self._handle_create_folder(base)
+        elif action == act_rename:
+            self._handle_rename_folder(target_folder)
+        elif action == act_delete:
+            self._handle_delete_folder(target_folder)
+
+    def _is_folder_empty(self, path: Path) -> bool:
+        try:
+            with os.scandir(path) as it:
+                for entry in it:
+                    if entry.name.lower() not in ('desktop.ini', 'thumbs.db'):
+                        return False
+            return True
+        except Exception:
+            return False
+
+    def _handle_create_folder(self, base_path: Path):
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, self.loc.get("dlg_create_title"), self.loc.get("dlg_create_label")
+        )
+        if ok and name:
+            new_path = base_path / name
+            try:
+                new_path.mkdir(parents=True, exist_ok=True)
+                self.refresh_classification_ui()
+                self.folder_structure_changed.emit()
+            except Exception:
+                logging.exception(f"Failed to create folder: {new_path}")
+
+    def _handle_rename_folder(self, folder_path: Path):
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, self.loc.get("dlg_rename_title"), self.loc.get("dlg_rename_label"),
+            text=folder_path.name
+        )
+        if ok and name and name != folder_path.name:
+            new_path = folder_path.parent / name
+            try:
+                folder_path.rename(new_path)
+                self.refresh_classification_ui()
+                self.folder_structure_changed.emit()
+            except Exception:
+                logging.exception(f"Failed to rename folder: {folder_path} -> {new_path}")
+
+    def _handle_delete_folder(self, folder_path: Path):
+        res = QtWidgets.QMessageBox.question(
+            self, self.loc.get("dlg_delete_title"), self.loc.get("dlg_delete_confirm"),
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
+        )
+        if res == QtWidgets.QMessageBox.StandardButton.Yes:
+            try:
+                if delete_to_recycle_bin(folder_path):
+                    self.refresh_classification_ui()
+                else:
+                    # Fallback to shutil if recycle bin fails for some reason
+                    shutil.rmtree(folder_path)
+                    self.refresh_classification_ui()
+                self.folder_structure_changed.emit()
+            except Exception:
+                logging.exception(f"Failed to delete folder: {folder_path}")
