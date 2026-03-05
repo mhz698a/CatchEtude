@@ -80,6 +80,8 @@ class CharacterService(QtCore.QObject):
             elif cmd == "resume":
                 self.pause_event.set()
                 self._log_info("Character Service: Scanning resumed")
+            elif cmd == "quit":
+                QtCore.QCoreApplication.quit()
             elif cmd == "update_pid":
                 # Deprecated
                 pass
@@ -290,15 +292,16 @@ class CharacterService(QtCore.QObject):
 
     def _monitor_process(self):
         while True:
-            handle = None
             try:
                 handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
-                if not handle:
+                if handle:
+                    win32event.WaitForSingleObject(handle, win32event.INFINITE)
+                    win32api.CloseHandle(handle)
                     break
-                win32api.CloseHandle(handle)
+                else:
+                    time.sleep(1)
             except Exception:
                 break
-            time.sleep(2)
         
         QtCore.QCoreApplication.quit()
 
@@ -329,6 +332,17 @@ def main():
     # Mutex for single instance
     mutex = win32event.CreateMutex(None, False, SERVICE_MUTEX_NAME)
     if win32api.GetLastError() == ERROR_ALREADY_EXISTS:
+        return
+
+    # Detect if main service is running
+    try:
+        handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+        if not handle:
+            print("Main app not running, character service exiting.")
+            return
+        win32api.CloseHandle(handle)
+    except Exception:
+        print("Main app not running, character service exiting.")
         return
 
     app = QtCore.QCoreApplication(sys.argv)

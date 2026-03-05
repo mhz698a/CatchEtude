@@ -17,7 +17,9 @@ from config import APP_NAME, ERROR_ALREADY_EXISTS, CRASH_REPORT_PATH
 
 def ensure_single_instance():
     """Ensures only one instance of the application is running."""
-    mutex = win32event.CreateMutex(None, False, APP_NAME)
+    # Standard local mutex to avoid permission issues with Global\.
+    # bInitialOwner=True so the main app owns it and it remains non-signaled for waiters.
+    mutex = win32event.CreateMutex(None, True, APP_NAME)
     if win32api.GetLastError() == ERROR_ALREADY_EXISTS:
         print("The service is already running")
         sys.exit()
@@ -44,6 +46,31 @@ def crash_handler(etype, value, tb):
         CRASH_REPORT_PATH.write_text(err_msg, encoding='utf-8')
     except Exception:
         pass
+
+    # Launch crash dialog via os.startfile
+    try:
+        crash_dialog_script = str(Path(__file__).resolve().parent / "crash_dialog.pyw")
+        os.startfile(crash_dialog_script)
+    except Exception:
+        logging.exception("Failed to launch crash dialog")
+
+def stop_parallel_services():
+    """Sends a quit command to parallel services via IPC."""
+    # Stop Watchdog
+    socket = QLocalSocket()
+    socket.connectToServer("CatchEtudeLogServer")
+    if socket.waitForConnected(200):
+        socket.write(json.dumps({"cmd": "quit"}).encode('utf-8'))
+        socket.waitForBytesWritten(200)
+        socket.disconnectFromServer()
+
+    # Stop Character Service
+    socket = QLocalSocket()
+    socket.connectToServer("CatchEtudeCharacterServer")
+    if socket.waitForConnected(200):
+        socket.write(json.dumps({"cmd": "quit"}).encode('utf-8'))
+        socket.waitForBytesWritten(200)
+        socket.disconnectFromServer()
 
 def start_watchdog():
     """Starts the parallel watchdog service using os.startfile."""
