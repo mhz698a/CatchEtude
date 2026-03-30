@@ -49,3 +49,9 @@ class HistoryManager:
         entry = self.history.pop()
         self._save_history()
         return entry
+
+    def get_last_move(self) -> Optional[Dict]:
+        """Returns the last move operation without removing it."""
+        if not self.history:
+            return None
+        return self.history[-1]
