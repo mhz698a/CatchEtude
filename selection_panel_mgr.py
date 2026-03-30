@@ -202,6 +202,8 @@ class SelectionPanel(QWidget):
 
         menu = QtWidgets.QMenu(self)
         
+        act_open = menu.addAction(self.loc.get("menu_open_folder"))
+        menu.addSeparator()
         act_create = menu.addAction(self.loc.get("menu_create_folder"))
         act_rename = menu.addAction(self.loc.get("menu_rename_folder"))
         
@@ -213,7 +215,9 @@ class SelectionPanel(QWidget):
 
         action = menu.exec(pos)
         
-        if action == act_create:
+        if action == act_open:
+            os.startfile(target_folder)
+        elif action == act_create:
             self._handle_create_folder(base)
         elif action == act_rename:
             self._handle_rename_folder(target_folder)

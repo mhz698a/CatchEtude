@@ -305,6 +305,8 @@ class MainWindow(QWidget):
         try:
             if not self.state_manager.undo_last_move():
                 QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
+            else:
+                self._build_tray()
         finally:
             send_character_service_command("resume")
 
@@ -344,6 +346,16 @@ class MainWindow(QWidget):
         run_pendings_action = QAction(self.loc.get("tray_run_pendings"), self)
         run_pendings_action.triggered.connect(self._run_pendings)
         self.tray_menu.addAction(run_pendings_action)
+
+        open_last_action = QAction(self.loc.get("tray_open_last"), self)
+        last_move = self.state_manager._history.get_last_move()
+        if last_move:
+            dest_dir = Path(last_move["dst"]).parent
+            open_last_action.setEnabled(dest_dir.exists())
+            open_last_action.triggered.connect(lambda: os.startfile(dest_dir))
+        else:
+            open_last_action.setEnabled(False)
+        self.tray_menu.addAction(open_last_action)
         undo_action = QAction(self.loc.get("tray_undo"), self)
         undo_action.triggered.connect(self._on_undo_clicked)
         self.tray_menu.addAction(undo_action)
@@ -607,6 +619,7 @@ class MainWindow(QWidget):
                 threading.Thread(target=fast_move, daemon=True).start()
                 self.state_manager.handover_active_file()
                 self.action_panel.set_progress(0)
+                self._build_tray()
                 return
         except Exception:
             logging.exception(f"Error in _start_move_task for {src}")
@@ -627,6 +640,7 @@ class MainWindow(QWidget):
             if ok:
                 threading.Thread(target=self.state_manager.finalize_background_move, 
                                  args=(src, copied_path, src_meta), daemon=True).start()
+                self._build_tray()
             worker_thread.quit()
 
         worker.finished.connect(on_finished)
