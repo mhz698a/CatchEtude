@@ -16,7 +16,7 @@ from typing import Optional
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QCompleter, QFileDialog,
-    QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, QLabel
+    QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, QLabel, QMessageBox, QStatusBar
 )
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtGui import QIcon, QAction
@@ -124,6 +124,7 @@ class MainWindow(QWidget):
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
         self.signals.queue_updated.connect(self._on_queue_updated)
+        self.signals.warning_message.connect(self.show_status)
         
         self.setWindowTitle(APP_NAME)
         
@@ -186,6 +187,7 @@ class MainWindow(QWidget):
         header_layout.addWidget(self.btn_lang)
         main_vbox.addLayout(header_layout)
 
+        # CENTRO
         root = QHBoxLayout()
         
         # Selection Panel
@@ -210,12 +212,27 @@ class MainWindow(QWidget):
         self.queue_panel.characters_updated.connect(self._update_character_buttons)
         root.addWidget(self.queue_panel)
         
-        main_vbox.addLayout(root)
+        main_vbox.addLayout(root, 1)
+
+        self.status_bar = QStatusBar()
+        self.status_bar.setSizeGripEnabled(False)
+        main_vbox.addWidget(self.status_bar)
+        self.status_bar.showMessage("Listo", 2000) 
+        self.status_bar.setStyleSheet("""
+            QStatusBar {
+                border-top: 1px solid #444;
+                padding-left: 6px;
+            }
+        """)
+        
         self.retranslate_ui()
         
         # Initial size adjustment
         self.resize(self.base_width + self.queue_panel.width(), self.base_height)
 
+    def show_status(self, text: str, ms: int = 5000):
+        self.status_bar.showMessage(text, ms)
+    
     def _load_config(self):
         try:
             if CONFIG_PATH.exists():
@@ -346,16 +363,13 @@ class MainWindow(QWidget):
         run_pendings_action = QAction(self.loc.get("tray_run_pendings"), self)
         run_pendings_action.triggered.connect(self._run_pendings)
         self.tray_menu.addAction(run_pendings_action)
-
-        open_last_action = QAction(self.loc.get("tray_open_last"), self)
+        
+        open_last_action = QAction(self.loc.get("tray_open_last"), self)        
         last_move = self.state_manager._history.get_last_move()
-        if last_move:
-            dest_dir = Path(last_move["dst"]).parent
-            open_last_action.setEnabled(dest_dir.exists())
-            open_last_action.triggered.connect(lambda: os.startfile(dest_dir))
-        else:
-            open_last_action.setEnabled(False)
+        open_last_action.setEnabled(bool(last_move))
+        open_last_action.triggered.connect(self._open_last_chosen)
         self.tray_menu.addAction(open_last_action)
+        
         undo_action = QAction(self.loc.get("tray_undo"), self)
         undo_action.triggered.connect(self._on_undo_clicked)
         self.tray_menu.addAction(undo_action)
@@ -372,6 +386,18 @@ class MainWindow(QWidget):
         quit_action.triggered.connect(self._on_exit_clicked)
         self.tray.setContextMenu(self.tray_menu)
         self.tray.show()
+
+    def _open_last_chosen(self):
+        last_move = self.state_manager._history.get_last_move()
+        if not last_move:
+            return
+
+        dest_dir = Path(last_move["dst"]).parent
+        if dest_dir.exists():
+            os.startfile(dest_dir)
+            
+    def _show_warning_message(self, text):
+        QMessageBox.warning(self, "Aviso", text)
 
     def _show_logs(self):
         socket = QLocalSocket()

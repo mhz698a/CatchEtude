@@ -12,6 +12,7 @@ import win32event
 import win32api
 from pathlib import Path
 from PyQt6.QtNetwork import QLocalSocket
+from PyQt6.QtWidgets import QMessageBox
 
 from config import APP_NAME, ERROR_ALREADY_EXISTS, CRASH_REPORT_PATH
 
@@ -22,6 +23,12 @@ def ensure_single_instance():
     mutex = win32event.CreateMutex(None, True, APP_NAME)
     if win32api.GetLastError() == ERROR_ALREADY_EXISTS:
         print("The service is already running")
+        QMessageBox.warning(
+            None,
+            APP_NAME,
+            "CatchEtude ya está abierta.\n\n"
+            "Usa la ventana existente o el icono de la bandeja."
+        )
         sys.exit()
     return mutex
 
@@ -46,7 +53,7 @@ def crash_handler(etype, value, tb):
         CRASH_REPORT_PATH.write_text(err_msg, encoding='utf-8')
     except Exception:
         pass
-
+    
     # Launch crash dialog via os.startfile
     try:
         crash_dialog_script = str(Path(__file__).resolve().parent / "crash_dialog.pyw")
@@ -63,7 +70,7 @@ def stop_parallel_services():
         socket.write(json.dumps({"cmd": "quit"}).encode('utf-8'))
         socket.waitForBytesWritten(200)
         socket.disconnectFromServer()
-
+    
     # Stop Character Service
     socket = QLocalSocket()
     socket.connectToServer("CatchEtudeCharacterServer")

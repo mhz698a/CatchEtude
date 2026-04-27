@@ -39,7 +39,7 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     
     # Ensure single instance
-    mutex = ensure_single_instance() # noqa: F841
+    mutex = ensure_single_instance()
     
     # Setup logging
     setup_logging(LOG_PATH)
@@ -47,7 +47,7 @@ def main():
     try:
         # Stop any lingering parallel services before starting new ones
         stop_parallel_services()
-
+        
         # Start background services
         start_watchdog()
         start_character_service()
@@ -69,7 +69,7 @@ def main():
         ).start()
 
         # Create Main Window
-        win = MainWindow(state_manager, signals) # noqa: F841
+        win = MainWindow(state_manager, signals)
         
         # Maintenance timers
         maintenance_timer = QtCore.QTimer()

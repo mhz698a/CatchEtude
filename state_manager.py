@@ -253,19 +253,34 @@ class StateManager:
             sub: str o None
             new_name: str (sin extensión)
         """
+        
         if self.current_state() != State.USER_DECIDING:
             logging.error("apply_decision llamado fuera de USER_DECIDING")
             return False
 
-        self._set_state(State.APPLY_DECISION)
+        
         p: Path = self._active_file
 
-        if p is None or not p.exists():
-            logging.error("Archivo activo faltante en apply_decision")
-            self._set_state(State.RESUME_WATCHER)
-            self._set_state(State.IDLE)
-            return False
+        # if p is None or not p.exists():
+        #     logging.error("Archivo activo faltante en apply_decision")
+        #     self._set_state(State.RESUME_WATCHER)
+        #     self._set_state(State.IDLE)
+        #     return False
+        
+        if p is None:
+            logging.warning("No hay archivo activo para decidir")
+            self._skip_missing_active_file("No hay archivo activo para decidir; se omite.")
+            return True
 
+        if not p.exists():
+            logging.warning(f"Archivo faltante omitido: {p}")
+            self._skip_missing_active_file(f"Archivo faltante omitido: {p.name}")
+            self.notifier.warning_message.emit(
+                f"Archivo no encontrado, omitido: {p.name}"
+            )
+            return True
+
+        self._set_state(State.APPLY_DECISION)
         try:
             # Obtener timestamp de creación según plataforma
             stat = p.stat()
@@ -455,6 +470,26 @@ class StateManager:
             with self._lock:
                 self._is_scanning = False
 
+    def _skip_missing_active_file(self, reason: str = ""):
+        p = self._active_file
+
+        if p is not None:
+            with self._lock:
+                self._pending.discard(p)
+                if p in self._queue_list:
+                    self._queue_list.remove(p)
+                self._active_file = None
+                self._emit_queue_update()
+
+        if self.notifier and reason:
+            # después de agregar la señal warning_message
+            self.notifier.warning_message.emit(reason)
+
+        self._set_state(State.RESUME_WATCHER)
+        self._set_state(State.IDLE)
+        self._enqueue_allowed.set()
+        if not self._pending and self.notifier:
+            self.notifier.queue_empty.emit()
 
 def scan_existing_downloads(state_manager: StateManager):
     try:

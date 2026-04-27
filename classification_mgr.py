@@ -47,11 +47,11 @@ class SubfolderScanner(QtCore.QThread):
                                     files.append(entry.name)
                     if files:
                         files.sort()
-                        first_file = files[0]
+                        last_file = files[-1] # Show first or last file
                 except Exception:
                     pass
                 
-                self.result_ready.emit(Path(sub_path).name, first_file)
+                self.result_ready.emit(Path(sub_path).name, last_file)
         except Exception:
             logging.exception("Error in SubfolderScanner")
 
