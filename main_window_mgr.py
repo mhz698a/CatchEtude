@@ -126,6 +126,7 @@ class MainWindow(QWidget):
         self.signals.queue_updated.connect(self._on_queue_updated)
         self.signals.warning_message.connect(self.show_status)
         
+        
         self.setWindowTitle(APP_NAME)
         
         flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint
@@ -204,6 +205,7 @@ class MainWindow(QWidget):
         self.action_panel.apply_clicked.connect(self._on_move)
         self.action_panel.apply_custom_clicked.connect(self._on_apply_custom)
         self.action_panel.secure_changed.connect(self._on_secure_changed)
+        self.action_panel.keep_changed.connect(self._on_keep_changed)
         root.addWidget(self.action_panel)
 
         # Queue / Character Panel
@@ -472,6 +474,9 @@ class MainWindow(QWidget):
         sel = self.selection_panel.get_selection()
         self._on_type_changed(sel['type'])
         
+        self.selection_panel.set_keep_mode(self.action_panel.is_keep_downloads())
+        self._sync_apply_button()
+        
         if not self.isVisible() and self._internal_available_at_start:
             self._bring_and_center()
         
@@ -492,8 +497,18 @@ class MainWindow(QWidget):
             self.selection_panel.list_year.setEnabled(False)
             return
 
-        self.action_panel.set_apply_enabled(t not in (2, 3, 4, 6, 8))
+        # self.action_panel.set_apply_enabled(t not in (2, 3, 4, 6, 8))
+        self._sync_apply_button()
         self._update_name_completer()
+
+    def _sync_apply_button(self):
+        t = self.selection_panel.get_selection()["type"]
+        keep = self.action_panel.is_keep_downloads()
+        self.action_panel.set_apply_enabled(keep or t not in (2, 3, 4, 6, 8))
+
+    def _on_keep_changed(self, checked: bool):
+        self.selection_panel.set_keep_mode(checked)
+        self._sync_apply_button()
 
     def _on_year_changed(self, year: int):
         t = self.selection_panel.get_selection()['type']
@@ -579,7 +594,13 @@ class MainWindow(QWidget):
         self.action_panel.rename_input.setCompleter(None)
 
     def _on_move(self):
-        if not self.filepath: return
+        if not self.filepath: 
+            return
+        
+        if self.action_panel.is_keep_downloads():
+            self.state_manager.discard_active_file()
+            return
+            
         sel = self.selection_panel.get_selection()
         decision = {
             'action': 'move',

@@ -79,6 +79,7 @@ class ActionPanel(QWidget):
     apply_custom_clicked = QtCore.pyqtSignal()
     delete_clicked = QtCore.pyqtSignal()
     secure_changed = QtCore.pyqtSignal(bool)
+    keep_changed = QtCore.pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -121,24 +122,44 @@ class ActionPanel(QWidget):
         layout.addWidget(self.progress)
 
         # Buttons
-        footer = QHBoxLayout()
+        footer = QVBoxLayout()
+        footer.setSpacing(6)                        
+                                
+        top_row = QHBoxLayout()
+        top_row.setSpacing(10)     
+                
         self.drag_icon = DragLabel()
         self.drag_icon.setEnabled(False)
-        footer.addWidget(self.drag_icon)
+        top_row.addWidget(self.drag_icon)
         
         self.hide_secure_cb = QCheckBox(self.loc.get("btn_secure"))
         self.hide_secure_cb.stateChanged.connect(self._on_hide_secure_changed)
-        footer.addWidget(self.hide_secure_cb)
+        top_row.addWidget(self.hide_secure_cb)
+        
+        self.keep_downloads_cb = QCheckBox(self.loc.get("keep in downloads"))
+        self.keep_downloads_cb.toggled.connect(self._on_keep_downloads_changed)
+        top_row.addWidget(self.keep_downloads_cb)
+        
+        top_row.addStretch()
+        footer.addLayout(top_row)
+        
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(8)
 
         self.btn_custom = QPushButton(self.loc.get("btn_apply_custom"))
         self.btn_custom.setFixedHeight(30)
+        self.btn_custom.setFixedWidth(145)
         self.btn_custom.clicked.connect(self.apply_custom_clicked.emit)
-        footer.addWidget(self.btn_custom)
+        buttons_row.addWidget(self.btn_custom)
 
         self.btn_move = QPushButton(self.loc.get("btn_apply"))
         self.btn_move.setFixedHeight(30)
+        self.btn_move.setFixedWidth(145)
         self.btn_move.clicked.connect(self.apply_clicked.emit)
-        footer.addWidget(self.btn_move)
+        buttons_row.addWidget(self.btn_move)
+        
+        # buttons_row.addStretch() # para centrar los botones quitamos esto
+        footer.addLayout(buttons_row)
 
         self.btn_custom.setEnabled(False)
         self.btn_move.setEnabled(False)
@@ -148,8 +169,11 @@ class ActionPanel(QWidget):
         self.btn_open.setText(self.loc.get("btn_open"))
         self.lbl_name.setText(self.loc.get("lbl_new_name"))
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
+        self.keep_downloads_cb.setText(self.loc.get("keep_in_downloads"))
         self.btn_custom.setText(self.loc.get("btn_apply_custom"))
-        self.btn_move.setText(self.loc.get("btn_apply"))
+        self.btn_move.setText(
+            self.loc.get("btn_keep") if self.keep_downloads_cb.isChecked() else self.loc.get("btn_apply")
+        )
 
     def set_file(self, p: Path, hide_secure: bool):
         self.filepath = p
@@ -222,3 +246,10 @@ class ActionPanel(QWidget):
         self.rename_input.setText("")
         self.progress.setValue(0)
         self.drag_icon.set_file(None)
+
+    def _on_keep_downloads_changed(self, checked: bool):
+        self.btn_move.setText(self.loc.get("btn_keep") if checked else self.loc.get("btn_apply"))
+        self.keep_changed.emit(checked)
+
+    def is_keep_downloads(self) -> bool:
+        return self.keep_downloads_cb.isChecked()

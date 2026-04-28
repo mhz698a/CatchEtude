@@ -43,9 +43,11 @@ class SelectionPanel(QWidget):
         v_type = QVBoxLayout()
         self.lbl_type = QLabel(self.loc.get("lbl_type"))
         v_type.addWidget(self.lbl_type)
+        
         self.list_type = QListWidget()
-        self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(1, 9)])
+        self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(2, 9)])
         self.list_type.currentRowChanged.connect(self._on_type_changed)
+        
         v_type.addWidget(self.list_type)
         top_row.addLayout(v_type)
 
@@ -61,6 +63,7 @@ class SelectionPanel(QWidget):
         self.list_year.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
         self.list_year.setGridSize(QtCore.QSize(60, 28))
         self.list_year.setSpacing(2)
+        
         self.list_year.setStyleSheet("""
             QListWidget::item { border-radius: 4px; }
             QListWidget::item:selected { background-color: #0078d7; color: white; }
@@ -102,12 +105,16 @@ class SelectionPanel(QWidget):
         curr = self.list_type.currentRow()
         self.list_type.blockSignals(True)
         self.list_type.clear()
-        self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(1, 9)])
-        self.list_type.setCurrentRow(curr)
+        self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(2, 9)])
+        if 0 <= curr < self.list_type.count():
+            self.list_type.setCurrentRow(curr)
+        else:
+            self.list_type.setCurrentRow(0)
+        # self.list_type.setCurrentRow(curr)
         self.list_type.blockSignals(False)
 
     def _on_type_changed(self, idx):
-        self.type_changed.emit(idx + 1)
+        self.type_changed.emit(idx + 2)
         self.refresh_classification_ui()
 
     def _on_year_changed(self, idx):
@@ -120,12 +127,12 @@ class SelectionPanel(QWidget):
     def get_selection(self):
         item_year = self.list_year.currentItem()
         return {
-            'type': self.list_type.currentRow() + 1,
+            'type': self.list_type.currentRow() + 2,
             'year': int(item_year.text()) if item_year else None
         }
 
     def refresh_classification_ui(self):
-        t = self.list_type.currentRow() + 1
+        t = self.list_type.currentRow() + 2
         if t in (2, 3, 4, 8):
             item = self.list_year.currentItem()
             if item:
@@ -152,7 +159,7 @@ class SelectionPanel(QWidget):
             self._sub_scanner.wait()
             self._sub_scanner = None
 
-        if not is_internal_available() and (self.list_type.currentRow() + 1) in (2, 3, 4, 7, 8):
+        if not is_internal_available() and (self.list_type.currentRow() + 2) in (2, 3, 4, 7, 8):
             self.list_sub.setEnabled(False)
             return
 
@@ -277,3 +284,12 @@ class SelectionPanel(QWidget):
                 self.folder_structure_changed.emit()
             except Exception:
                 logging.exception(f"Failed to delete folder: {folder_path}")
+
+    def set_keep_mode(self, enabled: bool):
+        self.list_type.setEnabled(not enabled)
+        if enabled:
+            self.list_year.setEnabled(False)
+            self.list_sub.setEnabled(False)
+        else:
+            self.refresh_classification_ui()
+

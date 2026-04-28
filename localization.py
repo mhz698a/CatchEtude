@@ -45,7 +45,7 @@ STRINGS = {
         "btn_hide": "Ocultar",
         "msg_pending_files": "Hay archivos pendientes",
         "btn_show_again": "Mostrar de nuevo",
-        "type_1": "1 Mantener en descargas",
+        # "type_1": "1 Mantener en descargas",
         "type_2": "2 Personajes y Screenshots",
         "type_3": "3 Episodios",
         "type_4": "4 Musica",
@@ -67,6 +67,9 @@ STRINGS = {
         "crash_msg": "La aplicación se ha cerrado inesperadamente.",
         "lbl_traceback": "Detalles del error (Traceback):",
         "btn_restart_service": "Reiniciar servicio",
+        "keep_in_downloads": "Mantener en descargas",
+        "btn_keep": "Mantener",
+
     },
     "en": {
         "btn_keep": "Keep",
@@ -104,7 +107,7 @@ STRINGS = {
         "btn_hide": "Hide",
         "msg_pending_files": "There are pending files",
         "btn_show_again": "Show Again",
-        "type_1": "1 Keep in downloads",
+        # "type_1": "1 Keep in downloads",
         "type_2": "2 Characters and Screenshots",
         "type_3": "3 Episodes",
         "type_4": "4 Music",
@@ -126,6 +129,8 @@ STRINGS = {
         "crash_msg": "The application closed unexpectedly.",
         "lbl_traceback": "Error details (Traceback):",
         "btn_restart_service": "Restart Service",
+        "keep_in_downloads": "Keep in downloads",
+        "btn_keep": "Keep",
     }
 }
 
