@@ -37,6 +37,9 @@ class SelectionPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
+        # ==========================
+        # Fila de Desicion y Años
+        # ==========================
         top_row = QHBoxLayout()
         
         # Type Column
@@ -83,6 +86,10 @@ class SelectionPanel(QWidget):
         self.list_year.setEnabled(False)
         v_year.addWidget(self.list_year)
         top_row.addLayout(v_year)
+        
+        # ==========================
+        # Fila de las subcarpetas
+        # ==========================
 
         # Subfolder Column
         v_sub = QVBoxLayout()

@@ -126,7 +126,6 @@ class MainWindow(QWidget):
         self.signals.queue_updated.connect(self._on_queue_updated)
         self.signals.warning_message.connect(self.show_status)
         
-        
         self.setWindowTitle(APP_NAME)
         
         flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint

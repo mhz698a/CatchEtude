@@ -46,21 +46,37 @@ def main():
     
     try:
         # Stop any lingering parallel services before starting new ones
-        stop_parallel_services()
-        
+        stop_parallel_services(timeout=10.0)
+
         # Start background services
         start_watchdog()
         start_character_service()
-
+        
         # Initialize State and Signals
         state_manager = StateManager()
         signals = AppSignals()
         state_manager.notifier = signals
         
-        # Start Watcher
+        # # Start Watcher
+        # watcher = WatcherThread(state_manager.enqueue_file)
+        # app.aboutToQuit.connect(watcher.stop)
+        # watcher.start()
+        
         watcher = WatcherThread(state_manager.enqueue_file)
-        app.aboutToQuit.connect(watcher.stop)
         watcher.start()
+
+        def _cleanup_services():
+            try:
+                stop_parallel_services(timeout=10.0)
+            except Exception:
+                logging.exception("Failed to stop parallel services during shutdown")
+            try:
+                watcher.stop()
+            except Exception:
+                logging.exception("Failed to stop watcher")
+
+        app.aboutToQuit.connect(_cleanup_services)
+        
         
         # Initial scan and flattening
         threading.Thread(

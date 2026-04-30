@@ -37,6 +37,11 @@ class WatchdogService(QtCore.QObject):
         self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
         self.monitor_thread.start()
 
+        self._closing = False
+        app = QtCore.QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._cleanup)
+
     def _on_new_connection(self):
         socket = self.server.nextPendingConnection()
         socket.readyRead.connect(lambda: self._read_socket(socket))
@@ -55,6 +60,7 @@ class WatchdogService(QtCore.QObject):
                 self.log_viewer.raise_()
                 self.log_viewer.activateWindow()
             elif cmd == "quit":
+                self._cleanup()
                 QtCore.QCoreApplication.quit()
             elif cmd == "update_pid":
                 # Deprecated but kept for compatibility during transition
@@ -65,7 +71,7 @@ class WatchdogService(QtCore.QObject):
 
     def _monitor_process(self):
         print(f"Monitoring main app via Mutex: {APP_NAME}")
-
+        
         while True:
             try:
                 handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
@@ -85,6 +91,7 @@ class WatchdogService(QtCore.QObject):
         print("Main process terminated (Mutex signal).")
         self._handle_termination()
         # Exit service
+        self._cleanup()
         QtCore.QCoreApplication.quit()
 
     def _handle_termination(self):
@@ -96,6 +103,20 @@ class WatchdogService(QtCore.QObject):
                 QtCore.QMetaObject.invokeMethod(self.log_viewer, "show", QtCore.Qt.ConnectionType.QueuedConnection)
             except Exception as e:
                 print(f"Error reading crash report: {e}")
+
+    def _cleanup(self):
+        if self._closing:
+            return
+        self._closing = True
+        try:
+            if self.server.isListening():
+                self.server.close()
+        except Exception:
+            pass
+        try:
+            QtNetwork.QLocalServer.removeServer(LOG_SERVER_NAME)
+        except Exception:
+            pass
 
 def main():
     # Set AppUserModelID for Windows Taskbar icon grouping
@@ -115,7 +136,7 @@ def main():
         # If already running, and we have a "show" arg, signal it?
         # For now, just exit.
         return
-
+    
     # Detect if main service is running
     try:
         handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)

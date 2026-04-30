@@ -48,6 +48,11 @@ class CharacterService(QtCore.QObject):
         self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
         self.monitor_thread.start()
 
+        self._closing = False
+        app = QtCore.QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._cleanup)
+
     def _log_to_watchdog(self, level, message):
         socket = QtNetwork.QLocalSocket()
         socket.connectToServer(WATCHDOG_SERVER_NAME)
@@ -81,6 +86,7 @@ class CharacterService(QtCore.QObject):
                 self.pause_event.set()
                 self._log_info("Character Service: Scanning resumed")
             elif cmd == "quit":
+                self._cleanup()
                 QtCore.QCoreApplication.quit()
             elif cmd == "update_pid":
                 # Deprecated
@@ -303,7 +309,22 @@ class CharacterService(QtCore.QObject):
             except Exception:
                 break
         
+        self._cleanup()
         QtCore.QCoreApplication.quit()
+
+    def _cleanup(self):
+        if self._closing:
+            return
+        self._closing = True
+        try:
+            if self.server.isListening():
+                self.server.close()
+        except Exception:
+            pass
+        try:
+            QtNetwork.QLocalServer.removeServer(SERVER_NAME)
+        except Exception:
+            pass
 
 def crash_handler(etype, value, tb):
     err_msg = "".join(traceback.format_exception(etype, value, tb))
@@ -333,7 +354,7 @@ def main():
     mutex = win32event.CreateMutex(None, False, SERVICE_MUTEX_NAME)
     if win32api.GetLastError() == ERROR_ALREADY_EXISTS:
         return
-
+    
     # Detect if main service is running
     try:
         handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)

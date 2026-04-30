@@ -13,6 +13,7 @@ import win32event
 import win32api
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
+from service_mgr import stop_parallel_services, wait_for_services_stopped
 from config import APP_NAME, ICON_PATH, MYAPPID
 
 class RestartWindow(QtWidgets.QWidget):
@@ -72,41 +73,57 @@ class RestartWindow(QtWidgets.QWidget):
 class RestartWorker(QtCore.QThread):
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(str)
-    
+
     def __init__(self, pid, script_path):
         super().__init__()
         self.pid = pid
         self.script_path = script_path
 
+    def _wait_for_mutex_absent(self, name: str, timeout: float = 15.0) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            handle = None
+            try:
+                handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, name)
+                if handle:
+                    time.sleep(0.2)
+                    continue
+            except Exception:
+                return True
+            finally:
+                if handle:
+                    try:
+                        win32api.CloseHandle(handle)
+                    except Exception:
+                        pass
+        return False
+
     def run(self):
         try:
-            # 1. Wait for the process to exit using the Mutex
-            # We poll until we can create the mutex without it already existing
-            while True:
-                handle = win32event.CreateMutex(None, False, APP_NAME)
-                last_err = win32api.GetLastError()
-                win32api.CloseHandle(handle)
-                
-                if last_err == 0:
-                    # Successfully created without ERROR_ALREADY_EXISTS (183)
-                    # This means the previous instance is gone.
-                    break
-                
-                time.sleep(0.5)
+            # 1) Fuerza el apagado de servicios paralelos
+            stop_parallel_services(timeout=10.0)
 
-            # 2. Attempt restart
-            # Use CREATE_NEW_PROCESS_GROUP (0x00000010). 
-            # Avoid DETACHED_PROCESS (0x00000008) in GUI context as it may cause WinError 87.
+            # 2) Espera a que la app principal realmente desaparezca
+            if not self._wait_for_mutex_absent(APP_NAME, 15.0):
+                raise TimeoutError("El proceso principal no terminó a tiempo.")
+
+            # 3) Asegura que watchdog y character service ya no estén vivos
+            if not wait_for_services_stopped(timeout=15.0):
+                raise TimeoutError("Los servicios paralelos no terminaron a tiempo.")
+
+            # 4) Arranque limpio
             python_exe = sys.executable
             if self.script_path.lower().endswith('.pyw'):
                 if python_exe.lower().endswith("python.exe"):
-                    python_exe = python_exe[:-10] + "pythonw.exe"
-                subprocess.Popen([python_exe, self.script_path], 
-                                 creationflags=0x00000010)
-            else:
-                subprocess.Popen([python_exe, self.script_path], 
-                                 creationflags=0x00000010)
-            
+                    candidate = Path(python_exe).with_name("pythonw.exe")
+                    if candidate.exists():
+                        python_exe = str(candidate)
+
+            subprocess.Popen(
+                [python_exe, self.script_path],
+                creationflags=0x00000010
+            )
+
             self.finished.emit()
         except Exception:
             self.error.emit(traceback.format_exc())
