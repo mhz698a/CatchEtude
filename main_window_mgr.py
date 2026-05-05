@@ -596,11 +596,21 @@ class MainWindow(QWidget):
         if not self.filepath: 
             return
         
+        sel = self.selection_panel.get_selection()
+        
         if self.action_panel.is_keep_downloads():
-            self.state_manager.discard_active_file()
+            if self.state_manager.current_state() != State.USER_DECIDING:
+                logging.error("Keep ignorado: estado inválido")
+                return
+
+            decision = {
+                "action": "keep",
+                "new_name": self.action_panel.get_new_name() or self.filepath.stem,
+            }
+            self.state_manager.apply_decision(decision)
+            self._hide_if_idle()
             return
             
-        sel = self.selection_panel.get_selection()
         decision = {
             'action': 'move',
             'movement_type': sel['type'],

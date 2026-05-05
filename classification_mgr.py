@@ -36,7 +36,7 @@ class SubfolderScanner(QtCore.QThread):
                 if self._abort:
                     break
                 
-                first_file = "---"
+                last_file = "---"
                 try:
                     files = []
                     with os.scandir(sub_path) as it_f:

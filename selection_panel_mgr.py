@@ -177,7 +177,7 @@ class SelectionPanel(QWidget):
                     self.list_sub.add_subfolders(subs)
                     self.list_sub.setEnabled(True)
                     
-                    t = self.list_type.currentRow() + 1
+                    t = self.list_type.currentRow() + 2
                     if t == 3: # Episodes
                         self._sub_scanner = SubfolderScanner(base)
                         self._sub_scanner.result_ready.connect(
@@ -199,7 +199,7 @@ class SelectionPanel(QWidget):
         self.list_sub.setEnabled(enabled)
 
     def _on_subfolder_right_clicked(self, name, pos):
-        t = self.list_type.currentRow() + 1
+        t = self.list_type.currentRow() + 2
         item = self.list_year.currentItem()
         year = int(item.text()) if item else None
         
@@ -299,4 +299,3 @@ class SelectionPanel(QWidget):
             self.list_sub.setEnabled(False)
         else:
             self.refresh_classification_ui()
-

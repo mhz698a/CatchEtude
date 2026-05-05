@@ -260,12 +260,6 @@ class StateManager:
 
         
         p: Path = self._active_file
-
-        # if p is None or not p.exists():
-        #     logging.error("Archivo activo faltante en apply_decision")
-        #     self._set_state(State.RESUME_WATCHER)
-        #     self._set_state(State.IDLE)
-        #     return False
         
         if p is None:
             logging.warning("No hay archivo activo para decidir")
@@ -355,6 +349,9 @@ class StateManager:
         # ✅ quitar de pendientes
         if p:
             self._pending.discard(p)
+            if p in self._queue_list:
+                self._queue_list.remove(p)
+            self._emit_queue_update()
 
         # finalizar
         self._active_file = None
