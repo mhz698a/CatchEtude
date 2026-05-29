@@ -11,6 +11,7 @@ import threading
 import win32event
 import win32api
 import ctypes
+import subprocess
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtNetwork
 from PyQt6.QtGui import QIcon
@@ -38,6 +39,7 @@ class WatchdogService(QtCore.QObject):
         self.monitor_thread.start()
 
         self._closing = False
+        self._restart_sent = False
         app = QtCore.QCoreApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._cleanup)
@@ -88,9 +90,10 @@ class WatchdogService(QtCore.QObject):
                 # Mutex does not exist or cannot be opened, app is likely closed
                 break
             
+        # Exit Service
         print("Main process terminated (Mutex signal).")
         self._handle_termination()
-        # Exit service
+        self._launch_restart()
         self._cleanup()
         QtCore.QCoreApplication.quit()
 
@@ -118,6 +121,31 @@ class WatchdogService(QtCore.QObject):
         except Exception:
             pass
 
+    def _pythonw_executable(self) -> str:
+        exe = Path(sys.executable)
+        if exe.name.lower() == "python.exe":
+            candidate = exe.with_name("pythonw.exe")
+            if candidate.exists():
+                return str(candidate)
+        return sys.executable
+
+    def _launch_restart(self):
+        if self._restart_sent:
+            return
+        self._restart_sent = True
+
+        try:
+            restart_script = str(Path(__file__).resolve().parent / "restart_app.pyw")
+            main_script = str(Path(__file__).resolve().parent / "catchetude.pyw")
+
+            subprocess.Popen(
+                [self._pythonw_executable(), restart_script, str(os.getpid()), main_script],
+                creationflags=0x00000010,
+            )
+            print("Restart helper launched.")
+        except Exception:
+            print("Failed to launch restart helper")
+
 def main():
     # Set AppUserModelID for Windows Taskbar icon grouping
     try:
@@ -138,18 +166,17 @@ def main():
         return
     
     # Detect if main service is running
-    try:
-        handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
-        if not handle:
-            print("Main app not running, watchdog exiting.")
-            return
-        win32api.CloseHandle(handle)
-    except Exception:
-        print("Main app not running, watchdog exiting.")
-        return
+    # try:
+    #     handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+    #     if not handle:
+    #         print("Main app not running, watchdog exiting.")
+    #         return
+    #     win32api.CloseHandle(handle)
+    # except Exception:
+    #     print("Main app not running, watchdog exiting.")
+    #     return
 
     service = WatchdogService()
-    
     sys.exit(app.exec())
 
 if __name__ == "__main__":

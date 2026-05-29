@@ -99,6 +99,7 @@ class SelectionPanel(QWidget):
         self.list_sub.setEnabled(False)
         self.list_sub.clicked.connect(self.subfolder_clicked.emit)
         self.list_sub.rightClicked.connect(self._on_subfolder_right_clicked)
+        self.list_sub.emptyCreateClicked.connect(self._on_empty_create_folder_clicked)
         v_sub.addWidget(self.list_sub)
         
         layout.addLayout(top_row)
@@ -161,6 +162,7 @@ class SelectionPanel(QWidget):
 
     def _populate_subfolders(self, base: Path):
         self.list_sub.clear()
+        
         if self._sub_scanner:
             self._sub_scanner.abort()
             self._sub_scanner.wait()
@@ -171,26 +173,49 @@ class SelectionPanel(QWidget):
             return
 
         try:
+            t = self.list_type.currentRow() + 2
+            subs = []
+            
             if base.exists() and base.is_dir():
                 subs = [c.name for c in sorted(base.iterdir()) if c.is_dir()]
-                if subs:
-                    self.list_sub.add_subfolders(subs)
-                    self.list_sub.setEnabled(True)
-                    
-                    t = self.list_type.currentRow() + 2
-                    if t == 3: # Episodes
-                        self._sub_scanner = SubfolderScanner(base)
-                        self._sub_scanner.result_ready.connect(
-                            lambda name, ffile: self.list_sub.update_button(name, ffile)
-                        )
-                        self._sub_scanner.start()
-                    
-                    self.subfolders_refreshed.emit()
-                    return
+            else:
+                return
+                
+            if subs:
+                self.list_sub.add_subfolders(subs)
+                self.list_sub.setEnabled(True)
+                                
+                if t == 3: # Episodes
+                    self._sub_scanner = SubfolderScanner(base)
+                    self._sub_scanner.result_ready.connect(
+                        lambda name, ffile: self.list_sub.update_button(name, ffile)
+                    )
+                    self._sub_scanner.start()
+                
+                self.subfolders_refreshed.emit()
+                return
+            
+            if t == 8:
+                self.list_sub.show_empty_placeholder(self.loc.get("menu_create_folder"))
+                self.list_sub.setEnabled(True)
+                self.subfolders_refreshed.emit()
+                return
+                
         except Exception:
             logging.exception(f"Failed to populate subfolders from {base}")
 
         self.list_sub.setEnabled(False)
+
+    def _on_empty_create_folder_clicked(self):
+        t = self.list_type.currentRow() + 2
+        item = self.list_year.currentItem()
+        year = int(item.text()) if item else None
+
+        if t != 8 or not year:
+            return
+
+        base = get_base_path_for_type_year(t, year)
+        self._handle_create_folder(base)
 
     def update_subfolder_button(self, name, line2=None, line3=None):
         self.list_sub.update_button(name, line2, line3)

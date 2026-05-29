@@ -79,6 +79,7 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
     """
     clicked = QtCore.pyqtSignal(str)
     rightClicked = QtCore.pyqtSignal(str, QtCore.QPoint)
+    emptyCreateClicked = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -91,6 +92,7 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
         self.setWidget(self.container)
         self._enabled = True
         self._buttons = {} # name -> SubfolderButton
+        self._empty_button = None
 
     def clear(self):
         """Removes all buttons from the list."""
@@ -99,6 +101,8 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
             if item.widget():
                 item.widget().deleteLater()
         self._buttons = {}
+        self._empty_button = None
+
 
     def add_subfolders(self, subfolders: list[str]):
         """Adds a button for each subfolder in the list."""
@@ -112,6 +116,19 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
             self.layout.insertWidget(self.layout.count() - 1, btn)
             self._buttons[name] = btn
         
+        self.setEnabled(self._enabled)
+        
+    def show_empty_placeholder(self, text: str):
+        """Show a single button when there are no subfolders."""
+        self.clear()
+
+        btn = QtWidgets.QPushButton(text)
+        btn.setFixedHeight(34)
+        btn.setStyleSheet("QPushButton { text-align: left; padding: 8px; }")
+        btn.clicked.connect(lambda checked=False: self.emptyCreateClicked.emit())
+
+        self.layout.insertWidget(self.layout.count() - 1, btn)
+        self._empty_button = btn
         self.setEnabled(self._enabled)
 
     def update_button(self, name: str, line2=None, line3=None):

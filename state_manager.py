@@ -287,14 +287,18 @@ class StateManager:
 
             if decision['action'] == 'keep':
                 # mover a conflictos
-                dest = resolve_duplicate(CONFLICTS / p.name)
+                keep_name = sanitize_windows_filename(decision.get('new_name', p.stem))
+                dest = resolve_duplicate(CONFLICTS / (keep_name + p.suffix))
                 shutil.copy2(p, dest)  # preserva atime y mtime
                 setctime_blocking(str(dest), ctime)  # preservar ctime/birthtime
 
                 if sha256_file(p) == sha256_file(dest):
                     p.unlink(missing_ok=True)
                     logging.info(f"Archivo 'keep' movido a conflictos: {dest}")
-                    self._history.record_move(p, dest, {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime})
+                    self._history.record_move(
+                        p, 
+                        dest, 
+                        {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime})
                 else:
                     logging.error("Integridad fallida al mover a conflictos; archivo original intacto")
                     dest.unlink(missing_ok=True)
