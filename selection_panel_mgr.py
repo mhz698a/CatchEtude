@@ -7,14 +7,18 @@ import os
 import shutil
 import logging
 from pathlib import Path
+from math import ceil
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QListWidgetItem
 
-from config import YEARS, ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA
+from config import YEARS, ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA, ICON_PATH, APP_DIR
 from localization import LocalizationManager
 from subfolder_list_mgr import SubfolderButtonList
 from classification_mgr import get_base_path_for_type_year, get_base_path_for_docs, SubfolderScanner
 from utils import is_internal_available, delete_to_recycle_bin
+from years_selector import YearsTableWidget
 
 class SelectionPanel(QWidget):
     """
@@ -30,6 +34,18 @@ class SelectionPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.loc = LocalizationManager()
+        self._app_icon = QIcon(ICON_PATH)
+        
+        self._type_icon_paths = {
+            2: f"{APP_DIR}/assets/me-gusta.png",
+            3: f"{APP_DIR}/assets/película.png",
+            4: f"{APP_DIR}/assets/música.png",
+            5: f"{APP_DIR}/assets/aula-de-google.png",
+            6: f"{APP_DIR}/assets/identificación-verificada.png",
+            7: f"{APP_DIR}/assets/adobe-acrobat.png",
+            8: f"{APP_DIR}/assets/mundo.png",
+        }
+        
         self._sub_scanner = None
         self._build_ui()
 
@@ -48,42 +64,40 @@ class SelectionPanel(QWidget):
         v_type.addWidget(self.lbl_type)
         
         self.list_type = QListWidget()
-        self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(2, 9)])
+        # self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(2, 9)])
+        self._fill_type_list()
         self.list_type.currentRowChanged.connect(self._on_type_changed)
         
         v_type.addWidget(self.list_type)
         top_row.addLayout(v_type)
 
+        # -------------------
         # Year Column
+        # -------------------
+                
         v_year = QVBoxLayout()
         self.lbl_year = QLabel(self.loc.get("lbl_years"))
         v_year.addWidget(self.lbl_year)
-        self.list_year = QListWidget()
-        self.list_year.setFixedWidth(200)
-        self.list_year.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
-        self.list_year.setFlow(QtWidgets.QListView.Flow.LeftToRight)
-        self.list_year.setWrapping(True)
-        self.list_year.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
-        self.list_year.setGridSize(QtCore.QSize(60, 28))
-        self.list_year.setSpacing(2)
-        
-        self.list_year.setStyleSheet("""
-            QListWidget::item { border-radius: 4px; }
-            QListWidget::item:selected { background-color: #0078d7; color: white; }
-        """)
 
-        for y in YEARS:
-            self.list_year.addItem(str(y))
-        
-        # Default to 2004
-        idx2004 = 0
-        for i in range(self.list_year.count()):
-            if self.list_year.item(i).text() == '2004':
-                idx2004 = i
-                break
-        self.list_year.setCurrentRow(idx2004)
-        self.list_year.currentRowChanged.connect(self._on_year_changed)
+        self.list_year = YearsTableWidget(YEARS, self)
+        self.list_year.setFixedWidth(200)
+        self.list_year.setStyleSheet("""
+            QTableWidget {
+                border: none;
+                background: transparent;
+            }
+            QTableWidget::item {
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QTableWidget::item:selected {
+                background-color: #0078d7;
+                color: white;
+            }
+        """)
+        self.list_year.yearChanged.connect(self._on_year_changed)
         self.list_year.setEnabled(False)
+
         v_year.addWidget(self.list_year)
         top_row.addLayout(v_year)
         
@@ -109,42 +123,30 @@ class SelectionPanel(QWidget):
         self.lbl_type.setText(self.loc.get("lbl_type"))
         self.lbl_year.setText(self.loc.get("lbl_years"))
         self.lbl_sub.setText(self.loc.get("lbl_subfolders"))
-        
+                
         curr = self.list_type.currentRow()
-        self.list_type.blockSignals(True)
-        self.list_type.clear()
-        self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(2, 9)])
-        if 0 <= curr < self.list_type.count():
-            self.list_type.setCurrentRow(curr)
-        else:
-            self.list_type.setCurrentRow(0)
-        # self.list_type.setCurrentRow(curr)
-        self.list_type.blockSignals(False)
+        self._fill_type_list(curr)
 
     def _on_type_changed(self, idx):
         self.type_changed.emit(idx + 2)
         self.refresh_classification_ui()
 
-    def _on_year_changed(self, idx):
-        if idx >= 0:
-            item = self.list_year.item(idx)
-            if item:
-                self.year_changed.emit(int(item.text()))
-        self.refresh_classification_ui()
-
+    def _on_year_changed(self, year):
+        if year >= 0:
+            self.year_changed.emit(year)
+            self.refresh_classification_ui()
+                
     def get_selection(self):
-        item_year = self.list_year.currentItem()
         return {
             'type': self.list_type.currentRow() + 2,
-            'year': int(item_year.text()) if item_year else None
+            'year': self.list_year.current_year()
         }
 
-    def refresh_classification_ui(self):
+    def refresh_classification_ui(self):           
         t = self.list_type.currentRow() + 2
         if t in (2, 3, 4, 8):
-            item = self.list_year.currentItem()
-            if item:
-                year = int(item.text())
+            year = self.list_year.current_year()
+            if year:
                 base = get_base_path_for_type_year(t, year)
                 self._populate_subfolders(base)
                 self.list_year.setEnabled(True)
@@ -208,12 +210,9 @@ class SelectionPanel(QWidget):
 
     def _on_empty_create_folder_clicked(self):
         t = self.list_type.currentRow() + 2
-        item = self.list_year.currentItem()
-        year = int(item.text()) if item else None
-
+        year = self.list_year.current_year()
         if t != 8 or not year:
             return
-
         base = get_base_path_for_type_year(t, year)
         self._handle_create_folder(base)
 
@@ -225,9 +224,7 @@ class SelectionPanel(QWidget):
 
     def _on_subfolder_right_clicked(self, name, pos):
         t = self.list_type.currentRow() + 2
-        item = self.list_year.currentItem()
-        year = int(item.text()) if item else None
-        
+        year = self.list_year.current_year()
         if t in (2, 3, 4, 8) and year:
             base = get_base_path_for_type_year(t, year)
         elif t in (5, 6):
@@ -324,3 +321,31 @@ class SelectionPanel(QWidget):
             self.list_sub.setEnabled(False)
         else:
             self.refresh_classification_ui()
+
+    def _type_icon_for(self, type_id: int) -> QIcon:
+        path = self._type_icon_paths.get(type_id)
+        if path:
+            p = Path(path)
+            if p.exists():
+                return QIcon(str(p))
+        return self._app_icon
+
+    def _fill_type_list(self, selected_row: int | None = None):
+        if selected_row is None:
+            selected_row = self.list_type.currentRow()
+
+        self.list_type.blockSignals(True)
+        self.list_type.clear()
+
+        for type_id in range(2, 9):
+            text = self.loc.get(f"type_{type_id}")
+            item = QListWidgetItem(self._type_icon_for(type_id), text)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, type_id)
+            self.list_type.addItem(item)
+
+        if 0 <= selected_row < self.list_type.count():
+            self.list_type.setCurrentRow(selected_row)
+        else:
+            self.list_type.setCurrentRow(0)
+
+        self.list_type.blockSignals(False)

@@ -18,6 +18,8 @@ MYAPPID = 'EtudeProduts.CatchEtude.CatchEtudeWatcher.v1.0'
 
 # Icons and Paths
 ICON_PATH = r"C:\Users\miche\OneDrive\CatchEtude\catchetude-icon.png"
+APP_DIR = Path(__file__).resolve().parent.as_posix()
+
 USER_HOME = Path.home()
 DOWNLOADS = USER_HOME / "Downloads"
 DOCUMENTS = USER_HOME / "Documents"
