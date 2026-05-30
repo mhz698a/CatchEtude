@@ -45,7 +45,6 @@ STRINGS = {
         "btn_hide": "Ocultar",
         "msg_pending_files": "Hay archivos pendientes",
         "btn_show_again": "Mostrar de nuevo",
-        # "type_1": "Mantener en descargas",
         "type_2": "Personajes",
         "type_3": "Episodios",
         "type_4": "Musica",
@@ -54,6 +53,7 @@ STRINGS = {
         "type_7": "Documentacion",
         "type_8": "Overworld",
         "menu_open_folder": "Abrir carpeta",
+        "menu_move_all_in_folder": "Mover todo en esta carpeta",
         "menu_create_folder": "Crear nueva carpeta aqui",
         "menu_rename_folder": "Renombrar esta carpeta",
         "menu_delete_folder": "Eliminar esta carpeta vacía",
@@ -69,7 +69,7 @@ STRINGS = {
         "btn_restart_service": "Reiniciar servicio",
         "keep_in_downloads": "Mantener en descargas",
         "btn_keep": "Mantener",
-
+        "msg_file_locked": "El archivo está ocupado. Espere a que se libere.",
     },
     "en": {
         "btn_keep": "Keep",
@@ -107,7 +107,6 @@ STRINGS = {
         "btn_hide": "Hide",
         "msg_pending_files": "There are pending files",
         "btn_show_again": "Show Again",
-        # "type_1": "Keep in downloads",
         "type_2": "Characters",
         "type_3": "Episodes",
         "type_4": "Music",
@@ -116,6 +115,7 @@ STRINGS = {
         "type_7": "Linear Docs",
         "type_8": "Overworld",
         "menu_open_folder": "Open folder",
+        "menu_move_all_in_folder": "Move all in this folder",
         "menu_create_folder": "Create new folder here",
         "menu_rename_folder": "Rename this folder",
         "menu_delete_folder": "Delete this empty folder",
@@ -131,6 +131,7 @@ STRINGS = {
         "btn_restart_service": "Restart Service",
         "keep_in_downloads": "Keep in downloads",
         "btn_keep": "Keep",
+        "msg_file_locked": "The file is in use. Wait until it is released.",
     }
 }
 

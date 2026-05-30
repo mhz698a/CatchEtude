@@ -121,6 +121,8 @@ def move_file_shfileop(src: Path, dst: Path, show_progress: bool = True) -> bool
         
         result = shell32.SHFileOperationW(ctypes.byref(fileop))
         return result == 0 and not fileop.fAnyOperationsAborted
+    except PermissionError:
+        return False
     except Exception:
         logging.exception(f"SHFileOperation move failed from {src} to {dst}")
         return False

@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidg
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QListWidgetItem
 
-from config import YEARS, ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA, ICON_PATH, APP_DIR
+from config import YEARS, ICON_PATH, APP_DIR
 from localization import LocalizationManager
 from subfolder_list_mgr import SubfolderButtonList
 from classification_mgr import get_base_path_for_type_year, get_base_path_for_docs, SubfolderScanner
@@ -28,6 +28,7 @@ class SelectionPanel(QWidget):
     subfolder_clicked = QtCore.pyqtSignal(str)
     subfolders_refreshed = QtCore.pyqtSignal()
     folder_structure_changed = QtCore.pyqtSignal()
+    move_all_in_folder_clicked = QtCore.pyqtSignal(str)
     type_changed = QtCore.pyqtSignal(int)
     year_changed = QtCore.pyqtSignal(int)
 
@@ -64,7 +65,6 @@ class SelectionPanel(QWidget):
         v_type.addWidget(self.lbl_type)
         
         self.list_type = QListWidget()
-        # self.list_type.addItems([self.loc.get(f"type_{i}") for i in range(2, 9)])
         self._fill_type_list()
         self.list_type.currentRowChanged.connect(self._on_type_changed)
         
@@ -80,7 +80,7 @@ class SelectionPanel(QWidget):
         v_year.addWidget(self.lbl_year)
 
         self.list_year = YearsTableWidget(YEARS, self)
-        self.list_year.setFixedWidth(200)
+        self.list_year.setFixedWidth(250)
         self.list_year.setStyleSheet("""
             QTableWidget {
                 border: none;
@@ -240,6 +240,7 @@ class SelectionPanel(QWidget):
         
         act_open = menu.addAction(self.loc.get("menu_open_folder"))
         menu.addSeparator()
+        act_move_all = menu.addAction(self.loc.get("menu_move_all_in_folder"))
         act_create = menu.addAction(self.loc.get("menu_create_folder"))
         act_rename = menu.addAction(self.loc.get("menu_rename_folder"))
         
@@ -255,6 +256,8 @@ class SelectionPanel(QWidget):
             os.startfile(target_folder)
         elif action == act_create:
             self._handle_create_folder(base)
+        elif action == act_move_all:
+            self.move_all_in_folder_clicked.emit(name)
         elif action == act_rename:
             self._handle_rename_folder(target_folder)
         elif action == act_delete and act_delete:

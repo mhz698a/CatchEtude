@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-from PyQt6 import QtCore, QtWidgets, QtGui
+from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QCompleter, QFileDialog,
     QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, QLabel, QMessageBox, QStatusBar
@@ -28,10 +28,10 @@ from config import (
     BASE_INTERNAL, IMAGES_FOLDER, MUSIC_FOLDER,
 ) 
 from utils import (
-    resolve_duplicate, flatten_downloads_root, 
+    resolve_duplicate, 
     configure_dwm_thumbnail_behavior, is_internal_available,
     sanitize_windows_filename, is_temporary,
-    is_same_drive, move_file_shfileop, delete_to_recycle_bin
+    is_same_drive, is_file_locked, move_file_shfileop, delete_to_recycle_bin
 )
 from state_manager import StateManager, State, scan_existing_downloads
 from fallback_utils import compute_destination
@@ -139,6 +139,7 @@ class MainWindow(QWidget):
         
         self._internal_warned = False
         self.filepath: Optional[Path] = None
+        self._bulk_subfolder_name: Optional[str] = None
         self._internal_available_at_start = is_internal_available()
         self._hide_secure = False
         self._load_config()
@@ -194,6 +195,7 @@ class MainWindow(QWidget):
         self.selection_panel = SelectionPanel()
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
         self.selection_panel.subfolders_refreshed.connect(self._update_character_buttons)
+        self.selection_panel.move_all_in_folder_clicked.connect(self._move_all_in_this_folder)
         self.selection_panel.folder_structure_changed.connect(self._on_folder_structure_changed)
         self.selection_panel.type_changed.connect(self._on_type_changed)
         self.selection_panel.year_changed.connect(self._on_year_changed)
@@ -480,6 +482,9 @@ class MainWindow(QWidget):
             self._bring_and_center()
         
         self._update_name_completer()
+        if self._bulk_subfolder_name:
+            self._move_to_subfolder(self._bulk_subfolder_name)
+            return
 
     def _on_type_changed(self, t: int):
         if t == 2:
@@ -635,6 +640,10 @@ class MainWindow(QWidget):
         final_dest = resolve_duplicate(compute_destination(decision, self.filepath))
         self._start_move_task(decision, final_dest)
 
+    def _move_all_in_this_folder(self, sub_name: str):
+        self._bulk_subfolder_name = sub_name
+        self._move_to_subfolder(sub_name)
+
     def _on_apply_custom(self):
         if not self.filepath: return
         folder = QFileDialog.getExistingDirectory(self, "Select Destination Folder", str(self.filepath.parent))
@@ -653,7 +662,13 @@ class MainWindow(QWidget):
         self.action_panel.btn_move.setEnabled(False)
         
         src = self.filepath
-        if not src: return
+        if not src: 
+            return
+        
+        if is_file_locked(src):
+            self.show_status(self.loc.get("msg_file_locked"), 5000)
+            return
+        
         send_character_service_command("pause")
 
         try:
@@ -665,18 +680,26 @@ class MainWindow(QWidget):
             }
             same_drive = is_same_drive(src, final_dest)
             if same_drive:
+                
                 def fast_move():
                     try:
                         final_dest.parent.mkdir(parents=True, exist_ok=True)
-                        if move_file_shfileop(src, final_dest):
+                        
+                        moved = move_file_shfileop(src, final_dest)
+                        if moved:
                             self.state_manager.finalize_background_move(src, final_dest, src_meta)
+                        elif is_file_locked(src):
+                            self.signals.warning_message.emit(self.loc.get("msg_file_locked"))
+                            
                     finally:
                         send_character_service_command("resume")
+                        
                 threading.Thread(target=fast_move, daemon=True).start()
                 self.state_manager.handover_active_file()
                 self.action_panel.set_progress(0)
                 self._build_tray()
                 return
+            
         except Exception:
             logging.exception(f"Error in _start_move_task for {src}")
             send_character_service_command("resume")
@@ -694,9 +717,16 @@ class MainWindow(QWidget):
         def on_finished(ok: bool, copied_path: Path, msg: str):
             send_character_service_command("resume")
             if ok:
-                threading.Thread(target=self.state_manager.finalize_background_move, 
-                                 args=(src, copied_path, src_meta), daemon=True).start()
+                threading.Thread(
+                    target=self.state_manager.finalize_background_move,
+                    args=(src, copied_path, src_meta),
+                    daemon=True
+                ).start()
                 self._build_tray()
+            else:
+                if msg == "FILE_LOCKED":
+                    self.show_status(self.loc.get("msg_file_locked"), 5000)
+                
             worker_thread.quit()
 
         worker.finished.connect(on_finished)
@@ -714,6 +744,7 @@ class MainWindow(QWidget):
 
     def _hide_if_idle(self):
         if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work():
+            self._bulk_subfolder_name = None
             self.action_panel.clear()
             self.filepath = None
             if hasattr(self, '_pending_dialog'):

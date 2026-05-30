@@ -59,5 +59,7 @@ class FileMoveWorker(QObject):
 
             self.finished.emit(True, self.dst, "ok")
 
+        except PermissionError:
+            self.finished.emit(False, self.dst, "FILE_LOCKED")
         except Exception as e:
             self.finished.emit(False, self.dst, str(e))
