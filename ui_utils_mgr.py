@@ -8,8 +8,8 @@ from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import QFileIconProvider
 from PyQt6.QtCore import Qt
-
 from config import BLUR_LEVEL
+from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
 
 def apply_secure_blur(image: QtGui.QImage) -> QtGui.QImage:
     """
@@ -17,7 +17,7 @@ def apply_secure_blur(image: QtGui.QImage) -> QtGui.QImage:
     Aplica un desenfoque de seguridad al 85% superior de una imagen.
     """
     if image.isNull(): return image
-    blur_radius = BLUR_LEVEL 
+    blur_radius = BLUR_LEVEL
     small = image.scaled(image.width() // blur_radius, image.height() // blur_radius, 
                          Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
     blurred = small.scaled(image.width(), image.height(), 
@@ -67,7 +67,19 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
         icon_rect = QtCore.QRect(rect.left() + 5, rect.top() + 5, 40, 40)
         
         if path_str not in self._thumb_cache:
-            if p.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}:
+            ext = p.suffix.lower()
+
+            if should_use_shell_thumbnail(ext):
+                shell_pixmap = get_shell_thumbnail_pixmap(path_str, 40)
+                if shell_pixmap and not shell_pixmap.isNull():
+                    if self._hide_secure:
+                        img = apply_secure_blur(shell_pixmap.toImage())
+                        shell_pixmap = QtGui.QPixmap.fromImage(img)
+                    self._thumb_cache[path_str] = shell_pixmap
+                else:
+                    self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+
+            elif ext in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}:
                 reader = QtGui.QImageReader(path_str)
                 reader.setAutoTransform(True)
                 img_size = reader.size()
@@ -81,7 +93,7 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
                 else:
                     self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
             else:
-                self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+                self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))        
         
         obj = self._thumb_cache[path_str]
         if isinstance(obj, QtGui.QPixmap):

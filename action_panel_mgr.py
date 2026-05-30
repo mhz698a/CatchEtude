@@ -14,6 +14,7 @@ from PyQt6.QtGui import QDrag, QPixmap
 from config import BLUR_LEVEL, ICON_PATH
 from localization import LocalizationManager
 from ui_utils_mgr import apply_secure_blur
+from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
 
 class DragLabel(QLabel):
     """
@@ -189,10 +190,29 @@ class ActionPanel(QWidget):
         if not self.filepath: return
         p = self.filepath
         try:
-            if p.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}:
+            
+            ext = p.suffix.lower()
+            target = self.preview_label.size()
+
+            if should_use_shell_thumbnail(ext):
+                shell_pixmap = get_shell_thumbnail_pixmap(str(p), max(target.width(), target.height()))
+                if shell_pixmap and not shell_pixmap.isNull():
+                    if self._hide_secure:
+                        img = apply_secure_blur(shell_pixmap.toImage())
+                        shell_pixmap = QtGui.QPixmap.fromImage(img)
+
+                    self.preview_label.setPixmap(
+                        shell_pixmap.scaled(
+                            target,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
+                    return
+
+            if ext in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}:
                 reader = QtGui.QImageReader(str(p))
                 reader.setAutoTransform(True)
-                target = self.preview_label.size()
                 img_size = reader.size()
                 if img_size.isValid():
                     reader.setScaledSize(img_size.scaled(target, Qt.AspectRatioMode.KeepAspectRatio))
@@ -210,6 +230,7 @@ class ActionPanel(QWidget):
                 img = apply_secure_blur(img)
                 pixmap = QtGui.QPixmap.fromImage(img)
             self.preview_label.setPixmap(pixmap)
+            
         except Exception:
             logging.exception("Error loading preview")
 
