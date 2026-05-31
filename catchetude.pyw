@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
 from config import (
-    APP_NAME, LOG_PATH, ICON_PATH, CONFIG_PATH, DOWNLOADS
+    APP_NAME, LOG_PATH, ICON_PATH, CONFIG_PATH, DOWNLOADS, CRASH_REPORT_PATH
 ) 
 from utils import flatten_downloads_root
 from state_manager import StateManager, scan_existing_downloads
@@ -37,6 +37,11 @@ def main():
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(ICON_PATH))
     app.setQuitOnLastWindowClosed(False)
+    
+    try:
+        stop_parallel_services(timeout=10.0)
+    except Exception:
+        pass
     
     # Ensure single instance
     mutex = ensure_single_instance()
@@ -105,8 +110,15 @@ def main():
             add_to_startup(APP_NAME, mypath, True)
         except Exception:
             logging.exception("add_to_startup failed")
+            
+        try:
+            if CRASH_REPORT_PATH.exists():
+                CRASH_REPORT_PATH.unlink()
+        except Exception:
+            pass
 
         sys.exit(app.exec())
+        
     except Exception:
         logging.exception("Unhandled exception in main")
         crash_handler(*sys.exc_info())

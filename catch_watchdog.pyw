@@ -102,6 +102,13 @@ class WatchdogService(QtCore.QObject):
             try:
                 crash_data = CRASH_REPORT_PATH.read_text(encoding='utf-8')
                 self.log_viewer.add_log("ERROR", f"CRASH DETECTED IN MAIN PROCESS:\n{crash_data}")
+                
+                try:
+                    if CRASH_REPORT_PATH.exists():
+                        CRASH_REPORT_PATH.unlink()
+                except Exception:
+                    pass
+                
                 # Show window on crash
                 QtCore.QMetaObject.invokeMethod(self.log_viewer, "show", QtCore.Qt.ConnectionType.QueuedConnection)
             except Exception as e:
@@ -165,17 +172,6 @@ def main():
         # For now, just exit.
         return
     
-    # Detect if main service is running
-    # try:
-    #     handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
-    #     if not handle:
-    #         print("Main app not running, watchdog exiting.")
-    #         return
-    #     win32api.CloseHandle(handle)
-    # except Exception:
-    #     print("Main app not running, watchdog exiting.")
-    #     return
-
     service = WatchdogService()
     sys.exit(app.exec())
 

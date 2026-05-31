@@ -122,10 +122,39 @@ def wait_for_services_stopped(timeout: float = 8.0) -> bool:
         time.sleep(0.1)
     return False
 
+def _force_kill_helper_scripts() -> None:
+    """Fallback si el apagado amable no logró cerrar los helpers."""
+    try:
+        ps_cmd = (
+            "$targets = Get-CimInstance Win32_Process | "
+            "Where-Object { $_.CommandLine -match 'catch_watchdog\\.pyw|character_service\\.pyw' }; "
+            "foreach ($p in $targets) { "
+            "Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue "
+            "}"
+        )
+        subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+            creationflags=CREATE_NEW_PROCESS_GROUP,
+        )
+    except Exception:
+        logging.exception("Forced cleanup of helper scripts failed")
+
 def stop_parallel_services(timeout: float = 8.0) -> bool:
     """Sends quit to both services and waits until they are really gone."""
+    # _send_quit(WATCHDOG_SERVER_NAME)
+    # _send_quit(CHARACTER_SERVER_NAME)
+    # return wait_for_services_stopped(timeout)
+
     _send_quit(WATCHDOG_SERVER_NAME)
     _send_quit(CHARACTER_SERVER_NAME)
+
+    if wait_for_services_stopped(timeout):
+        return True
+
+    _force_kill_helper_scripts()
     return wait_for_services_stopped(timeout)
 
 def _pythonw_executable() -> str:
