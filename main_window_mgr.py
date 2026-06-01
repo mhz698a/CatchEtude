@@ -15,7 +15,7 @@ from typing import Optional
 
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QPushButton, QCompleter, QFileDialog,
+    QApplication, QWidget, QPushButton, QFileDialog,
     QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, QLabel, QMessageBox, QStatusBar
 )
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
@@ -373,6 +373,11 @@ class MainWindow(QWidget):
         open_last_action.triggered.connect(self._open_last_chosen)
         self.tray_menu.addAction(open_last_action)
         
+        open_recent_file_action = QAction(self.loc.get("last_file_open"), self)  
+        open_recent_file_action.setEnabled(bool(last_move))
+        open_recent_file_action.triggered.connect(self._open_recent_file)
+        self.tray_menu.addAction(open_recent_file_action)
+        
         undo_action = QAction(self.loc.get("tray_undo"), self)
         undo_action.triggered.connect(self._on_undo_clicked)
         self.tray_menu.addAction(undo_action)
@@ -394,13 +399,62 @@ class MainWindow(QWidget):
         last_move = self.state_manager._history.get_last_move()
         if not last_move:
             return
-
         dest_dir = Path(last_move["dst"]).parent
         if dest_dir.exists():
             os.startfile(dest_dir)
             
+    def _open_recent_file(self):
+        last_move = self.state_manager._history.get_last_move()
+        if not last_move:
+            return
+        recent_file = Path(last_move["dst"])
+        if recent_file.exists():
+            os.startfile(str(recent_file))
+        else:
+            self._show_warning_message("El archivo reciente ya no existe.")
+        
     def _show_warning_message(self, text):
         QMessageBox.warning(self, "Aviso", text)
+        
+    def _check_destination_collision(self, candidate: Path, allow_retry: bool = False) -> tuple[str, Optional[Path]]:
+        if not candidate.exists():
+            return "move", candidate
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Archivo con el mismo nombre")
+        box.setText(f"Ya existe un archivo con el mismo nombre:\n{candidate.name}")
+        box.setInformativeText("Elige qué hacer.")
+
+        btn_move = box.addButton("Mover de todas formas", QMessageBox.ButtonRole.AcceptRole)
+        btn_open = box.addButton("Abrir archivo existente", QMessageBox.ButtonRole.ActionRole)
+        btn_other = None
+        if allow_retry:
+            btn_other = box.addButton("Elegir otra carpeta", QMessageBox.ButtonRole.DestructiveRole)
+        btn_cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+
+        box.setDefaultButton(btn_move)
+        box.exec()
+
+        clicked = box.clickedButton()
+
+        if clicked == btn_open:
+            self.selection_panel.set_subfolders_enabled(True)
+            try:
+                os.startfile(str(candidate))
+            except OSError as exc:
+                self._show_warning_message(f"No se pudo abrir el archivo existente:\n{exc}")
+            return "open", None
+
+        if allow_retry and btn_other is not None and clicked == btn_other:
+            self.selection_panel.set_subfolders_enabled(True)
+            return "retry", None
+
+        if clicked == btn_cancel:
+            self.selection_panel.set_subfolders_enabled(True)
+            return "cancel", None
+
+        return "move", resolve_duplicate(candidate)
 
     def _show_logs(self):
         socket = QLocalSocket()
@@ -481,7 +535,7 @@ class MainWindow(QWidget):
         if not self.isVisible() and self._internal_available_at_start:
             self._bring_and_center()
         
-        self._update_name_completer()
+        # self._update_name_completer()
         if self._bulk_subfolder_name:
             self._move_to_subfolder(self._bulk_subfolder_name)
             return
@@ -503,7 +557,7 @@ class MainWindow(QWidget):
 
         # self.action_panel.set_apply_enabled(t not in (2, 3, 4, 6, 8))
         self._sync_apply_button()
-        self._update_name_completer()
+        # self._update_name_completer()
 
     def _sync_apply_button(self):
         t = self.selection_panel.get_selection()["type"]
@@ -519,7 +573,7 @@ class MainWindow(QWidget):
         if t == 2:
             self._pending_year = year
             self._year_load_timer.start(400)
-        self._update_name_completer()
+        # self._update_name_completer()
 
     def _on_folder_structure_changed(self):
         sel = self.selection_panel.get_selection()
@@ -528,7 +582,7 @@ class MainWindow(QWidget):
         if t == 2 and year:
             self._pending_year = year
             self._year_load_timer.start(200) # Faster refresh on manual change
-        self._update_name_completer()
+        # self._update_name_completer()
 
     def _load_characters_for_year(self):
         if self._pending_year is None: return
@@ -559,43 +613,6 @@ class MainWindow(QWidget):
             line3 = f"{real_age}{distance}{oring_age_fix}Files: {c.file_count} | {c.size_mb_str}"
             self.selection_panel.update_subfolder_button(folder_name, line2, line3)
 
-    def _update_name_completer(self):
-        sel = self.selection_panel.get_selection()
-        t = sel['type']
-        if t not in (2, 3, 4):
-            self.action_panel.rename_input.setCompleter(None)
-            return
-        
-        try:
-            year = sel['year']
-            if not year: return
-            year_dir = BASE_INTERNAL / str(year)
-            if not year_dir.exists(): return
-
-            prefix = f"{year - 2003:02d}"
-            base = None
-            for child in sorted(year_dir.iterdir()):
-                if not child.is_dir(): continue
-                name = child.name.lower()
-                if t == 2: # Characters
-                    if (prefix in name and IMAGES_FOLDER in name) or (IMAGES_FOLDER in name):
-                        base = child; break
-                elif t == 3: # Episodes
-                    if '___[' in name: base = child; break
-                elif t == 4: # Music
-                    if (prefix in name and MUSIC_FOLDER in name) or (MUSIC_FOLDER in name):
-                        base = child; break
-            
-            if base and base.exists():
-                names = [f.stem for f in base.iterdir() if f.is_file()]
-                if names:
-                    completer = QCompleter(names, self)
-                    completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-                    completer.setFilterMode(Qt.MatchFlag.MatchContains)
-                    self.action_panel.rename_input.setCompleter(completer)
-                    return
-        except Exception: pass
-        self.action_panel.rename_input.setCompleter(None)
 
     def _on_move(self):
         if not self.filepath: 
@@ -623,13 +640,22 @@ class MainWindow(QWidget):
             'sub': None,
             'new_name': self.action_panel.get_new_name() or self.filepath.stem
         }
-        final_dest = resolve_duplicate(compute_destination(decision, self.filepath))
+        
+        # final_dest = resolve_duplicate(compute_destination(decision, self.filepath))
+        # self._start_move_task(decision, final_dest)
+        candidate = compute_destination(decision, self.filepath)
+        action, final_dest = self._check_destination_collision(candidate)
+        if action != "move" or final_dest is None:
+            return
         self._start_move_task(decision, final_dest)
 
     def _move_to_subfolder(self, sub_name: str):
-        if not self.filepath: return
+        if not self.filepath: 
+            return
+        
         self.selection_panel.set_subfolders_enabled(False)
         sel = self.selection_panel.get_selection()
+        
         decision = {
             'action': 'move',
             'movement_type': sel['type'],
@@ -637,7 +663,13 @@ class MainWindow(QWidget):
             'sub': sub_name,
             'new_name': self.action_panel.get_new_name() or self.filepath.stem
         }
-        final_dest = resolve_duplicate(compute_destination(decision, self.filepath))
+        
+        # final_dest = resolve_duplicate(compute_destination(decision, self.filepath))
+        # self._start_move_task(decision, final_dest)
+        candidate = compute_destination(decision, self.filepath)
+        action, final_dest = self._check_destination_collision(candidate)
+        if action != "move" or final_dest is None:
+            return
         self._start_move_task(decision, final_dest)
 
     def _move_all_in_this_folder(self, sub_name: str):
@@ -645,17 +677,42 @@ class MainWindow(QWidget):
         self._move_to_subfolder(sub_name)
 
     def _on_apply_custom(self):
-        if not self.filepath: return
+        if not self.filepath: 
+            return
+        
         folder = QFileDialog.getExistingDirectory(self, "Select Destination Folder", str(self.filepath.parent))
-        if not folder: return
+        
+        if not folder: 
+            return
+        
         decision = {
             'action': 'move_custom',
             'custom_dir': folder,
             'new_name': self.action_panel.get_new_name() or self.filepath.stem
         }
+        
+        # newname = sanitize_windows_filename(decision['new_name'])
+        # final_dest = resolve_duplicate(Path(folder) / (newname + self.filepath.suffix))
+        # self._start_move_task(decision, final_dest)
+        
         newname = sanitize_windows_filename(decision['new_name'])
-        final_dest = resolve_duplicate(Path(folder) / (newname + self.filepath.suffix))
-        self._start_move_task(decision, final_dest)
+
+        while True:
+            candidate = Path(folder) / (newname + self.filepath.suffix)
+            action, final_dest = self._check_destination_collision(candidate, allow_retry=True)
+
+            if action == "retry":
+                folder = QFileDialog.getExistingDirectory(self, "Select Destination Folder", str(self.filepath.parent))
+                if not folder:
+                    return
+                continue
+
+            if action != "move" or final_dest is None:
+                return
+
+            self._start_move_task(decision, final_dest)
+            return
+        
 
     def _start_move_task(self, decision: dict, final_dest: Path):
         self.action_panel.btn_custom.setEnabled(False)

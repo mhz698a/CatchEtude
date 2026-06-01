@@ -70,6 +70,7 @@ STRINGS = {
         "keep_in_downloads": "Mantener en descargas",
         "btn_keep": "Mantener",
         "msg_file_locked": "El archivo está ocupado. Espere a que se libere.",
+        "last_file_open": "Abrir archivo reciente",
     },
     "en": {
         "btn_keep": "Keep",
@@ -132,6 +133,7 @@ STRINGS = {
         "keep_in_downloads": "Keep in downloads",
         "btn_keep": "Keep",
         "msg_file_locked": "The file is in use. Wait until it is released.",
+        "last_file_open": "Open the recent file",
     }
 }
 

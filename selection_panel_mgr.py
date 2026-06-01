@@ -19,6 +19,7 @@ from subfolder_list_mgr import SubfolderButtonList
 from classification_mgr import get_base_path_for_type_year, get_base_path_for_docs, SubfolderScanner
 from utils import is_internal_available, delete_to_recycle_bin
 from years_selector import YearsTableWidget
+from episode_cache_mgr import EpisodeCacheManager
 
 class SelectionPanel(QWidget):
     """
@@ -188,7 +189,8 @@ class SelectionPanel(QWidget):
                 self.list_sub.setEnabled(True)
                                 
                 if t == 3: # Episodes
-                    self._sub_scanner = SubfolderScanner(base)
+                    # self._sub_scanner = SubfolderScanner(base)
+                    self._sub_scanner = SubfolderScanner(base, EpisodeCacheManager(self.list_year.current_year()))
                     self._sub_scanner.result_ready.connect(
                         lambda name, ffile: self.list_sub.update_button(name, ffile)
                     )

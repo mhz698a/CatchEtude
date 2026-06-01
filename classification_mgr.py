@@ -8,14 +8,16 @@ import logging
 from pathlib import Path
 from PyQt6 import QtCore
 from config import BASE_INTERNAL, IMAGES_FOLDER, MUSIC_FOLDER, OVERWORLD_FOLDER, ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA
+from episode_cache_mgr import EpisodeCacheManager
 
 class SubfolderScanner(QtCore.QThread):
     """Background scanner to find the first file in subfolders."""
     result_ready = QtCore.pyqtSignal(str, str)
 
-    def __init__(self, base_path: Path):
+    def __init__(self, base_path: Path, cache: EpisodeCacheManager | None = None):
         super().__init__()
         self.base_path = base_path
+        self.cache = cache
         self._abort = False
 
     def abort(self):
@@ -38,20 +40,57 @@ class SubfolderScanner(QtCore.QThread):
                 
                 last_file = "---"
                 try:
+                    
+                    # files = []
+                    # with os.scandir(sub_path) as it_f:
+                    #     for entry in it_f:
+                    #         if entry.is_file():
+                    #             n_low = entry.name.lower()
+                    #             if not (n_low.endswith('.ini') or n_low.endswith('.db')):
+                    #                 files.append(entry.name)
+                    # if files:
+                    #     files.sort()
+                    #     last_file = files[-1] # Show first or last file
+                    
+                    try:
+                        mtime_ns = os.stat(sub_path).st_mtime_ns
+                    except Exception:
+                        mtime_ns = None
+
+                    cached = None
+                    if self.cache is not None and mtime_ns is not None:
+                        cached = self.cache.get_folder_data(sub_path)
+                        if cached and cached.get("mtime_ns") == mtime_ns:
+                            last_file = cached.get("last_alpha_file", "---")
+                            self.result_ready.emit(Path(sub_path).name, last_file)
+                            continue
+
                     files = []
-                    with os.scandir(sub_path) as it_f:
-                        for entry in it_f:
-                            if entry.is_file():
-                                n_low = entry.name.lower()
-                                if not (n_low.endswith('.ini') or n_low.endswith('.db')):
-                                    files.append(entry.name)
+                    try:
+                        with os.scandir(sub_path) as it_f:
+                            for entry in it_f:
+                                if entry.is_file():
+                                    n_low = entry.name.lower()
+                                    if not (n_low.endswith(".ini") or n_low.endswith(".db")):
+                                        files.append(entry.name)
+                    except Exception:
+                        pass
+
                     if files:
                         files.sort()
-                        last_file = files[-1] # Show first or last file
+                        last_file = files[-1]
+
+                    if self.cache is not None and mtime_ns is not None:
+                        self.cache.update_folder(sub_path, mtime_ns, last_file)                    
+                        
                 except Exception:
                     pass
                 
                 self.result_ready.emit(Path(sub_path).name, last_file)
+                
+                if self.cache is not None:
+                    self.cache.save()
+                
         except Exception:
             logging.exception("Error in SubfolderScanner")
 
