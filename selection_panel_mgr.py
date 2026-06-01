@@ -20,6 +20,8 @@ from classification_mgr import get_base_path_for_type_year, get_base_path_for_do
 from utils import is_internal_available, delete_to_recycle_bin
 from years_selector import YearsTableWidget
 from episode_cache_mgr import EpisodeCacheManager
+from overworld_cache_mgr import OverworldCacheManager
+from overworld_scanner_mgr import OverworldScanner
 
 class SelectionPanel(QWidget):
     """
@@ -195,15 +197,26 @@ class SelectionPanel(QWidget):
                         lambda name, ffile: self.list_sub.update_button(name, ffile)
                     )
                     self._sub_scanner.start()
-                
+                    
+                elif t == 8:
+                    self._sub_scanner = OverworldScanner(
+                        base,
+                        OverworldCacheManager(self.list_year.current_year())
+                    )
+                    self._sub_scanner.result_ready.connect(
+                        lambda name, line2, line3: self.list_sub.update_button(name, line2, line3)
+                    )
+                    self._sub_scanner.start()
+
                 self.subfolders_refreshed.emit()
                 return
-            
+                            
             if t == 8:
                 self.list_sub.show_empty_placeholder(self.loc.get("menu_create_folder"))
                 self.list_sub.setEnabled(True)
                 self.subfolders_refreshed.emit()
                 return
+                
                 
         except Exception:
             logging.exception(f"Failed to populate subfolders from {base}")
