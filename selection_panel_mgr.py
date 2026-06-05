@@ -83,7 +83,8 @@ class SelectionPanel(QWidget):
         v_year.addWidget(self.lbl_year)
 
         self.list_year = YearsTableWidget(YEARS, self)
-        self.list_year.setFixedWidth(250)
+        self.list_year.setFixedWidth(350)
+        self.list_year.setMaximumHeight(250)
         self.list_year.setStyleSheet("""
             QTableWidget {
                 border: none;

@@ -157,6 +157,11 @@ class MainWindow(QWidget):
         self._year_load_timer.timeout.connect(self._load_characters_for_year)
         self._pending_year = None
         self._char_load_generation = 0
+        
+        self._queue_maintenance_timer = QtCore.QTimer(self)
+        self._queue_maintenance_timer.setInterval(3000)
+        self._queue_maintenance_timer.timeout.connect(self.state_manager.maintenance_tick)
+        self._queue_maintenance_timer.start()
 
     def _build_ui(self):
         main_vbox = QVBoxLayout(self)
@@ -309,14 +314,25 @@ class MainWindow(QWidget):
         self._build_tray()
 
     def _on_delete_clicked(self):
-        if not self.filepath: return
+        if not self.filepath:
+            return
+
         send_character_service_command("pause")
         try:
+            if not self.filepath.exists():
+                self.state_manager.discard_missing_active_file(
+                    f"Archivo ya no existe: {self.filepath.name}"
+                )
+                self.action_panel.set_progress(0)
+                self.show_status(f"Archivo ya no existe: {self.filepath.name}", 5000)
+                return
+
             if delete_to_recycle_bin(self.filepath):
                 self.state_manager.discard_active_file()
                 self.action_panel.set_progress(0)
             else:
-                QtWidgets.QMessageBox.warning(self, "Error", "Could not delete file.")
+                self.show_status("No se pudo eliminar el archivo.", 5000)
+
         finally:
             send_character_service_command("resume")
 
@@ -535,7 +551,6 @@ class MainWindow(QWidget):
         if not self.isVisible() and self._internal_available_at_start:
             self._bring_and_center()
         
-        # self._update_name_completer()
         if self._bulk_subfolder_name:
             self._move_to_subfolder(self._bulk_subfolder_name)
             return
@@ -555,9 +570,7 @@ class MainWindow(QWidget):
             self.selection_panel.list_year.setEnabled(False)
             return
 
-        # self.action_panel.set_apply_enabled(t not in (2, 3, 4, 6, 8))
         self._sync_apply_button()
-        # self._update_name_completer()
 
     def _sync_apply_button(self):
         t = self.selection_panel.get_selection()["type"]
@@ -573,7 +586,6 @@ class MainWindow(QWidget):
         if t == 2:
             self._pending_year = year
             self._year_load_timer.start(400)
-        # self._update_name_completer()
 
     def _on_folder_structure_changed(self):
         sel = self.selection_panel.get_selection()
@@ -641,8 +653,6 @@ class MainWindow(QWidget):
             'new_name': self.action_panel.get_new_name() or self.filepath.stem
         }
         
-        # final_dest = resolve_duplicate(compute_destination(decision, self.filepath))
-        # self._start_move_task(decision, final_dest)
         candidate = compute_destination(decision, self.filepath)
         action, final_dest = self._check_destination_collision(candidate)
         if action != "move" or final_dest is None:
@@ -690,11 +700,7 @@ class MainWindow(QWidget):
             'custom_dir': folder,
             'new_name': self.action_panel.get_new_name() or self.filepath.stem
         }
-        
-        # newname = sanitize_windows_filename(decision['new_name'])
-        # final_dest = resolve_duplicate(Path(folder) / (newname + self.filepath.suffix))
-        # self._start_move_task(decision, final_dest)
-        
+                
         newname = sanitize_windows_filename(decision['new_name'])
 
         while True:
