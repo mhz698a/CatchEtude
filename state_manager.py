@@ -2,6 +2,7 @@ import os, sys, time, shutil, logging, threading, queue
 from enum import Enum, auto
 from typing import Optional
 from pathlib import Path
+from collections import deque
 from utils import is_file_locked, is_temporary, sha256_file, resolve_duplicate, sanitize_windows_filename, flatten_downloads_root, setctime_blocking
 from fallback_utils import safe_move_to_conflicts
 from history_mgr import HistoryManager
@@ -66,6 +67,8 @@ class StateManager:
             self._state = s
             self._state_event.set()
 
+        self._purge_missing_queue_entries()
+        
         # 🔽 NUEVO: cuando el sistema queda libre, aplanar descargas
         if s == State.IDLE:
             try:
@@ -85,8 +88,45 @@ class StateManager:
             active_str = str(self._active_file) if self._active_file else ""
             self.notifier.queue_updated.emit(list(self._queue_list), active_str)
 
+    def _purge_missing_queue_entries(self) -> int:
+        removed = 0
+
+        with self._lock:
+            active = self._active_file
+            kept: list[Path] = []
+
+            for p in self._queue_list:
+                if p == active or p.exists():
+                    kept.append(p)
+                    continue
+
+                removed += 1
+                self._pending.discard(p)
+                logging.info(f"Removed missing queued file: {p}")
+
+            if removed:
+                self._queue_list = kept
+
+                with self._q.mutex:
+                    self._q.queue = deque(
+                        item for item in self._q.queue
+                        if item == active or item.exists()
+                    )
+
+                self._emit_queue_update()
+
+                if not self._pending and self._active_file is None and self.notifier:
+                    self.notifier.queue_empty.emit()
+
+        return removed
+    
+
     def enqueue_file(self, p: Path):
         # ✅ deduplicación
+        if not p.exists():
+            logging.debug(f"Skipping missing file before enqueue: {p}")
+            return
+        
         with self._lock:
             if p in self._pending:
                 logging.debug(f"Already pending: {p}")
@@ -107,6 +147,16 @@ class StateManager:
                     self._state_event.clear()
 
                 p: Path = self._q.get()
+                
+                if not p.exists():
+                    with self._lock:
+                        self._pending.discard(p)
+                        if p in self._queue_list:
+                            self._queue_list.remove(p)
+                        self._emit_queue_update()
+                        if not self._pending and self._active_file is None and self.notifier:
+                            self.notifier.queue_empty.emit()
+                    continue
                 
                 # Double check IDLE state after popping
                 if self.current_state() != State.IDLE:
@@ -450,13 +500,22 @@ class StateManager:
         """
         Tareas de mantenimiento que SOLO deben correr cuando el sistema está IDLE.
         """
-        if self.current_state() != State.IDLE:
-            return
-
         try:
+            self._purge_missing_queue_entries()
+
+            if self._active_file is not None and not self._active_file.exists():
+                self._skip_missing_active_file(
+                    f"Archivo faltante omitido: {self._active_file.name}"
+                )
+
+            if self.current_state() != State.IDLE:
+                return
+
             flatten_downloads_root()
+
             if not self._is_scanning:
                 threading.Thread(target=self._run_maintenance_scan, daemon=True).start()
+
         except Exception:
             logging.exception("Maintenance tick failed")
 
@@ -491,6 +550,12 @@ class StateManager:
         self._enqueue_allowed.set()
         if not self._pending and self.notifier:
             self.notifier.queue_empty.emit()
+
+    def discard_missing_active_file(self, reason: str = "") -> bool:
+        if self._active_file is None:
+            return False
+        self._skip_missing_active_file(reason)
+        return True
 
 def scan_existing_downloads(state_manager: StateManager):
     try:

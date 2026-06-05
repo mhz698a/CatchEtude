@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QFileIconProvider
-from PyQt6.QtCore import Qt, QMimeData
+from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
 
 from config import BLUR_LEVEL, ICON_PATH
@@ -114,7 +114,12 @@ class ActionPanel(QWidget):
         layout.addWidget(self.lbl_name)
         self.rename_input = QLineEdit()
         layout.addWidget(self.rename_input)
-        layout.addStretch()
+        
+        self.lbl_file_info = QLabel("")
+        self.lbl_file_info.setStyleSheet("font-style: italic; font-size: 11px; margin-left: 5px;")
+        layout.addWidget(self.lbl_file_info)
+        
+        layout.addStretch()        
 
         # Progress Bar
         self.progress = QtWidgets.QProgressBar()
@@ -181,10 +186,46 @@ class ActionPanel(QWidget):
         self._hide_secure = hide_secure
         self.hide_secure_cb.setChecked(hide_secure)
         self.rename_input.setText(p.stem)
+        self._update_file_info_label()        
         self.load_preview()
         self.drag_icon.set_file(p)
         self.btn_custom.setEnabled(True)
         # Note: btn_move enabling depends on type, handled by MainWindow
+
+    def _update_file_info_label(self):
+        if not self.filepath:
+            self.lbl_file_info.setText("")
+            return
+
+        p = self.filepath
+        image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".svg"}
+
+        if p.suffix.lower() in image_exts:
+            try:
+                reader = QtGui.QImageReader(str(p))
+                size = reader.size()
+                if size.isValid():
+                    self.lbl_file_info.setText(
+                        f"Tipo: Imagen ({size.width()} x {size.height()})"
+                    )
+                else:
+                    self.lbl_file_info.setText("Tipo: Imagen")
+            except Exception:
+                self.lbl_file_info.setText("Tipo: Imagen")
+            return
+
+        mime = QtCore.QMimeDatabase().mimeTypeForFile(str(p)).name()
+        group = mime.split("/", 1)[0] if "/" in mime else ""
+
+        type_map = {
+            "audio": "Audio",
+            "video": "Video",
+            "image": "Imagen",
+            "text": "Texto",
+            "application": "Aplicación",
+        }
+
+        self.lbl_file_info.setText(f"Tipo: {type_map.get(group, 'Archivo')}")
 
     def load_preview(self):
         if not self.filepath: return
@@ -265,6 +306,7 @@ class ActionPanel(QWidget):
         self.filepath = None
         self.preview_label.clear()
         self.rename_input.setText("")
+        self.lbl_file_info.setText("")
         self.progress.setValue(0)
         self.drag_icon.set_file(None)
 

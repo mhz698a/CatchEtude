@@ -85,6 +85,8 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
         super().__init__(parent)
         self.setWidgetResizable(True)
         self.container = QtWidgets.QWidget()
+        self.setMaximumHeight(400)
+        self.setMinimumHeight(300)
         self.layout = QtWidgets.QVBoxLayout(self.container)
         self.layout.setContentsMargins(2, 2, 2, 2)
         self.layout.setSpacing(2)
