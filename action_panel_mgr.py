@@ -7,7 +7,7 @@ import os
 import logging
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QFileIconProvider
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider
 from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
 
@@ -81,6 +81,7 @@ class ActionPanel(QWidget):
     delete_clicked = QtCore.pyqtSignal()
     secure_changed = QtCore.pyqtSignal(bool)
     keep_changed = QtCore.pyqtSignal(bool)
+    post_action_changed = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -91,8 +92,10 @@ class ActionPanel(QWidget):
         self._build_ui()
 
     def _build_ui(self):
+        self.setMaximumWidth(350)
+        
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(15, 0, 0, 0)
         
         # Preview Section
         self.preview_label = QLabel()
@@ -145,10 +148,30 @@ class ActionPanel(QWidget):
         self.keep_downloads_cb = QCheckBox(self.loc.get("keep in downloads"))
         self.keep_downloads_cb.toggled.connect(self._on_keep_downloads_changed)
         top_row.addWidget(self.keep_downloads_cb)
-        
         top_row.addStretch()
-        footer.addLayout(top_row)
         
+        # comobox action after download
+        self.lbl_post_action = QLabel(self.loc.get("lbl_post_action"))
+
+        self.post_action_row = QHBoxLayout()
+        self.post_action_row.addWidget(self.lbl_post_action)
+
+        self.post_action_cb = QComboBox()
+        self.post_action_cb.setMaximumWidth(310)
+        self.post_action_cb.addItem(self.loc.get("post_action_none"), "none")
+        self.post_action_cb.addItem(self.loc.get("post_action_open_file"), "open_file")
+        self.post_action_cb.addItem(self.loc.get("post_action_open_folder"), "open_folder")
+        self.post_action_cb.currentIndexChanged.connect(
+            lambda _: self.post_action_changed.emit(self.get_post_action_mode())
+        )
+
+        self.post_action_row.addWidget(self.post_action_cb)
+        self.post_action_row.addStretch(1)
+
+        footer.addLayout(top_row)
+        footer.addLayout(self.post_action_row)
+    
+        # buttons arrow
         buttons_row = QHBoxLayout()
         buttons_row.setSpacing(8)
 
@@ -172,6 +195,16 @@ class ActionPanel(QWidget):
         layout.addLayout(footer)
 
     def retranslate_ui(self):
+        self.lbl_post_action.setText(self.loc.get("lbl_post_action"))
+
+        current = self.get_post_action_mode()
+        self.post_action_cb.blockSignals(True)
+        self.post_action_cb.setItemText(0, self.loc.get("post_action_none"))
+        self.post_action_cb.setItemText(1, self.loc.get("post_action_open_file"))
+        self.post_action_cb.setItemText(2, self.loc.get("post_action_open_folder"))
+        self.set_post_action_mode(current)
+        self.post_action_cb.blockSignals(False)
+
         self.btn_open.setText(self.loc.get("btn_open"))
         self.lbl_name.setText(self.loc.get("lbl_new_name"))
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
@@ -316,3 +349,14 @@ class ActionPanel(QWidget):
 
     def is_keep_downloads(self) -> bool:
         return self.keep_downloads_cb.isChecked()
+
+    def get_post_action_mode(self) -> str:
+        data = self.post_action_cb.currentData()
+        return data if data in ("none", "open_file", "open_folder") else "none"
+
+    def set_post_action_mode(self, mode: str):
+        idx = self.post_action_cb.findData(mode)
+        if idx < 0:
+            idx = self.post_action_cb.findData("none")
+        if idx >= 0:
+            self.post_action_cb.setCurrentIndex(idx)

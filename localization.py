@@ -71,6 +71,17 @@ STRINGS = {
         "btn_keep": "Mantener",
         "msg_file_locked": "El archivo está ocupado. Espere a que se libere.",
         "last_file_open": "Abrir archivo reciente",
+        "lbl_post_action": "Después de la acción",
+        "post_action_open_file": "Abrir archivo",
+        "post_action_open_folder": "Abrir la carpeta de destino",
+        "post_action_none": "No hacer nada",
+        "post_action_reset_notice": "La acción posterior sera restablecida automáticamente a 'No hacer nada'",
+        "bulk_open_file_not_supported": "Abrir archivo tras la acción no está disponible para 'Mover todo a esta carpeta'. Se utilizará 'No hacer nada después'",
+        "status_post_action_open_file": "El siguiente movimiento abrirá el archivo una sola vez.",
+        "status_post_action_open_folder": "El siguiente movimiento abrirá la carpeta de destino una sola vez.",
+        "status_post_action_none": "No se ejecutarán acciones posteriores.",
+        "status_post_action_consumed": "La acción posterior fue consumida y volvió automáticamente a 'No hacer nada después'.",
+        "status_bulk_open_file_disabled": "'Abrir archivo tras la acción' no está disponible para 'Mover todo a esta carpeta'. Se utilizará 'No hacer nada después'.",
     },
     "en": {
         "btn_keep": "Keep",
@@ -134,6 +145,17 @@ STRINGS = {
         "btn_keep": "Keep",
         "msg_file_locked": "The file is in use. Wait until it is released.",
         "last_file_open": "Open the recent file",
+        "lbl_post_action": "After the action:",
+        "post_action_open_file": "Open file",
+        "post_action_open_folder": "Open destination folder",
+        "post_action_none": "Do nothing",
+        "post_action_reset_notice": "The post action will be automatically reset to 'Do nothing'",
+        "bulk open_file not_supported": "Open file after action is not available for 'Move everything to this folder'. 'Do nothing after' will be used.",
+        "status_post_action_open_file": "The next action will open the file only once.",
+        "status_post_action_open_folder": "The next action will open the destination folder only once.",
+        "status_post_action_none": "No subsequent actions will be performed.",
+        "status_post_action_consumed": "The subsequent action was consumed and automatically reverted to 'Do nothing after'.",
+        "status_bulk_open_file_disabled": "'Open file after action' is not available for 'Move everything to this folder'. 'Do nothing after' will be used."
     }
 }
 

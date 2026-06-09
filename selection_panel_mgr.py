@@ -68,6 +68,8 @@ class SelectionPanel(QWidget):
         v_type.addWidget(self.lbl_type)
         
         self.list_type = QListWidget()
+        self.list_type.setFixedWidth(100)
+        self.list_type.setMinimumWidth(100)
         self._fill_type_list()
         self.list_type.currentRowChanged.connect(self._on_type_changed)
         
@@ -83,7 +85,8 @@ class SelectionPanel(QWidget):
         v_year.addWidget(self.lbl_year)
 
         self.list_year = YearsTableWidget(YEARS, self)
-        self.list_year.setFixedWidth(350)
+        self.list_year.setFixedWidth(300)
+        self.list_year.setMaximumWidth(300)
         self.list_year.setMaximumHeight(250)
         self.list_year.setStyleSheet("""
             QTableWidget {

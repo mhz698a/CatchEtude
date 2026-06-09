@@ -16,3 +16,10 @@ class AppSignals(QtCore.QObject):
     queue_empty = QtCore.pyqtSignal() # state manager -> UI
     queue_updated = QtCore.pyqtSignal(list, str) # Emitted when the queue changes. Params: (list of Path, active_file_path or "")
     warning_message = QtCore.pyqtSignal(str)
+    
+    post_action_ready = QtCore.pyqtSignal(str, str)
+    # args:
+    #   str = ruta absoluta del archivo final
+    #   str = modo post-acción: "open_file", "open_folder", "none"
+    
+    

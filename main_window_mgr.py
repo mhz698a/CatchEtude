@@ -125,6 +125,7 @@ class MainWindow(QWidget):
         self.signals.queue_empty.connect(self._hide_if_idle)
         self.signals.queue_updated.connect(self._on_queue_updated)
         self.signals.warning_message.connect(self.show_status)
+        self.signals.post_action_ready.connect(self._queue_or_run_post_action)
         
         self.setWindowTitle(APP_NAME)
         
@@ -141,9 +142,12 @@ class MainWindow(QWidget):
         self.filepath: Optional[Path] = None
         self._bulk_subfolder_name: Optional[str] = None
         self._internal_available_at_start = is_internal_available()
-        self._hide_secure = False
-        self._load_config()
         
+        self._hide_secure = False
+        self._post_action_mode = "none"
+        self._pending_post_actions = {}
+        self._post_action_consumed = False
+        self._load_config()       
         self._setup_server()
         
         self._build_ui()
@@ -212,6 +216,8 @@ class MainWindow(QWidget):
         self.action_panel.apply_custom_clicked.connect(self._on_apply_custom)
         self.action_panel.secure_changed.connect(self._on_secure_changed)
         self.action_panel.keep_changed.connect(self._on_keep_changed)
+        self.action_panel.post_action_changed.connect(self._on_post_action_changed)
+        self.action_panel.set_post_action_mode(self._post_action_mode)
         root.addWidget(self.action_panel)
 
         # Queue / Character Panel
@@ -246,10 +252,11 @@ class MainWindow(QWidget):
             if CONFIG_PATH.exists():
                 with CONFIG_PATH.open('r', encoding='utf-8') as f:
                     data = json.load(f)
-                    self._hide_secure = data.get("hide_secure", False)
+                self._hide_secure = data.get("hide_secure", False)
+                self._post_action_mode = data.get("post_action_mode", "none")
         except Exception:
             logging.exception("Failed to load config")
-
+            
     def _save_config(self):
         try:
             data = {}
@@ -257,6 +264,7 @@ class MainWindow(QWidget):
                 with CONFIG_PATH.open('r', encoding='utf-8') as f:
                     data = json.load(f)
             data["hide_secure"] = self._hide_secure
+            data["post_action_mode"] = self._post_action_mode
             with CONFIG_PATH.open('w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
         except Exception:
@@ -266,6 +274,25 @@ class MainWindow(QWidget):
         self._hide_secure = hide_secure
         self.queue_panel.set_hide_secure(hide_secure)
         self._save_config()
+        
+    def _on_post_action_changed(self, mode: str):
+        self._post_action_mode = mode if mode in ("open_file", "open_folder", "none") else "none"
+        self._save_config()
+
+        if mode == "open_file":
+            self.show_status(
+                self.loc.get("status_post_action_open_file")
+            )
+
+        elif mode == "open_folder":
+            self.show_status(
+                self.loc.get("status_post_action_open_folder")
+            )
+
+        else:
+            self.show_status(
+                self.loc.get("status_post_action_none")
+            )
 
     def _setup_server(self):
         self._server = QLocalServer(self)
@@ -594,7 +621,6 @@ class MainWindow(QWidget):
         if t == 2 and year:
             self._pending_year = year
             self._year_load_timer.start(200) # Faster refresh on manual change
-        # self._update_name_completer()
 
     def _load_characters_for_year(self):
         if self._pending_year is None: return
@@ -640,6 +666,7 @@ class MainWindow(QWidget):
             decision = {
                 "action": "keep",
                 "new_name": self.action_panel.get_new_name() or self.filepath.stem,
+                "post_action": self.action_panel.get_post_action_mode(),
             }
             self.state_manager.apply_decision(decision)
             self._hide_if_idle()
@@ -650,9 +677,10 @@ class MainWindow(QWidget):
             'movement_type': sel['type'],
             'year': sel['year'],
             'sub': None,
-            'new_name': self.action_panel.get_new_name() or self.filepath.stem
+            'new_name': self.action_panel.get_new_name() or self.filepath.stem,
+            "post_action": self.action_panel.get_post_action_mode(),
         }
-        
+            
         candidate = compute_destination(decision, self.filepath)
         action, final_dest = self._check_destination_collision(candidate)
         if action != "move" or final_dest is None:
@@ -671,11 +699,10 @@ class MainWindow(QWidget):
             'movement_type': sel['type'],
             'year': sel['year'],
             'sub': sub_name,
-            'new_name': self.action_panel.get_new_name() or self.filepath.stem
+            'new_name': self.action_panel.get_new_name() or self.filepath.stem,
+            'post_action': self.action_panel.get_post_action_mode(),
         }
         
-        # final_dest = resolve_duplicate(compute_destination(decision, self.filepath))
-        # self._start_move_task(decision, final_dest)
         candidate = compute_destination(decision, self.filepath)
         action, final_dest = self._check_destination_collision(candidate)
         if action != "move" or final_dest is None:
@@ -683,6 +710,21 @@ class MainWindow(QWidget):
         self._start_move_task(decision, final_dest)
 
     def _move_all_in_this_folder(self, sub_name: str):
+        post_action = self.action_panel.get_post_action_mode()
+
+        if post_action == "open_file":
+            self.show_status(
+                self.loc.get("status_bulk_open_file_disabled"),
+                8000
+            )
+
+            self.action_panel.blockSignals(True)
+            self.action_panel.set_post_action_mode("none")
+            self.action_panel.blockSignals(False)
+
+            self._post_action_mode = "none"
+            self._save_config()
+            
         self._bulk_subfolder_name = sub_name
         self._move_to_subfolder(sub_name)
 
@@ -698,7 +740,8 @@ class MainWindow(QWidget):
         decision = {
             'action': 'move_custom',
             'custom_dir': folder,
-            'new_name': self.action_panel.get_new_name() or self.filepath.stem
+            'new_name': self.action_panel.get_new_name() or self.filepath.stem,
+            'post_action': self.action_panel.get_post_action_mode(),
         }
                 
         newname = sanitize_windows_filename(decision['new_name'])
@@ -750,7 +793,9 @@ class MainWindow(QWidget):
                         
                         moved = move_file_shfileop(src, final_dest)
                         if moved:
-                            self.state_manager.finalize_background_move(src, final_dest, src_meta)
+                            self.state_manager.finalize_background_move(
+                                src, final_dest, src_meta, decision.get("post_action", "none")
+                            )
                         elif is_file_locked(src):
                             self.signals.warning_message.emit(self.loc.get("msg_file_locked"))
                             
@@ -782,7 +827,7 @@ class MainWindow(QWidget):
             if ok:
                 threading.Thread(
                     target=self.state_manager.finalize_background_move,
-                    args=(src, copied_path, src_meta),
+                    args=(src, copied_path, src_meta, decision.get("post_action", "none")),
                     daemon=True
                 ).start()
                 self._build_tray()
@@ -807,9 +852,78 @@ class MainWindow(QWidget):
 
     def _hide_if_idle(self):
         if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work():
+            self._flush_post_actions()
             self._bulk_subfolder_name = None
             self.action_panel.clear()
             self.filepath = None
             if hasattr(self, '_pending_dialog'):
                 self._pending_dialog.hide()
             self.hide()
+
+    def _queue_or_run_post_action(self, final_path, post_action: str):
+        if post_action not in ("open_file", "open_folder"):
+            return
+
+        if not final_path:
+            return
+
+        try:
+            path = final_path if isinstance(final_path, Path) else Path(str(final_path))
+        except Exception:
+            logging.exception("Invalid final_path for post action")
+            return
+
+        target = path if post_action == "open_file" else path.parent
+
+        key = str(target.resolve()) if target.exists() else str(target)
+
+        if self._bulk_subfolder_name:
+            self._pending_post_actions[key] = (target, post_action)
+            return
+
+        self._run_post_action(target, post_action)
+
+    def _run_post_action(self, target, post_action: str):
+        try:
+            target = target if isinstance(target, Path) else Path(str(target))
+            if target.exists():
+                os.startfile(str(target))
+                self._consume_post_action()
+        except Exception:
+            logging.exception(f"Failed post action {post_action} for {target}")
+
+    def _flush_post_actions(self):
+        if not self._pending_post_actions:
+            return
+
+        pending = list(self._pending_post_actions.values())
+        self._pending_post_actions.clear()
+
+        for target, post_action in pending:
+            self._run_post_action(target, post_action)
+        
+        if pending:
+            self._consume_post_action()
+
+    def _consume_post_action(self):
+        mode = self.action_panel.get_post_action_mode()
+
+        if mode == "none":
+            return
+
+        self._post_action_consumed = True
+
+        self.action_panel.blockSignals(True)
+        self.action_panel.set_post_action_mode("none")
+        self.action_panel.blockSignals(False)
+
+        self._post_action_mode = "none"
+        self._save_config()
+
+        try:
+            self.show_status(
+                self.loc.get("status_post_action_consumed"),
+                8000
+            )
+        except Exception:
+            logging.exception("Failed to show post-action reset notification")

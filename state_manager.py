@@ -348,7 +348,13 @@ class StateManager:
                     self._history.record_move(
                         p, 
                         dest, 
-                        {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime})
+                        {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime}
+                    )
+                    
+                    post_action = decision.get("post_action", "none")
+                    if post_action in ("open_file", "open_folder") and self.notifier:
+                        self.notifier.post_action_ready.emit(str(dest), post_action)
+                    
                 else:
                     logging.error("Integridad fallida al mover a conflictos; archivo original intacto")
                     dest.unlink(missing_ok=True)
@@ -363,6 +369,11 @@ class StateManager:
                 if sha256_file(p) == sha256_file(dest):
                     p.unlink(missing_ok=True)
                     logging.info(f"Archivo movido a: {dest}")
+                    
+                    post_action = decision.get("post_action", "none")
+                    if post_action in ("open_file", "open_folder") and self.notifier:
+                        self.notifier.post_action_ready.emit(str(dest), post_action)                    
+                    
                 else:
                     logging.error("Integridad fallida al mover; enviando a conflictos")
                     dest.unlink(missing_ok=True)
@@ -383,6 +394,12 @@ class StateManager:
                 if sha256_file(p) == sha256_file(dest):
                     p.unlink(missing_ok=True)
                     logging.info(f"Archivo movido (custom) a: {dest}")
+                    
+                    post_action = decision.get("post_action", "none")
+                    if post_action in ("open_file", "open_folder") and self.notifier:
+                        self.notifier.post_action_ready.emit(str(dest), post_action)
+
+                    
                 else:
                     logging.error("Integridad fallida en move_custom")
                     dest.unlink(missing_ok=True)
@@ -451,7 +468,7 @@ class StateManager:
         self._set_state(State.IDLE)
         return True
     
-    def finalize_background_move(self, src: Path, dst: Path, src_meta: dict):
+    def finalize_background_move(self, src: Path, dst: Path, src_meta: dict, post_action: str = "none"):
         """
         Completes the move process in the background.
         Used by the UI when it 'hot-swaps' to the next file.
@@ -473,6 +490,7 @@ class StateManager:
             # Handle cross-drive integrity if src still exists
             if src.exists():
                 if not is_same_drive(src, dst):
+                    
                     if sha256_file(src) == sha256_file(dst):
                         src.unlink(missing_ok=True)
                         logging.info(f"Background move finalized (cross-drive): {dst}")
@@ -489,8 +507,13 @@ class StateManager:
                 logging.info(f"Background move finalized (native move): {dst}")
                 self._history.record_move(src, dst, src_meta)
 
+            # finish action after move
+            if post_action in ("open_file", "open_folder") and self.notifier:
+                self.notifier.post_action_ready.emit(str(dst), post_action)
+
         except Exception:
             logging.exception("Error in finalize_background_move")
+            
         finally:
             self._pending.discard(src)
             if not self._pending and self.notifier:
