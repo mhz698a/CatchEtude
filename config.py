@@ -19,6 +19,7 @@ MYAPPID = 'EtudeProduts.CatchEtude.CatchEtudeWatcher.v1.0'
 # Icons and Paths
 ICON_PATH = r"C:\Users\miche\OneDrive\CatchEtude\catchetude-icon.png"
 APP_DIR = Path(__file__).resolve().parent.as_posix()
+METADATA_EDIT_SCRIPT_PATH = Path(r"C:\Users\miche\OneDrive\foobar2000\profile\ActivityBar\rename_dialog.py")
 
 USER_HOME = Path.home()
 DOWNLOADS = USER_HOME / "Downloads"
@@ -51,6 +52,7 @@ ACROBAT_FOLDER = "resources.local.acrobat"
 
 # Filters and Date
 EXCLUDE_EXT = {'.crdownload', '.part', '.tmp', '.temp', '.catchtmp', '.ini'}
+METADATA_EDIT_EXTS = {".mp3", ".mp4", ".m4a", ".m4v"}
 CURRENT_YEAR = datetime.now().year
 YEARS = list(range(2004, CURRENT_YEAR + 1))
 

@@ -5,13 +5,14 @@ Componente del panel de acción para CatchEtude.
 
 import os
 import logging
+import subprocess
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider
 from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
 
-from config import BLUR_LEVEL, ICON_PATH
+from config import BLUR_LEVEL, ICON_PATH, METADATA_EDIT_SCRIPT_PATH, METADATA_EDIT_EXTS
 from localization import LocalizationManager
 from ui_utils_mgr import apply_secure_blur
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
@@ -106,11 +107,25 @@ class ActionPanel(QWidget):
         self.preview_label.mousePressEvent = self._toggle_preview
         layout.addWidget(self.preview_label, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
 
+        open_row = QHBoxLayout()
+        open_row.setSpacing(8)
+        open_row.addStretch()
+
         self.btn_open = QPushButton(self.loc.get("btn_open"))
         self.btn_open.clicked.connect(self._open_file)
         self.btn_open.setFixedHeight(30)
         self.btn_open.setFixedWidth(100)
-        layout.addWidget(self.btn_open, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+        open_row.addWidget(self.btn_open)
+
+        self.btn_edit_metadata = QPushButton("Edit metadata")
+        self.btn_edit_metadata.clicked.connect(self._open_metadata_editor)
+        self.btn_edit_metadata.setFixedHeight(30)
+        self.btn_edit_metadata.setFixedWidth(110)
+        self.btn_edit_metadata.setVisible(False)
+        open_row.addWidget(self.btn_edit_metadata)
+
+        open_row.addStretch()
+        layout.addLayout(open_row)
 
         # Rename Section
         self.lbl_name = QLabel(self.loc.get("lbl_new_name"))
@@ -177,13 +192,13 @@ class ActionPanel(QWidget):
 
         self.btn_custom = QPushButton(self.loc.get("btn_apply_custom"))
         self.btn_custom.setFixedHeight(30)
-        self.btn_custom.setFixedWidth(145)
+        self.btn_custom.setFixedWidth(150)
         self.btn_custom.clicked.connect(self.apply_custom_clicked.emit)
         buttons_row.addWidget(self.btn_custom)
 
         self.btn_move = QPushButton(self.loc.get("btn_apply"))
         self.btn_move.setFixedHeight(30)
-        self.btn_move.setFixedWidth(145)
+        self.btn_move.setFixedWidth(150)
         self.btn_move.clicked.connect(self.apply_clicked.emit)
         buttons_row.addWidget(self.btn_move)
         
@@ -196,7 +211,8 @@ class ActionPanel(QWidget):
 
     def retranslate_ui(self):
         self.lbl_post_action.setText(self.loc.get("lbl_post_action"))
-
+        self.btn_edit_metadata.setText("Edit metadata")
+        
         current = self.get_post_action_mode()
         self.post_action_cb.blockSignals(True)
         self.post_action_cb.setItemText(0, self.loc.get("post_action_none"))
@@ -223,6 +239,7 @@ class ActionPanel(QWidget):
         self.load_preview()
         self.drag_icon.set_file(p)
         self.btn_custom.setEnabled(True)
+        self._update_metadata_button_visibility()
         # Note: btn_move enabling depends on type, handled by MainWindow
 
     def _update_file_info_label(self):
@@ -321,6 +338,26 @@ class ActionPanel(QWidget):
         if self.filepath:
             os.startfile(str(self.filepath))
 
+    def _is_metadata_editable(self) -> bool:
+        return bool(self.filepath) and self.filepath.suffix.lower() in METADATA_EDIT_EXTS
+
+    def _update_metadata_button_visibility(self):
+        visible = self._is_metadata_editable()
+        self.btn_edit_metadata.setVisible(visible)
+        self.btn_edit_metadata.setEnabled(visible)
+
+    def _open_metadata_editor(self):
+        if not self._is_metadata_editable():
+            return
+
+        try:
+            subprocess.Popen(
+                ["pythonw", str(METADATA_EDIT_SCRIPT_PATH), str(self.filepath)],
+                close_fds=True,
+            )
+        except Exception:
+            logging.exception("Error launching metadata editor")
+
     def _on_hide_secure_changed(self, state):
         self._hide_secure = (state == Qt.CheckState.Checked.value)
         self.secure_changed.emit(self._hide_secure)
@@ -342,6 +379,7 @@ class ActionPanel(QWidget):
         self.lbl_file_info.setText("")
         self.progress.setValue(0)
         self.drag_icon.set_file(None)
+        self._update_metadata_button_visibility()
 
     def _on_keep_downloads_changed(self, checked: bool):
         self.btn_move.setText(self.loc.get("btn_keep") if checked else self.loc.get("btn_apply"))
