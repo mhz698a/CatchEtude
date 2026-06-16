@@ -121,7 +121,7 @@ class RestartWorker(QtCore.QThread):
 
             subprocess.Popen(
                 [python_exe, self.script_path],
-                creationflags=0x00000010
+                creationflags=subprocess.CREATE_NO_WINDOW # 0x00000010 es para mostrar
             )
 
             self.finished.emit()

@@ -11,6 +11,7 @@ from math import ceil
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget
 from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QSize
 from PyQt6.QtWidgets import QListWidgetItem
 
 from config import YEARS, ICON_PATH, APP_DIR
@@ -58,35 +59,59 @@ class SelectionPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         # ==========================
-        # Fila de Desicion y Años
+        # Fila de Desicion y Años (top row)
         # ==========================
-        top_row = QHBoxLayout()
+        top_row = QVBoxLayout()
         
+        # -------------------
         # Type Column
+        # -------------------
         v_type = QVBoxLayout()
-        self.lbl_type = QLabel(self.loc.get("lbl_type"))
-        v_type.addWidget(self.lbl_type)
         
         self.list_type = QListWidget()
-        self.list_type.setFixedWidth(100)
-        self.list_type.setMinimumWidth(100)
+        self.list_type.setViewMode(QListWidget.ViewMode.IconMode)
+        self.list_type.setFlow(QListWidget.Flow.TopToBottom)
+        self.list_type.setMovement(QListWidget.Movement.Static)
+        self.list_type.setTextElideMode(QtCore.Qt.TextElideMode.ElideNone)
+        self.list_type.setIconSize(QSize(32, 32))
+        self.list_type.setGridSize(QSize(42, 42))
+        self.list_type.setSpacing(10)
+        self.list_type.setFixedHeight(65)
         self._fill_type_list()
         self.list_type.currentRowChanged.connect(self._on_type_changed)
+        self.list_type.setStyleSheet("""
+            QListWidget {
+                border: none;
+                background: transparent;
+                margin: 10px 10px 10px 10px;
+                outline: none;
+            }
+            QListWidget::item {
+                border-radius: 8px;
+                padding: 4px;
+            }
+            QListWidget::item:hover {
+                background-color: rgba(0, 120, 215, 0.1);
+            }
+            QListWidget::item:selected {
+                background-color: rgba(0, 120, 215, 0.25);
+                border: 1px solid #0078d7;
+            }
+            QListWidget::item:selected:focus {
+                background-color: rgba(0, 120, 215, 0.25);
+                border: 1px solid #0078d7;
+            }
+        """)
         
         v_type.addWidget(self.list_type)
         top_row.addLayout(v_type)
 
         # -------------------
-        # Year Column
+        # Year Column (top row)
         # -------------------
-                
         v_year = QVBoxLayout()
-        self.lbl_year = QLabel(self.loc.get("lbl_years"))
-        v_year.addWidget(self.lbl_year)
 
         self.list_year = YearsTableWidget(YEARS, self)
-        self.list_year.setFixedWidth(300)
-        self.list_year.setMaximumWidth(300)
         self.list_year.setMaximumHeight(250)
         self.list_year.setStyleSheet("""
             QTableWidget {
@@ -108,14 +133,15 @@ class SelectionPanel(QWidget):
         v_year.addWidget(self.list_year)
         top_row.addLayout(v_year)
         
+        
         # ==========================
         # Fila de las subcarpetas
         # ==========================
 
         # Subfolder Column
         v_sub = QVBoxLayout()
-        self.lbl_sub = QLabel(self.loc.get("lbl_subfolders"))
-        v_sub.addWidget(self.lbl_sub)
+        # self.lbl_sub = QLabel(self.loc.get("lbl_subfolders"))
+        # v_sub.addWidget(self.lbl_sub)
         self.list_sub = SubfolderButtonList()
         self.list_sub.setEnabled(False)
         self.list_sub.clicked.connect(self.subfolder_clicked.emit)
@@ -127,9 +153,9 @@ class SelectionPanel(QWidget):
         layout.addLayout(v_sub)
 
     def retranslate_ui(self):
-        self.lbl_type.setText(self.loc.get("lbl_type"))
-        self.lbl_year.setText(self.loc.get("lbl_years"))
-        self.lbl_sub.setText(self.loc.get("lbl_subfolders"))
+        # self.lbl_type.setText(self.loc.get("lbl_type"))
+        # self.lbl_year.setText(self.loc.get("lbl_years"))
+        # self.lbl_sub.setText(self.loc.get("lbl_subfolders"))
                 
         curr = self.list_type.currentRow()
         self._fill_type_list(curr)
@@ -361,8 +387,9 @@ class SelectionPanel(QWidget):
 
         for type_id in range(2, 9):
             text = self.loc.get(f"type_{type_id}")
-            item = QListWidgetItem(self._type_icon_for(type_id), text)
+            item = QListWidgetItem(self._type_icon_for(type_id), '')
             item.setData(QtCore.Qt.ItemDataRole.UserRole, type_id)
+            item.setToolTip(text)
             self.list_type.addItem(item)
 
         if 0 <= selected_row < self.list_type.count():
