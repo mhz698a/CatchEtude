@@ -16,11 +16,13 @@ from typing import Optional
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QFileDialog,
-    QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, QLabel, QMessageBox, QStatusBar
+    QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, QLabel, QMessageBox, QStatusBar,
+    QCheckBox, QTimeEdit
 )
+from pending_scheduler_mgr import PendingScheduler
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTime
 
 from config import (
     APP_NAME, LOG_PATH, CRASH_REPORT_PATH,
@@ -166,6 +168,8 @@ class MainWindow(QWidget):
         self._queue_maintenance_timer.setInterval(3000)
         self._queue_maintenance_timer.timeout.connect(self.state_manager.maintenance_tick)
         self._queue_maintenance_timer.start()
+        
+        self._pending_scheduler = None
 
     def _build_ui(self):
         main_vbox = QVBoxLayout(self)
@@ -175,8 +179,16 @@ class MainWindow(QWidget):
         self.btn_delete_header = QPushButton(self.loc.get("btn_header_delete"))
         self.btn_delete_header.setFixedHeight(25)
         self.btn_delete_header.clicked.connect(self._on_delete_clicked)
-        header_layout.addWidget(self.btn_delete_header)
-        header_layout.addStretch()
+        
+        self.chk_auto_run_pendings = QCheckBox()
+        self.chk_auto_run_pendings.setFixedHeight(25)
+        self.chk_auto_run_pendings.toggled.connect(self._on_pending_schedule_changed)
+
+        self.time_auto_run_pendings = QTimeEdit()
+        self.time_auto_run_pendings.setDisplayFormat("HH:mm")
+        self.time_auto_run_pendings.setFixedHeight(25)
+        self.time_auto_run_pendings.setFixedWidth(80)
+        self.time_auto_run_pendings.timeChanged.connect(self._on_pending_schedule_changed)
 
         self.btn_hide = QPushButton(self.loc.get("btn_hide"))
         self.btn_hide.setFixedHeight(25)
@@ -191,7 +203,11 @@ class MainWindow(QWidget):
         self.btn_lang.setFixedHeight(25)
         self.btn_lang.clicked.connect(self._on_lang_toggle)
         
+        header_layout.addWidget(self.btn_delete_header)
         header_layout.addStretch()
+        header_layout.addStretch()
+        header_layout.addWidget(self.chk_auto_run_pendings)
+        header_layout.addWidget(self.time_auto_run_pendings)
         header_layout.addWidget(self.btn_hide)
         header_layout.addWidget(self.btn_undo)
         header_layout.addWidget(self.btn_lang)
@@ -241,6 +257,9 @@ class MainWindow(QWidget):
         
         self.retranslate_ui()
         
+        self._pending_scheduler = PendingScheduler(self._run_pendings, self)
+        self._apply_pending_schedule_state()
+        
         # Initial size adjustment
         self.resize(self.base_width + self.queue_panel.width(), self.base_height)
 
@@ -254,6 +273,13 @@ class MainWindow(QWidget):
                     data = json.load(f)
                 self._hide_secure = data.get("hide_secure", False)
                 self._post_action_mode = data.get("post_action_mode", "none")
+                
+                self._pending_auto_run_enabled = data.get("auto_run_pendings", False)
+                pending_time_str = data.get("auto_run_pendings_time", "20:15")
+                self._pending_auto_run_time = QTime.fromString(pending_time_str, "HH:mm")
+                if not self._pending_auto_run_time.isValid():
+                    self._pending_auto_run_time = QTime(20, 15)
+                
         except Exception:
             logging.exception("Failed to load config")
             
@@ -265,10 +291,42 @@ class MainWindow(QWidget):
                     data = json.load(f)
             data["hide_secure"] = self._hide_secure
             data["post_action_mode"] = self._post_action_mode
+            data["auto_run_pendings"] = getattr(self, "_pending_auto_run_enabled", False)
+            data["auto_run_pendings_time"] = getattr(self, "_pending_auto_run_time", QTime(20, 15)).toString("HH:mm")
             with CONFIG_PATH.open('w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
         except Exception:
             logging.exception("Failed to save config")
+
+    def _apply_pending_schedule_state(self):
+        if not hasattr(self, "chk_auto_run_pendings") or not hasattr(self, "time_auto_run_pendings"):
+            return
+
+        self.chk_auto_run_pendings.blockSignals(True)
+        self.time_auto_run_pendings.blockSignals(True)
+
+        self.chk_auto_run_pendings.setChecked(self._pending_auto_run_enabled)
+        self.time_auto_run_pendings.setTime(self._pending_auto_run_time)
+
+        self.chk_auto_run_pendings.blockSignals(False)
+        self.time_auto_run_pendings.blockSignals(False)
+
+        if self._pending_scheduler is not None:
+            self._pending_scheduler.configure(
+                self.chk_auto_run_pendings.isChecked(),
+                self.time_auto_run_pendings.time(),
+            )
+
+    def _on_pending_schedule_changed(self, *args):
+        self._pending_auto_run_enabled = self.chk_auto_run_pendings.isChecked()
+        self._pending_auto_run_time = self.time_auto_run_pendings.time()
+        self._save_config()
+
+        if self._pending_scheduler is not None:
+            self._pending_scheduler.configure(
+                self._pending_auto_run_enabled,
+                self._pending_auto_run_time,
+            )
 
     def _on_secure_changed(self, hide_secure):
         self._hide_secure = hide_secure
@@ -325,6 +383,7 @@ class MainWindow(QWidget):
         socket.disconnectFromServer()
 
     def retranslate_ui(self):
+        self.chk_auto_run_pendings.setText("Autexecure Pendings")
         self.btn_delete_header.setText(self.loc.get("btn_header_delete"))
         self.btn_hide.setText(self.loc.get("btn_hide"))
         self.btn_undo.setText(self.loc.get("btn_history"))
