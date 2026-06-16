@@ -383,7 +383,7 @@ class MainWindow(QWidget):
         socket.disconnectFromServer()
 
     def retranslate_ui(self):
-        self.chk_auto_run_pendings.setText("Autexecure Pendings")
+        self.chk_auto_run_pendings.setText("Autoexecure Pendings")
         self.btn_delete_header.setText(self.loc.get("btn_header_delete"))
         self.btn_hide.setText(self.loc.get("btn_hide"))
         self.btn_undo.setText(self.loc.get("btn_history"))
