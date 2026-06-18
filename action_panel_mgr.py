@@ -8,7 +8,7 @@ import logging
 import subprocess
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider, QSizePolicy
 from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
 
@@ -16,61 +16,7 @@ from config import BLUR_LEVEL, ICON_PATH, METADATA_EDIT_SCRIPT_PATH, METADATA_ED
 from localization import LocalizationManager
 from ui_utils_mgr import apply_secure_blur
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
-
-class DragLabel(QLabel):
-    """
-    Icon/Label that enables drag and drop of the current file.
-    Icono/Etiqueta que permite arrastrar y soltar el archivo actual.
-    """
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.filepath = None
-        self.setFixedSize(30, 30)
-        self.setCursor(Qt.CursorShape.OpenHandCursor)
-        self.setToolTip("Arrastrar archivo / Drag file")
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("border: 1px dashed #ccc; border-radius: 4px;")
-        
-        # We'll use a standard icon for dragging
-        # Using a system icon or a placeholder if ICON_PATH fails
-        provider = QFileIconProvider()
-        icon = provider.icon(QtWidgets.QFileIconProvider.IconType.File)
-        self.setPixmap(icon.pixmap(20, 20))
-
-    def set_file(self, filepath: Path):
-        self.filepath = filepath
-        provider = QFileIconProvider()
-        if filepath:
-            self.setCursor(Qt.CursorShape.SizeAllCursor)
-            pixmap = provider.icon(QtCore.QFileInfo(str(filepath))).pixmap(24, 24)
-            self.setPixmap(pixmap)
-            self.setEnabled(True)
-        else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-            icon = provider.icon(QtWidgets.QFileIconProvider.IconType.File)
-            self.setPixmap(icon.pixmap(20, 20))
-            self.setEnabled(False)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and self.filepath and self.filepath.exists():
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-            drag = QDrag(self)
-            mime_data = QMimeData()
-            
-            # Use absolute path with backslashes for Windows
-            url = QtCore.QUrl.fromLocalFile(str(self.filepath.absolute()))
-            mime_data.setUrls([url])
-            
-            drag.setMimeData(mime_data)
-            
-            # Create a drag pixmap
-            pixmap = self.pixmap().scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            drag.setPixmap(pixmap)
-            drag.setHotSpot(QtCore.QPoint(pixmap.width() // 2, pixmap.height() // 2))
-            
-            drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
-            self.setCursor(Qt.CursorShape.SizeAllCursor)
-
+from drag_label_widget import DragLabel
 
 class ActionPanel(QWidget):
     """
@@ -83,6 +29,7 @@ class ActionPanel(QWidget):
     secure_changed = QtCore.pyqtSignal(bool)
     keep_changed = QtCore.pyqtSignal(bool)
     post_action_changed = QtCore.pyqtSignal(str)
+    hide_t_clicked = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -188,21 +135,27 @@ class ActionPanel(QWidget):
     
         # buttons arrow
         buttons_row = QHBoxLayout()
+        buttons_row.setContentsMargins(0, 0, 0, 0)
         buttons_row.setSpacing(8)
 
+        self.btn_hide_t = QPushButton("Hide Temporal")
+        self.btn_hide_t.setMinimumHeight(30)
+        self.btn_hide_t.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.btn_hide_t.clicked.connect(self.hide_t_clicked.emit)
+        buttons_row.addWidget(self.btn_hide_t, 1)
+
         self.btn_custom = QPushButton(self.loc.get("btn_apply_custom"))
-        self.btn_custom.setFixedHeight(30)
-        self.btn_custom.setFixedWidth(150)
+        self.btn_custom.setMinimumHeight(30)
+        self.btn_custom.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.btn_custom.clicked.connect(self.apply_custom_clicked.emit)
-        buttons_row.addWidget(self.btn_custom)
+        buttons_row.addWidget(self.btn_custom, 1)
 
         self.btn_move = QPushButton(self.loc.get("btn_apply"))
-        self.btn_move.setFixedHeight(30)
-        self.btn_move.setFixedWidth(150)
+        self.btn_move.setMinimumHeight(30)
+        self.btn_move.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.btn_move.clicked.connect(self.apply_clicked.emit)
-        buttons_row.addWidget(self.btn_move)
-        
-        # buttons_row.addStretch() # para centrar los botones quitamos esto
+        buttons_row.addWidget(self.btn_move, 1)
+
         footer.addLayout(buttons_row)
 
         self.btn_custom.setEnabled(False)
@@ -225,6 +178,7 @@ class ActionPanel(QWidget):
         self.lbl_name.setText(self.loc.get("lbl_new_name"))
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
         self.keep_downloads_cb.setText(self.loc.get("keep_in_downloads"))
+        self.btn_hide_t.setText("Hide T")
         self.btn_custom.setText(self.loc.get("btn_apply_custom"))
         self.btn_move.setText(
             self.loc.get("btn_keep") if self.keep_downloads_cb.isChecked() else self.loc.get("btn_apply")
@@ -239,6 +193,7 @@ class ActionPanel(QWidget):
         self.load_preview()
         self.drag_icon.set_file(p)
         self.btn_custom.setEnabled(True)
+        self.btn_hide_t.setEnabled(True)
         self._update_metadata_button_visibility()
         # Note: btn_move enabling depends on type, handled by MainWindow
 
@@ -379,6 +334,7 @@ class ActionPanel(QWidget):
         self.lbl_file_info.setText("")
         self.progress.setValue(0)
         self.drag_icon.set_file(None)
+        self.btn_hide_t.setEnabled(False)
         self._update_metadata_button_visibility()
 
     def _on_keep_downloads_changed(self, checked: bool):

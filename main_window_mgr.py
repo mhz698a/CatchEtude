@@ -45,69 +45,8 @@ from selection_panel_mgr import SelectionPanel
 from action_panel_mgr import ActionPanel
 from queue_panel_mgr import QueuePanel
 from service_mgr import send_character_service_command
-
-class PendingDialog(QtWidgets.QDialog):
-    """
-    Dialog shown when the window is hidden but there are still pending files.
-    Diálogo que se muestra cuando la ventana se oculta pero aún hay archivos pendientes.
-    """
-    def __init__(self, loc_manager, on_show_clicked, parent=None):
-        super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
-        self.loc = loc_manager
-        self.on_show_clicked = on_show_clicked
-        self._build_ui()
-
-    def _build_ui(self):
-        self.setObjectName("PendingDialog")
-        self.setStyleSheet("""
-            #PendingDialog {
-                border: 5px solid #28a745;
-                background-color: palette(window);
-            }
-            QLabel {
-                font-weight: bold;
-                font-size: 14px;
-                color: palette(windowtext);
-            }
-            QPushButton {
-                padding: 8px 16px;
-                background-color: #28a745;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-        """)
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-
-        self.lbl_msg = QLabel(self.loc.get("msg_pending_files"))
-        self.lbl_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.lbl_msg)
-
-        self.btn_show = QPushButton(self.loc.get("btn_show_again"))
-        self.btn_show.clicked.connect(self.on_show_clicked)
-        layout.addWidget(self.btn_show, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        self.setFixedSize(250, 150)
-
-    def retranslate_ui(self):
-        self.lbl_msg.setText(self.loc.get("msg_pending_files"))
-        self.btn_show.setText(self.loc.get("btn_show_again"))
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        # Center on screen
-        screen = self.screen().availableGeometry()
-        self.move(
-            (screen.width() - self.width()) // 2,
-            (screen.height() - self.height()) // 2
-        )
+from pending_dialog import PendingDialog
+from temporary_hide_banner_mgr import TemporaryHideBanner
 
 
 class MainWindow(QWidget):
@@ -155,6 +94,11 @@ class MainWindow(QWidget):
         self._build_ui()
         self._pending_dialog = PendingDialog(self.loc, self._bring_and_center)
         self._build_tray()
+        
+        self._hide_t_active = False
+        self._hide_t_banner = TemporaryHideBanner(self)
+        self._hide_t_banner.show_again_clicked.connect(self._restore_from_hide_t)
+        self._hide_t_banner.timeout_reached.connect(self._restore_from_hide_t)
         
         configure_dwm_thumbnail_behavior(self.winId().__int__())
         
@@ -234,6 +178,7 @@ class MainWindow(QWidget):
         self.action_panel.keep_changed.connect(self._on_keep_changed)
         self.action_panel.post_action_changed.connect(self._on_post_action_changed)
         self.action_panel.set_post_action_mode(self._post_action_mode)
+        self.action_panel.hide_t_clicked.connect(self._on_hide_t_clicked)
         root.addWidget(self.action_panel)
 
         # Queue / Character Panel
@@ -518,7 +463,8 @@ class MainWindow(QWidget):
     def _show_warning_message(self, text):
         QMessageBox.warning(self, "Aviso", text)
         
-    def _check_destination_collision(self, candidate: Path, allow_retry: bool = False) -> tuple[str, Optional[Path]]:
+    def _check_destination_collision(self, candidate: Path, 
+                                     allow_retry: bool = False) -> tuple[str, Optional[Path]]:
         if not candidate.exists():
             return "move", candidate
 
@@ -529,8 +475,10 @@ class MainWindow(QWidget):
         box.setInformativeText("Elige qué hacer.")
 
         btn_move = box.addButton("Mover de todas formas", QMessageBox.ButtonRole.AcceptRole)
+        btn_delete = box.addButton("Eliminar duplicado", QMessageBox.ButtonRole.DestructiveRole)
         btn_open = box.addButton("Abrir archivo existente", QMessageBox.ButtonRole.ActionRole)
         btn_other = None
+        
         if allow_retry:
             btn_other = box.addButton("Elegir otra carpeta", QMessageBox.ButtonRole.DestructiveRole)
         btn_cancel = box.addButton(QMessageBox.StandardButton.Cancel)
@@ -539,6 +487,17 @@ class MainWindow(QWidget):
         box.exec()
 
         clicked = box.clickedButton()
+
+        if clicked == btn_delete:
+            self.selection_panel.set_subfolders_enabled(True)
+            try:
+                if delete_to_recycle_bin(candidate):
+                    return "move", candidate
+            except Exception:
+                logging.exception("Failed to delete existing destination file")
+
+            self._show_warning_message(f"No se pudo eliminar el archivo existente:\n{candidate.name}")
+            return "cancel", None
 
         if clicked == btn_open:
             self.selection_panel.set_subfolders_enabled(True)
@@ -634,7 +593,9 @@ class MainWindow(QWidget):
         self.selection_panel.set_keep_mode(self.action_panel.is_keep_downloads())
         self._sync_apply_button()
         
-        if not self.isVisible() and self._internal_available_at_start:
+        if self._hide_t_active:
+            self._restore_from_hide_t()
+        elif not self.isVisible() and self._internal_available_at_start:
             self._bring_and_center()
         
         if self._bulk_subfolder_name:
@@ -986,3 +947,21 @@ class MainWindow(QWidget):
             )
         except Exception:
             logging.exception("Failed to show post-action reset notification")
+
+    def _on_hide_t_clicked(self):
+        self._hide_t_active = True
+        self.hide()
+
+        if hasattr(self, "_pending_dialog"):
+            self._pending_dialog.hide()
+
+        self._hide_t_banner.start(5)
+
+
+    def _restore_from_hide_t(self):
+        self._hide_t_active = False
+
+        if hasattr(self, "_hide_t_banner"):
+            self._hide_t_banner.stop()
+
+        self._bring_and_center()
