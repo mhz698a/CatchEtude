@@ -1,4 +1,5 @@
 import hashlib, ctypes, shutil, logging, os
+from send2trash import send2trash
 from ctypes import wintypes
 from pathlib import Path
 from config import EXCLUDE_EXT, BASE_INTERNAL, DOWNLOADS, DWMWA_FORCE_ICONIC_REPRESENTATION, DWMWA_HAS_ICONIC_BITMAP, DWMWA_DISALLOW_PEEK
@@ -132,19 +133,9 @@ def delete_to_recycle_bin(path: Path) -> bool:
     try:
         if not path.exists():
             return False
-            
-        # Path must be double-null terminated
-        from_path = str(path.absolute()).replace('/', '\\') + '\0\0'
 
-        fileop = SHFILEOPSTRUCTW()
-        fileop.hwnd = 0
-        fileop.wFunc = FO_DELETE
-        fileop.pFrom = from_path
-        fileop.pTo = None
-        fileop.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION
-        
-        result = shell32.SHFileOperationW(ctypes.byref(fileop))
-        return result == 0 and not fileop.fAnyOperationsAborted
+        send2trash(str(path))
+        return True
     except Exception:
         logging.exception(f"Failed to delete to recycle bin: {path}")
         return False

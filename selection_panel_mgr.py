@@ -7,9 +7,8 @@ import os
 import shutil
 import logging
 from pathlib import Path
-from math import ceil
 from PyQt6 import QtCore, QtWidgets
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QListWidget, QHBoxLayout
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import QSize
 from PyQt6.QtWidgets import QListWidgetItem
@@ -57,18 +56,15 @@ class SelectionPanel(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        
-        # ==========================
-        # Fila de Desicion y Años (top row)
-        # ==========================
-        top_row = QVBoxLayout()
-        
+                
         # -------------------
         # Type Column
         # -------------------
-        v_type = QVBoxLayout()
+        type_decition_bar = QVBoxLayout()
+        type_decition_bar.setContentsMargins(110, 0, 0, 0) 
         
         self.list_type = QListWidget()
+        self.list_type.setMaximumHeight(50)
         self.list_type.setViewMode(QListWidget.ViewMode.IconMode)
         self.list_type.setFlow(QListWidget.Flow.TopToBottom)
         self.list_type.setMovement(QListWidget.Movement.Static)
@@ -76,14 +72,13 @@ class SelectionPanel(QWidget):
         self.list_type.setIconSize(QSize(32, 32))
         self.list_type.setGridSize(QSize(42, 42))
         self.list_type.setSpacing(10)
-        self.list_type.setFixedHeight(65)
+        self.list_type.setFixedHeight(45)
         self._fill_type_list()
         self.list_type.currentRowChanged.connect(self._on_type_changed)
         self.list_type.setStyleSheet("""
             QListWidget {
                 border: none;
                 background: transparent;
-                margin: 10px 10px 10px 10px;
                 outline: none;
             }
             QListWidget::item {
@@ -103,16 +98,24 @@ class SelectionPanel(QWidget):
             }
         """)
         
-        v_type.addWidget(self.list_type)
-        top_row.addLayout(v_type)
+        type_decition_bar.addWidget(self.list_type)
+        layout.addLayout(type_decition_bar)
+        
+
+        # ==========================
+        # Fila de Desicion y Años (top row)
+        # ==========================
+        bottom_h_row = QHBoxLayout()
 
         # -------------------
         # Year Column (top row)
         # -------------------
+        
         v_year = QVBoxLayout()
 
         self.list_year = YearsTableWidget(YEARS, self)
-        self.list_year.setMaximumHeight(250)
+        self.list_year.setMaximumHeight(430)
+        self.list_year.setMaximumWidth(100)
         self.list_year.setStyleSheet("""
             QTableWidget {
                 border: none;
@@ -131,7 +134,7 @@ class SelectionPanel(QWidget):
         self.list_year.setEnabled(False)
 
         v_year.addWidget(self.list_year)
-        top_row.addLayout(v_year)
+        bottom_h_row.addLayout(v_year)
         
         
         # ==========================
@@ -140,8 +143,6 @@ class SelectionPanel(QWidget):
 
         # Subfolder Column
         v_sub = QVBoxLayout()
-        # self.lbl_sub = QLabel(self.loc.get("lbl_subfolders"))
-        # v_sub.addWidget(self.lbl_sub)
         self.list_sub = SubfolderButtonList()
         self.list_sub.setEnabled(False)
         self.list_sub.clicked.connect(self.subfolder_clicked.emit)
@@ -149,14 +150,11 @@ class SelectionPanel(QWidget):
         self.list_sub.emptyCreateClicked.connect(self._on_empty_create_folder_clicked)
         v_sub.addWidget(self.list_sub)
         
-        layout.addLayout(top_row)
-        layout.addLayout(v_sub)
+        bottom_h_row.addLayout(v_sub)
+        layout.addLayout(bottom_h_row)
+        
 
-    def retranslate_ui(self):
-        # self.lbl_type.setText(self.loc.get("lbl_type"))
-        # self.lbl_year.setText(self.loc.get("lbl_years"))
-        # self.lbl_sub.setText(self.loc.get("lbl_subfolders"))
-                
+    def retranslate_ui(self):               
         curr = self.list_type.currentRow()
         self._fill_type_list(curr)
 

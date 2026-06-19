@@ -4,12 +4,6 @@ from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QAbstractItemView
 
-from config import YEARS, ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA
-from localization import LocalizationManager
-from subfolder_list_mgr import SubfolderButtonList
-from classification_mgr import get_base_path_for_type_year, get_base_path_for_docs, SubfolderScanner
-from utils import is_internal_available, delete_to_recycle_bin
-
 
 class YearsTableWidget(QTableWidget):
     yearChanged = QtCore.pyqtSignal(int)
@@ -17,7 +11,7 @@ class YearsTableWidget(QTableWidget):
     def __init__(self, years, parent=None):
         super().__init__(0, 0, parent)
         self._years = list(years)
-        self._min_cell_w = 60
+        self._min_cell_w = 40
         self._cell_h = 28
         self._selected_year = 2004 if 2004 in self._years else (self._years[0] if self._years else None)
 

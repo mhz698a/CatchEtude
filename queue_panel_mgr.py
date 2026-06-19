@@ -23,6 +23,8 @@ class QueuePanel(QWidget):
         super().__init__(parent)
         self.loc = LocalizationManager()
         self._hide_secure = False
+        self._queue_pending = 0
+        self._queue_total = 0
         self._build_ui()
 
     def _build_ui(self):
@@ -30,7 +32,8 @@ class QueuePanel(QWidget):
         layout = QVBoxLayout(self)
         
         # Download Queue
-        self.lbl_queue = QLabel(self.loc.get("lbl_queue"))
+        self.lbl_queue = QLabel()
+        self._refresh_queue_label()
         layout.addWidget(self.lbl_queue)
         
         self.queue_list_widget = QListWidget()
@@ -44,7 +47,7 @@ class QueuePanel(QWidget):
         self.char_model.dataChanged.connect(self.characters_updated.emit)
 
     def retranslate_ui(self):
-        self.lbl_queue.setText(self.loc.get("lbl_queue"))
+        self._refresh_queue_label()
 
     def set_hide_secure(self, enabled: bool):
         self._hide_secure = enabled
@@ -54,6 +57,10 @@ class QueuePanel(QWidget):
     def update_queue(self, queue_list: list[Path], active_path_str: str):
         """Updates the download queue UI list."""
         self.queue_list_widget.clear()
+        total = len(queue_list)
+        pending = sum(1 for p in queue_list if str(p) != active_path_str)
+        self._refresh_queue_label(pending, total)
+        
         for p in queue_list:
             item = QtWidgets.QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, str(p))
@@ -66,3 +73,14 @@ class QueuePanel(QWidget):
 
     def get_characters(self):
         return self.char_model.items
+
+    def _refresh_queue_label(self, pending: int | None = None, total: int | None = None):
+        if pending is not None:
+            self._queue_pending = pending
+        if total is not None:
+            self._queue_total = total
+
+        # {self._queue_pending:02d}/
+        self.lbl_queue.setText(
+            f"{self.loc.get('lbl_queue')} - Left: {self._queue_total:02d}"
+        )

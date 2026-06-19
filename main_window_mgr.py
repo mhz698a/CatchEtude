@@ -33,7 +33,7 @@ from utils import (
     resolve_duplicate, 
     configure_dwm_thumbnail_behavior, is_internal_available,
     sanitize_windows_filename, is_temporary,
-    is_same_drive, is_file_locked, move_file_shfileop, delete_to_recycle_bin
+    is_file_locked, delete_to_recycle_bin
 )
 from state_manager import StateManager, State, scan_existing_downloads
 from fallback_utils import compute_destination
@@ -75,7 +75,7 @@ class MainWindow(QWidget):
         self.setWindowFlags(flags)
         self.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
         
-        self.base_width = 820
+        self.base_width = 860
         self.base_height = 580
         self.setMinimumSize(self.base_width, self.base_height)
         
@@ -804,29 +804,6 @@ class MainWindow(QWidget):
                 "mtime": src_stat.st_mtime,
                 "ctime": getattr(src_stat, "st_birthtime", src_stat.st_ctime),
             }
-            same_drive = is_same_drive(src, final_dest)
-            if same_drive:
-                
-                def fast_move():
-                    try:
-                        final_dest.parent.mkdir(parents=True, exist_ok=True)
-                        
-                        moved = move_file_shfileop(src, final_dest)
-                        if moved:
-                            self.state_manager.finalize_background_move(
-                                src, final_dest, src_meta, decision.get("post_action", "none")
-                            )
-                        elif is_file_locked(src):
-                            self.signals.warning_message.emit(self.loc.get("msg_file_locked"))
-                            
-                    finally:
-                        send_character_service_command("resume")
-                        
-                threading.Thread(target=fast_move, daemon=True).start()
-                self.state_manager.handover_active_file()
-                self.action_panel.set_progress(0)
-                self._build_tray()
-                return
             
         except Exception:
             logging.exception(f"Error in _start_move_task for {src}")
