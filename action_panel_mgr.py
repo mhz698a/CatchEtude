@@ -178,7 +178,7 @@ class ActionPanel(QWidget):
         self.lbl_name.setText(self.loc.get("lbl_new_name"))
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
         self.keep_downloads_cb.setText(self.loc.get("keep_in_downloads"))
-        self.btn_hide_t.setText("Hide T")
+        self.btn_hide_t.setText("Hide Temporal")
         self.btn_custom.setText(self.loc.get("btn_apply_custom"))
         self.btn_move.setText(
             self.loc.get("btn_keep") if self.keep_downloads_cb.isChecked() else self.loc.get("btn_apply")
