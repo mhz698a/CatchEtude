@@ -45,9 +45,9 @@ ONEDRIVE_DOCTOS_FAMILIA = USER_HOME / "OneDrive" / "Doctos Familia"
 CHAR_PANEL_ALWAYS = False # Set to True to keep character panel always visible
 BLUR_LEVEL = 15
 HDD_SPINUP_MS = 1500
-IMAGES_FOLDER = "etude.dorothy.images"
+IMAGES_FOLDER = "album"
 MUSIC_FOLDER = "music"
-OVERWORLD_FOLDER = "resources.local.overworld"
+OVERWORLD_FOLDER = "overworld"
 ACROBAT_FOLDER = "resources.local.acrobat"
 
 # Filters and Date
