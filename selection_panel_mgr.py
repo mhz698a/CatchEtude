@@ -20,8 +20,7 @@ from classification_mgr import get_base_path_for_type_year, get_base_path_for_do
 from utils import is_internal_available, delete_to_recycle_bin
 from years_selector import YearsTableWidget
 from episode_cache_mgr import EpisodeCacheManager
-from overworld_cache_mgr import OverworldCacheManager
-from overworld_scanner_mgr import OverworldScanner
+from overworld_ipc_mgr import OverworldServiceClient
 
 class SelectionPanel(QWidget):
     """
@@ -51,6 +50,9 @@ class SelectionPanel(QWidget):
         }
         
         self._sub_scanner = None
+        self._overworld_client = OverworldServiceClient(self)
+        self._overworld_client.result_ready.connect(self._on_overworld_result)
+        self._overworld_generation = 0
         self._build_ui()
 
     def _build_ui(self):
@@ -217,9 +219,16 @@ class SelectionPanel(QWidget):
             if subs:
                 self.list_sub.add_subfolders(subs)
                 self.list_sub.setEnabled(True)
+
+                if t == 2:
+                    self.list_sub.set_loading_placeholder("Cargando...", "Cargando...", reserve_height=60)
+                if t == 3:
+                    self.list_sub.set_loading_placeholder("Cargando...", None, reserve_height=45)
+                elif t == 8:
+                    self.list_sub.set_loading_placeholder("Cargando...", "Cargando...", reserve_height=60)
+                                
                                 
                 if t == 3: # Episodes
-                    # self._sub_scanner = SubfolderScanner(base)
                     self._sub_scanner = SubfolderScanner(base, EpisodeCacheManager(self.list_year.current_year()))
                     self._sub_scanner.result_ready.connect(
                         lambda name, ffile: self.list_sub.update_button(name, ffile)
@@ -227,15 +236,14 @@ class SelectionPanel(QWidget):
                     self._sub_scanner.start()
                     
                 elif t == 8:
-                    self._sub_scanner = OverworldScanner(
-                        base,
-                        OverworldCacheManager(self.list_year.current_year())
+                    self._overworld_generation += 1
+                    self.list_sub.set_loading_placeholder("Cargando...", "Cargando...", reserve_height=60)
+                    self._overworld_client.request_overworld(
+                        year=self.list_year.current_year(),
+                        base_path=str(base),
+                        generation=self._overworld_generation,
                     )
-                    self._sub_scanner.result_ready.connect(
-                        lambda name, line2, line3: self.list_sub.update_button(name, line2, line3)
-                    )
-                    self._sub_scanner.start()
-
+                                        
                 self.subfolders_refreshed.emit()
                 return
                             
@@ -315,6 +323,10 @@ class SelectionPanel(QWidget):
             return True
         except Exception:
             return False
+
+    def _on_overworld_result(self, name: str, line2: str = "", line3: str = ""):
+        if hasattr(self, "list_sub"):
+            self.list_sub.update_button(name, line2, line3)
 
     def _handle_create_folder(self, base_path: Path):
         name, ok = QtWidgets.QInputDialog.getText(

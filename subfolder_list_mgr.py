@@ -48,29 +48,44 @@ class SubfolderButton(QtWidgets.QPushButton):
         super().mousePressEvent(event)
 
     def set_data(self, line2=None, line3=None):
-        """
-        Updates the button with extra lines of information.
-        Actualiza el botón con líneas adicionales de información.
-        """
         if line2:
             self.lbl_extra1.setText(line2)
             self.lbl_extra1.show()
         else:
             self.lbl_extra1.hide()
-            
+
         if line3:
             self.lbl_extra2.setText(line3)
             self.lbl_extra2.show()
         else:
             self.lbl_extra2.hide()
-            
-        # Adjust height based on content
+
+        self._apply_height(line2, line3)
+
+    def _apply_height(self, line2=None, line3=None, reserve_height=None):
+        if reserve_height is not None:
+            self.setFixedHeight(reserve_height)
+            return
+
         if line2 and line3:
             self.setFixedHeight(60)
         elif line2 or line3:
             self.setFixedHeight(45)
         else:
             self.setFixedHeight(30)
+
+    def set_loading_placeholder(self, line2="Cargando...", line3=None, reserve_height=None):
+        self.lbl_extra1.setText(line2)
+        self.lbl_extra1.show()
+
+        if line3 is not None:
+            self.lbl_extra2.setText(line3)
+            self.lbl_extra2.show()
+        else:
+            self.lbl_extra2.hide()
+
+        self._apply_height(line2, line3, reserve_height)
+        
 
 class SubfolderButtonList(QtWidgets.QScrollArea):
     """
@@ -155,3 +170,7 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
         
         # Restore scroll position
         vbar.setValue(scroll_pos)
+
+    def set_loading_placeholder(self, line2="Cargando...", line3=None, reserve_height=None):
+        for btn in self._buttons.values():
+            btn.set_loading_placeholder(line2, line3, reserve_height)

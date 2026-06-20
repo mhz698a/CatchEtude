@@ -40,18 +40,7 @@ class SubfolderScanner(QtCore.QThread):
                 
                 last_file = "---"
                 try:
-                    
-                    # files = []
-                    # with os.scandir(sub_path) as it_f:
-                    #     for entry in it_f:
-                    #         if entry.is_file():
-                    #             n_low = entry.name.lower()
-                    #             if not (n_low.endswith('.ini') or n_low.endswith('.db')):
-                    #                 files.append(entry.name)
-                    # if files:
-                    #     files.sort()
-                    #     last_file = files[-1] # Show first or last file
-                    
+                                        
                     try:
                         mtime_ns = os.stat(sub_path).st_mtime_ns
                     except Exception:

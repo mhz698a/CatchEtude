@@ -22,6 +22,8 @@ WATCHDOG_SERVER_NAME = "CatchEtudeLogServer"
 CHARACTER_SERVER_NAME = "CatchEtudeCharacterServer"
 WATCHDOG_MUTEX_NAME = "CatchEtudeWatchdog"
 CHARACTER_MUTEX_NAME = "CatchEtudeCharacterServiceMutex"
+OVERWORLD_SERVER_NAME = "CatchEtudeOverworldServer"
+OVERWORLD_MUTEX_NAME = "CatchEtudeOverworldServiceMutex"
 CREATE_NEW_PROCESS_GROUP = 0x00000010
 
 def ensure_single_instance():
@@ -117,7 +119,8 @@ def wait_for_services_stopped(timeout: float = 8.0) -> bool:
     while time.time() < deadline:
         watchdog_up = _mutex_exists(WATCHDOG_MUTEX_NAME) or _server_alive(WATCHDOG_SERVER_NAME, 100)
         char_up = _mutex_exists(CHARACTER_MUTEX_NAME) or _server_alive(CHARACTER_SERVER_NAME, 100)
-        if not watchdog_up and not char_up:
+        overworld_up = _mutex_exists(OVERWORLD_MUTEX_NAME) or _server_alive(OVERWORLD_SERVER_NAME, 100)
+        if not watchdog_up and not char_up and not overworld_up:
             return True
         time.sleep(0.1)
     return False
@@ -127,7 +130,7 @@ def _force_kill_helper_scripts() -> None:
     try:
         ps_cmd = (
             "$targets = Get-CimInstance Win32_Process | "
-            "Where-Object { $_.CommandLine -match 'catch_watchdog\\.pyw|character_service\\.pyw' }; "
+            "Where-Object { $_.CommandLine -match 'catch_watchdog\.pyw|character_service\.pyw|overworld_service\.pyw' }; "
             "foreach ($p in $targets) { "
             "Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue "
             "}"
@@ -137,20 +140,18 @@ def _force_kill_helper_scripts() -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=10,
-            creationflags=CREATE_NEW_PROCESS_GROUP,
+            creationflags=CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
         )
     except Exception:
         logging.exception("Forced cleanup of helper scripts failed")
 
 def stop_parallel_services(timeout: float = 8.0) -> bool:
     """Sends quit to both services and waits until they are really gone."""
-    # _send_quit(WATCHDOG_SERVER_NAME)
-    # _send_quit(CHARACTER_SERVER_NAME)
-    # return wait_for_services_stopped(timeout)
 
     _send_quit(WATCHDOG_SERVER_NAME)
     _send_quit(CHARACTER_SERVER_NAME)
-
+    _send_quit(OVERWORLD_SERVER_NAME)
+    
     if wait_for_services_stopped(timeout):
         return True
 
@@ -169,7 +170,7 @@ def _launch_python_script(script_name: str) -> None:
     script_path = str(Path(__file__).resolve().parent / script_name)
     subprocess.Popen(
         [_pythonw_executable(), script_path],
-        creationflags=CREATE_NEW_PROCESS_GROUP
+        creationflags=CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
     )
 
 def start_watchdog():
@@ -194,6 +195,17 @@ def start_character_service():
     except Exception:
         logging.exception("Failed to start character service")
         
+def start_overworld_service():
+    """Starts the parallel overworld data service."""
+    try:
+        if _mutex_exists(OVERWORLD_MUTEX_NAME) or _server_alive(OVERWORLD_SERVER_NAME, 100):
+            logging.info("Overworld service already running")
+            return
+        _launch_python_script("overworld_service.pyw")
+        logging.info("Overworld service started")
+    except Exception:
+        logging.exception("Failed to start overworld service")        
+
 def send_character_service_command(cmd: str, **kwargs):
     """Sends a command to the parallel character service."""
     socket = QLocalSocket()

@@ -15,17 +15,18 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
 from config import (
-    APP_NAME, LOG_PATH, ICON_PATH, CONFIG_PATH, DOWNLOADS, CRASH_REPORT_PATH
+    APP_NAME, LOG_PATH, ICON_PATH, CRASH_REPORT_PATH
 ) 
 from utils import flatten_downloads_root
 from state_manager import StateManager, scan_existing_downloads
 from watcher_mgr import WatcherThread
 from app_signals_mgr import AppSignals
 from log_mgr import setup_logging
-from service_mgr import (
-    ensure_single_instance, add_to_startup, crash_handler,
-    start_watchdog, start_character_service, stop_parallel_services
+from service_mgr import ( 
+    ensure_single_instance, add_to_startup, crash_handler, start_watchdog, 
+    start_character_service, start_overworld_service, stop_parallel_services
 )
+
 from main_window_mgr import MainWindow
 from PyQt6 import QtCore
 
@@ -50,23 +51,17 @@ def main():
     setup_logging(LOG_PATH)
     
     try:
-        # Stop any lingering parallel services before starting new ones
-        stop_parallel_services(timeout=10.0)
-
         # Start background services
         start_watchdog()
         start_character_service()
+        start_overworld_service()
         
         # Initialize State and Signals
         state_manager = StateManager()
         signals = AppSignals()
         state_manager.notifier = signals
         
-        # # Start Watcher
-        # watcher = WatcherThread(state_manager.enqueue_file)
-        # app.aboutToQuit.connect(watcher.stop)
-        # watcher.start()
-        
+        # # Start Watcher        
         watcher = WatcherThread(state_manager.enqueue_file)
         watcher.start()
 
@@ -81,7 +76,6 @@ def main():
                 logging.exception("Failed to stop watcher")
 
         app.aboutToQuit.connect(_cleanup_services)
-        
         
         # Initial scan and flattening
         threading.Thread(
