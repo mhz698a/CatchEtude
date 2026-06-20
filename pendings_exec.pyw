@@ -26,6 +26,7 @@ USE_DECK_MODE = True
 
 DECK_DIR = Path(__file__).resolve().parent / "deck"
 ALARM_MP3 = Path(__file__).resolve().parent / "assets" / "alarm.mp3"
+MAX_FILES = 70
 
 def get_years_for_today():
     """
@@ -61,18 +62,22 @@ def read_txt_lines(txt_path):
 
 def find_first_valid_in_year(year):
     txt = DECK_DIR / f"{year}.txt"
+    paths = []
 
     for path in read_txt_lines(txt):
-
         if not os.path.isdir(path):
             continue
-
         if is_dir_empty(path):
             continue
+        paths.append(path)
 
-        return path
+    if not paths:
+        return None
 
-    return None
+    base_path = paths[0]
+    compact_to_70(base_path, paths[1:])
+
+    return base_path
 
 def get_pending_path():
     years = get_years_for_today()
@@ -102,11 +107,124 @@ def get_pending_path():
 
 def play_alarm():
     try:
-        from playsound import playsound
-        playsound(str(ALARM_MP3))
-    except Exception as e:
-        print(f"No se pudo reproducir alarma: {e}")
+        import pygame
+        import time
         
+        # Inicializar el mezclador de audio de pygame
+        pygame.mixer.init()
+        pygame.mixer.music.load(str(ALARM_MP3))
+        
+        # Ajustar el volumen: 0.0 es silencio, 1.0 es el máximo (ejemplo: 30%)
+        # Puedes cambiar este valor según lo necesites
+        volumen = 0.6
+        pygame.mixer.music.set_volume(volumen)
+        
+        # Iniciar la reproducción
+        pygame.mixer.music.play()
+        
+        # Mantener el script vivo mientras suena la alarma
+        while pygame.mixer.music.get_busy():
+            time.sleep(0.5)
+            
+    except Exception as e:
+        print(f"No se pudo reproducir alarma: {e}")        
+
+def list_files(path: str):
+    """
+    Retorna solo archivos (no carpetas)
+    """
+    try:
+        return [
+            os.path.join(path, x)
+            for x in os.listdir(path)
+            if os.path.isfile(os.path.join(path, x))
+        ]
+    except Exception:
+        return []
+
+
+def count_files(path: str) -> int:
+    return len(list_files(path))
+
+
+def move_files(src: str, dst: str, amount: int):
+    """
+    Mueve 'amount' archivos desde src hacia dst
+    """
+    import shutil
+
+    moved = 0
+
+    for file_path in list_files(src):
+
+        if moved >= amount:
+            break
+
+        filename = os.path.basename(file_path)
+        target = os.path.join(dst, filename)
+
+        # evitar colisiones
+        if os.path.exists(target):
+
+            stem = Path(filename).stem
+            suffix = Path(filename).suffix
+
+            i = 1
+
+            while True:
+                new_name = f"{stem}_{i}{suffix}"
+                target = os.path.join(dst, new_name)
+
+                if not os.path.exists(target):
+                    break
+
+                i += 1
+
+        shutil.move(file_path, target)
+        moved += 1
+
+    return moved
+
+def compact_to_70(base_path: str, donor_paths: list[str]):
+    current_count = count_files(base_path)
+
+    # ya cumple
+    if current_count >= MAX_FILES:
+        return base_path
+
+    needed = MAX_FILES - current_count
+
+    for donor in donor_paths:
+
+        if donor == base_path:
+            continue
+
+        donor_count = count_files(donor)
+
+        if donor_count <= 0:
+            continue
+
+        # mover solo lo necesario
+        to_move = min(needed, donor_count)
+
+        moved = move_files(donor, base_path, to_move)
+
+        current_count += moved
+        needed -= moved
+
+        print(
+            f"Movidos {moved} archivos "
+            f"desde {donor} hacia {base_path}"
+        )
+
+        # ya llegamos
+        if current_count >= MAX_FILES:
+            break
+
+    print(f"Total final en carpeta: {current_count}")
+
+    return base_path
+
 
 
 def send_command(path: str, hide_secure: bool = True) -> bool:
