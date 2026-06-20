@@ -1,25 +1,62 @@
-import subprocess
+"""
+# pendings_auto.py
+* Se crea una baraja de años en la carpeta deck dividiendo "pendings_init.txt" en varios txts por años
+* en "deck/" 
+* se creara un txt por años detectados en el init
+* En "E:\\_Internal\\2026\\23. resources.local.images\\2026-01\\2026-01-15 X"
+* Se toma el año despues de "E:\\_Internal\\" y se añade al txt del año correspondiente en "deck/"
+* "pendings_init.txt" esta en la misma carpeta que el script
+"""
 
-# Ruta al script que quieres ejecutar
-script_path = r"pendings_exec.pyw"
+# pendings_auto.py
 
-# Ruta al ejecutable de Python
-python_path = r"C:\Program Files\Python312\python.exe"
+from pathlib import Path
+import re
 
-# Nombre de las tareas
-task_week = "Python_Task_Semana"
-task_saturday = "Python_Task_Sabado"
+# Carpeta donde está el script
+BASE_DIR = Path(__file__).parent
 
-# Comando base
-cmd_week = f'schtasks /create /tn "{task_week}" /tr "{python_path} {script_path}" /sc weekly /d MON,TUE,WED,THU,FRI,SUN /st 20:15 /f'
-cmd_sat = f'schtasks /create /tn "{task_saturday}" /tr "{python_path} {script_path}" /sc weekly /d SAT /st 14:15 /f'
+# Archivo origen
+INIT_FILE = BASE_DIR / "pendings_init.txt"
 
-try:
-    subprocess.run(cmd_week, shell=True, check=True)
-    print("Tarea de lunes a viernes y domingo creada correctamente.")
+# Carpeta destino
+DECK_DIR = BASE_DIR / "deck"
+DECK_DIR.mkdir(exist_ok=True)
 
-    subprocess.run(cmd_sat, shell=True, check=True)
-    print("Tarea de sábado creada correctamente.")
+# Regex para extraer el año después de E:\_Internal\
+YEAR_PATTERN = re.compile(r"E:\\_Internal\\(\d{4})\\")
 
-except subprocess.CalledProcessError as e:
-    print("Error al crear las tareas:", e)
+if not INIT_FILE.exists():
+    print(f"No existe: {INIT_FILE}")
+    raise SystemExit(1)
+
+with open(INIT_FILE, "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+years_data = {}
+
+for line in lines:
+    line = line.rstrip()
+
+    match = YEAR_PATTERN.search(line)
+    if not match:
+        continue
+
+    year = match.group(1)
+
+    if year not in years_data:
+        years_data[year] = []
+
+    years_data[year].append(line)
+
+# Crear un txt por año
+for year, entries in years_data.items():
+    year_file = DECK_DIR / f"{year}.txt"
+
+    with open(year_file, "a", encoding="utf-8") as f:
+        for entry in entries:
+            f.write(entry + "\n")
+
+    print(f"{year}: {len(entries)} registros -> {year_file}")
+
+print("Proceso completado.")
