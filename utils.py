@@ -1,4 +1,5 @@
 import hashlib, ctypes, shutil, logging, os
+import time
 from send2trash import send2trash
 from ctypes import wintypes
 from pathlib import Path
@@ -58,6 +59,16 @@ def is_file_locked(p: Path) -> bool:
             return False
     except OSError:
         return True    
+
+def safe_unlink(path: Path, retries=20, delay=0.25):
+    for i in range(retries):
+        try:
+            path.unlink(missing_ok=True)
+            return True
+        except PermissionError:
+            time.sleep(delay)
+
+    return False
 
 def resolve_duplicate(dest: Path) -> Path:
     if not dest.exists(): 

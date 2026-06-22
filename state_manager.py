@@ -3,7 +3,7 @@ from enum import Enum, auto
 from typing import Optional
 from pathlib import Path
 from collections import deque
-from utils import is_file_locked, is_temporary, sha256_file, resolve_duplicate, sanitize_windows_filename, flatten_downloads_root, setctime_blocking
+from utils import is_file_locked, is_temporary, sha256_file, resolve_duplicate, sanitize_windows_filename, flatten_downloads_root, setctime_blocking, safe_unlink
 from fallback_utils import safe_move_to_conflicts
 from history_mgr import HistoryManager
 
@@ -489,9 +489,15 @@ class StateManager:
 
             # Handle cross-drive integrity if src still exists
             if src.exists():
+                
                 if not is_same_drive(src, dst):
                     
                     if sha256_file(src) == sha256_file(dst):
+                        
+                        if not safe_unlink(src):
+                            logging.warning(f"Could not delete source after retries: {src}")
+                            return
+                        
                         src.unlink(missing_ok=True)
                         logging.info(f"Background move finalized (cross-drive): {dst}")
                         self._history.record_move(src, dst, src_meta)
