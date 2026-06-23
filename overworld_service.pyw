@@ -27,6 +27,19 @@ def crash_handler(etype, value, tb):
         CRASH_REPORT_PATH.write_text(f"OVERWORLD_SERVICE_CRASH:\n{err_msg}", encoding="utf-8")
     except Exception:
         pass
+    
+    # --- NUEVO: Cuadro de mensaje nativo de Windows antes de morir ---
+    try:
+        # MB_ICONERROR (0x10) | MB_SYSTEMMODAL (0x1000) para forzar que salga al frente
+        ctypes.windll.user32.MessageBoxW(
+            0, 
+            f"El servicio Overworld ha fallado.\n\nError: {value}\n\nSe ha guardado un reporte en el log.", 
+            "Error Crítico - Overworld Service", 
+            0x10 | 0x1000
+        )
+    except Exception:
+        pass
+    
     sys.exit(1)
 
 

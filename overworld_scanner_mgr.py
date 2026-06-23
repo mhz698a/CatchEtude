@@ -1,3 +1,4 @@
+# overworld_scanner_mgr.py
 import logging
 import os
 from pathlib import Path
@@ -83,7 +84,10 @@ class OverworldScanner(QtCore.QThread):
                 self.result_ready.emit(folder_name, line2, line3)
 
             if self.cache is not None:
-                self.cache.save()
+                try:
+                    self.cache.save()
+                except Exception:
+                    logging.exception("Error saving Overworld cache")
 
         except Exception:
             logging.exception("Error in OverworldScanner")

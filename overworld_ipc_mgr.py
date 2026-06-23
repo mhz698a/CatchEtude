@@ -1,3 +1,4 @@
+# overworld_ipc_mgr.py
 from __future__ import annotations
 
 import json
@@ -31,14 +32,35 @@ class OverworldServiceClient(QtCore.QObject):
             start_overworld_service()
         except Exception:
             logging.exception("Failed to ensure Overworld Service is running")
-        
+
         last_error = ""
 
         for attempt in range(5):
-            socket = QtNetwork.QLocalSocket()
-            socket.connectToServer(OVERWORLD_SERVER_NAME)
+            server_name = (OVERWORLD_SERVER_NAME or "").strip()
+            if not server_name:
+                logging.error("Overworld server name is empty")
+                return
 
-            if socket.waitForConnected(800):
+            socket = QtNetwork.QLocalSocket()
+            socket.connectToServer(server_name)
+
+            if not socket.waitForConnected(500):
+                last_error = socket.errorString()
+                logging.debug(
+                    "Attempt %s failed to connect to Overworld Service (%r): %s",
+                    attempt + 1,
+                    server_name,
+                    last_error,
+                )
+                try:
+                    socket.abort()
+                except Exception:
+                    pass
+                socket.deleteLater()
+                time.sleep(0.15)
+                continue
+
+            try:
                 payload = json.dumps(
                     {
                         "cmd": "load",
@@ -48,22 +70,29 @@ class OverworldServiceClient(QtCore.QObject):
                     }
                 )
                 socket.write(payload.encode("utf-8"))
-                socket.waitForBytesWritten(800)
-                socket.disconnectFromServer()
-                return
+                if not socket.waitForBytesWritten(500):
+                    last_error = socket.errorString()
+                    logging.debug(
+                        "Attempt %s failed while writing to Overworld Service: %s",
+                        attempt + 1,
+                        last_error,
+                    )
+                else:
+                    return
+            finally:
+                try:
+                    socket.disconnectFromServer()
+                except Exception:
+                    pass
+                socket.deleteLater()
 
-            last_error = socket.errorString()
-            socket.abort()
-            socket.deleteLater()
-
-            if attempt < 4:
-                time.sleep(0.15)
+            time.sleep(0.15)
 
         logging.error(
             "Failed to connect to Overworld Service (%s): %s",
             OVERWORLD_SERVER_NAME,
-            last_error or socket.errorString(),
-        )
+            last_error or "unknown error",
+        )        
         
     def _on_new_connection(self):
         socket = self.server.nextPendingConnection()

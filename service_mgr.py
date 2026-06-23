@@ -89,20 +89,48 @@ def _mutex_exists(name: str) -> bool:
                 pass
 
 def _server_alive(server_name: str, timeout_ms: int = 150) -> bool:
+    socket = _connect_local_socket(server_name, timeout_ms)
+    if socket is None:
+        return False
+    try:
+        socket.disconnectFromServer()
+    except Exception:
+        pass
+    return True
+
+
+def _connect_local_socket(server_name: str, timeout_ms: int):
+    name = (server_name or "").strip()
+    if not name:
+        logging.error("Local socket name is empty")
+        return None
+
     socket = QLocalSocket()
-    socket.connectToServer(server_name)
-    if socket.waitForConnected(timeout_ms):
+    socket.connectToServer(name)
+
+    if not socket.waitForConnected(timeout_ms):
+        logging.debug("Could not connect to %r: %s", name, socket.errorString())
         try:
-            socket.disconnectFromServer()
+            socket.abort()
         except Exception:
             pass
-        return True
+        return None
+
+    return socket
+
+
+def _wait_for_server(server_name: str, timeout: float = 5.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _server_alive(server_name, 200):
+            return True
+        time.sleep(0.1)
     return False
 
+
 def _send_quit(server_name: str, timeout_ms: int = 1000) -> bool:
-    socket = QLocalSocket()
-    socket.connectToServer(server_name)
-    if not socket.waitForConnected(timeout_ms):
+    socket = _connect_local_socket(server_name, timeout_ms)
+    if socket is None:
         return False
     try:
         socket.write(json.dumps({"cmd": "quit"}).encode("utf-8"))
@@ -194,18 +222,24 @@ def start_character_service():
         logging.info("Character service started")
     except Exception:
         logging.exception("Failed to start character service")
-        
+
 def start_overworld_service():
     """Starts the parallel overworld data service."""
     try:
         if _mutex_exists(OVERWORLD_MUTEX_NAME) or _server_alive(OVERWORLD_SERVER_NAME, 100):
             logging.info("Overworld service already running")
             return
+
         _launch_python_script("overworld_service.pyw")
+
+        if not _wait_for_server(OVERWORLD_SERVER_NAME, 5.0):
+            logging.warning("Overworld service started but did not become ready in time")
+            return
+
         logging.info("Overworld service started")
     except Exception:
-        logging.exception("Failed to start overworld service")        
-
+        logging.exception("Failed to start overworld service")
+        
 def send_character_service_command(cmd: str, **kwargs):
     """Sends a command to the parallel character service."""
     socket = QLocalSocket()
