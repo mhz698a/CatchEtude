@@ -31,11 +31,11 @@ class OverworldServiceClient(QtCore.QObject):
             start_overworld_service()
         except Exception:
             logging.exception("Failed to ensure Overworld Service is running")
-
-        socket = QtNetwork.QLocalSocket()
+        
         last_error = ""
 
         for attempt in range(5):
+            socket = QtNetwork.QLocalSocket()
             socket.connectToServer(OVERWORLD_SERVER_NAME)
 
             if socket.waitForConnected(800):
@@ -54,6 +54,7 @@ class OverworldServiceClient(QtCore.QObject):
 
             last_error = socket.errorString()
             socket.abort()
+            socket.deleteLater()
 
             if attempt < 4:
                 time.sleep(0.15)
