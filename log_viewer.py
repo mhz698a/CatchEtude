@@ -1,3 +1,4 @@
+# log_viewer.py
 """
 Log Viewer module - UI for viewing application logs in real-time.
 Módulo Visor de Registros: interfaz para ver los registros de la aplicación en tiempo real.
@@ -34,11 +35,15 @@ class LogViewerWindow(QWidget):
 
         self.txt_chars = QPlainTextEdit()
         self.txt_chars.setReadOnly(True)
+        
+        self.txt_overworld = QPlainTextEdit()
+        self.txt_overworld.setReadOnly(True)
 
         self.tabs.addTab(self.txt_info, "INFO")
         self.tabs.addTab(self.txt_warn, "WARN")
         self.tabs.addTab(self.txt_error, "ERROR")
         self.tabs.addTab(self.txt_chars, "PERSONAJES")
+        self.tabs.addTab(self.txt_overworld, "OVERWORLD")
 
         layout.addWidget(self.tabs)
         
@@ -73,3 +78,5 @@ class LogViewerWindow(QWidget):
             self.txt_error.appendPlainText(message)
         elif level == "CHARS":
             self.txt_chars.appendPlainText(message)
+        elif level == "OVERWORLD":
+            self.txt_overworld.appendPlainText(message)

@@ -10,6 +10,7 @@ from service_mgr import start_overworld_service
 OVERWORLD_SERVER_NAME = "CatchEtudeOverworldServer"
 OVERWORLD_CLIENT_NAME = "CatchEtudeOverworldClient"
 
+logger = logging.getLogger("overworld.ipc")
 
 class OverworldServiceClient(QtCore.QObject):
     result_ready = QtCore.pyqtSignal(str, str, str)
@@ -23,7 +24,7 @@ class OverworldServiceClient(QtCore.QObject):
 
         QtNetwork.QLocalServer.removeServer(OVERWORLD_CLIENT_NAME)
         if not self.server.listen(OVERWORLD_CLIENT_NAME):
-            logging.error("Overworld client server could not start: %s", self.server.errorString())
+            logger.error("Overworld client server could not start: %s", self.server.errorString())
 
     def request_overworld(self, year: int, base_path: str, generation: int) -> None:
         self._active_generation = generation
@@ -31,14 +32,14 @@ class OverworldServiceClient(QtCore.QObject):
         try:
             start_overworld_service()
         except Exception:
-            logging.exception("Failed to ensure Overworld Service is running")
+            logger.exception("Failed to ensure Overworld Service is running")
 
         last_error = ""
 
         for attempt in range(5):
             server_name = (OVERWORLD_SERVER_NAME or "").strip()
             if not server_name:
-                logging.error("Overworld server name is empty")
+                logger.error("Overworld server name is empty")
                 return
 
             socket = QtNetwork.QLocalSocket()
@@ -46,7 +47,7 @@ class OverworldServiceClient(QtCore.QObject):
 
             if not socket.waitForConnected(500):
                 last_error = socket.errorString()
-                logging.debug(
+                logger.debug(
                     "Attempt %s failed to connect to Overworld Service (%r): %s",
                     attempt + 1,
                     server_name,
@@ -72,7 +73,7 @@ class OverworldServiceClient(QtCore.QObject):
                 socket.write(payload.encode("utf-8"))
                 if not socket.waitForBytesWritten(500):
                     last_error = socket.errorString()
-                    logging.debug(
+                    logger.debug(
                         "Attempt %s failed while writing to Overworld Service: %s",
                         attempt + 1,
                         last_error,
@@ -88,7 +89,7 @@ class OverworldServiceClient(QtCore.QObject):
 
             time.sleep(0.15)
 
-        logging.error(
+        logger.error(
             "Failed to connect to Overworld Service (%s): %s",
             OVERWORLD_SERVER_NAME,
             last_error or "unknown error",
@@ -112,6 +113,6 @@ class OverworldServiceClient(QtCore.QObject):
                     msg.get("line3", ""),
                 )
         except Exception:
-            logging.exception("Error processing overworld update from service")
+            logger.exception("Error processing overworld update from service")
         finally:
             socket.disconnectFromServer()

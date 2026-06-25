@@ -1,3 +1,4 @@
+# overworld_service.pyw
 from __future__ import annotations
 
 import ctypes
@@ -16,13 +17,15 @@ from overworld_cache_mgr import OverworldCacheManager
 from overworld_scanner_mgr import OverworldScanner
 from overworld_ipc_mgr import OVERWORLD_CLIENT_NAME, OVERWORLD_SERVER_NAME
 
+logger = logging.getLogger("overworld.service")
+
 SERVICE_MUTEX_NAME = "CatchEtudeOverworldServiceMutex"
 ERROR_ALREADY_EXISTS = 183
 
 
 def crash_handler(etype, value, tb):
     err_msg = "".join(traceback.format_exception(etype, value, tb))
-    logging.critical(f"Unhandled exception in OverworldService:\n{err_msg}")
+    logger.critical(f"Unhandled exception in OverworldService:\n{err_msg}")
     try:
         CRASH_REPORT_PATH.write_text(f"OVERWORLD_SERVICE_CRASH:\n{err_msg}", encoding="utf-8")
     except Exception:
@@ -56,7 +59,7 @@ class OverworldService(QtCore.QObject):
         self.server.newConnection.connect(self._on_new_connection)
         QtNetwork.QLocalServer.removeServer(OVERWORLD_SERVER_NAME)
         if not self.server.listen(OVERWORLD_SERVER_NAME):
-            logging.error("Overworld Service could not start: %s", self.server.errorString())
+            logger.error("Overworld Service could not start: %s", self.server.errorString())
 
         self.update_ready.connect(self._send_update)
 
@@ -96,12 +99,19 @@ class OverworldService(QtCore.QObject):
                 generation = int(msg.get("generation", 0))
                 base_path = Path(msg.get("base_path"))
                 self._start_scan(base_path, year, generation)
+                
+                logger.info(
+                    "Scan request year=%s generation=%s path=%s",
+                    year,
+                    generation,
+                    base_path,
+                )
 
             elif cmd == "quit":
                 self._cleanup()
                 QtCore.QCoreApplication.quit()
         except Exception:
-            logging.exception("Error reading Overworld Service socket")
+            logger.exception("Error reading Overworld Service socket")
         finally:
             socket.disconnectFromServer()
 
@@ -122,6 +132,11 @@ class OverworldService(QtCore.QObject):
         )
         self._scanner.finished.connect(lambda: self._on_scan_finished(generation))
         self._scanner.start()
+        
+        logger.info(
+            "Scanner started generation=%s",
+            generation,
+        )
 
     def _send_update(self, generation: int, name: str, line2: str, line3: str):
         if self._closing or generation != self._active_generation:
@@ -129,6 +144,10 @@ class OverworldService(QtCore.QObject):
 
         socket = QtNetwork.QLocalSocket()
         socket.connectToServer(OVERWORLD_CLIENT_NAME)
+        logger.debug(
+            "Sending update: %s",
+            name,
+        )
         if not socket.waitForConnected(300):
             return
 
@@ -147,7 +166,7 @@ class OverworldService(QtCore.QObject):
 
     def _on_scan_finished(self, generation: int):
         if generation == self._active_generation:
-            logging.info("Overworld scan finished for generation %s", generation)
+            logger.info("Overworld scan finished for generation %s", generation)
         self._scanner = None
 
     def _cleanup(self):

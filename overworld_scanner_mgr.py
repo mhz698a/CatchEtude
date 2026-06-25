@@ -2,11 +2,10 @@
 import logging
 import os
 from pathlib import Path
-
 from PyQt6 import QtCore
-
 from overworld_cache_mgr import OverworldCacheManager
 
+logger = logging.getLogger("overworld.scanner")
 
 class OverworldScanner(QtCore.QThread):
     result_ready = QtCore.pyqtSignal(str, str, str)
@@ -52,6 +51,11 @@ class OverworldScanner(QtCore.QThread):
                 return
 
             for sub_path in subs:
+                logger.debug(
+                    "Scanning folder %s",
+                    sub_path,
+                )
+                
                 if self._abort:
                     break
 
@@ -67,6 +71,10 @@ class OverworldScanner(QtCore.QThread):
                 if self.cache is not None and mtime_ns is not None:
                     cached = self.cache.get_folder_data(sub_path)
                     if cached and cached.get("mtime_ns") == mtime_ns:
+                        logger.debug(
+                            "Cache hit %s",
+                            sub_path,
+                        )
                         file_count = int(cached.get("file_count", 0))
                         total_size = int(cached.get("total_size", 0))
                         line2 = f"{file_count} archivos"
@@ -75,6 +83,11 @@ class OverworldScanner(QtCore.QThread):
                         continue
 
                 file_count, total_size = self._scan_folder_stats(sub_path)
+                logger.debug(
+                    "Calculated files=%s bytes=%s",
+                    file_count,
+                    total_size,
+                )
                 line2 = f"{file_count} archivos"
                 line3 = self._format_size_mb(total_size)
 
@@ -87,7 +100,7 @@ class OverworldScanner(QtCore.QThread):
                 try:
                     self.cache.save()
                 except Exception:
-                    logging.exception("Error saving Overworld cache")
+                    logger.exception("Error saving Overworld cache")
 
         except Exception:
-            logging.exception("Error in OverworldScanner")
+            logger.exception("Error in OverworldScanner")

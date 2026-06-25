@@ -1,3 +1,4 @@
+# log_mgr.py
 """
 Log Manager module - Captures logs and emits signals for the UI Log Viewer.
 Módulo Log Manager: captura registros y emite señales para el Visor de Registros de la UI.
@@ -45,6 +46,8 @@ class QtLogHandler(logging.Handler):
             level = "WARN"
         elif record.levelno == CHARS_LEVEL:
             level = "CHARS"
+        elif record.name.startswith("overworld"):
+            level = "OVERWORLD"
         
         _log_history.append((level, msg))
         self.signals.new_log.emit(level, msg)

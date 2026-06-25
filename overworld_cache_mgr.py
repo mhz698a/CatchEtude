@@ -1,7 +1,9 @@
+# overworld_cache_mgr.py
 import json
 import logging
 from config import CACHE_DIR
 
+logger = logging.getLogger("overworld.cache")
 
 class OverworldCacheManager:
     def __init__(self, year: int):
@@ -16,7 +18,7 @@ class OverworldCacheManager:
                 with self.cache_path.open("r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception:
-                logging.exception(f"Failed to load overworld cache for {self.year}")
+                logger.exception(f"Failed to load overworld cache for {self.year}")
         return {}
 
     def save(self):
@@ -29,7 +31,7 @@ class OverworldCacheManager:
             tmp_path.replace(self.cache_path)
             self._dirty = False
         except Exception:
-            logging.exception(f"Failed to save overworld cache for {self.year}")
+            logger.exception(f"Failed to save overworld cache for {self.year}")
 
     def get_folder_data(self, path: str) -> dict | None:
         return self.data.get(path)
