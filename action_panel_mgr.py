@@ -7,6 +7,7 @@ import os
 import logging
 import subprocess
 from pathlib import Path
+from datetime import datetime
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider, QSizePolicy
 from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
@@ -81,7 +82,9 @@ class ActionPanel(QWidget):
         layout.addWidget(self.rename_input)
         
         self.lbl_file_info = QLabel("")
+        self.lbl_file_info.setWordWrap(True)
         self.lbl_file_info.setStyleSheet("font-style: italic; font-size: 11px; margin-left: 5px;")
+        self.lbl_file_info.setMinimumHeight(80)
         layout.addWidget(self.lbl_file_info)
         
         layout.addStretch()        
@@ -198,39 +201,73 @@ class ActionPanel(QWidget):
         # Note: btn_move enabling depends on type, handled by MainWindow
 
     def _update_file_info_label(self):
+
         if not self.filepath:
             self.lbl_file_info.setText("")
             return
 
         p = self.filepath
-        image_exts = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".svg"}
+
+        folder_name = p.parent.name
+
+        try:
+            created = datetime.fromtimestamp(p.stat().st_ctime)
+            created_text = created.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            created_text = "-"
+
+        try:
+            modified = datetime.fromtimestamp(p.stat().st_mtime)
+            modified_text = modified.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            modified_text = "-"
+
+        image_exts = {
+            ".png", ".jpg", ".jpeg",
+            ".webp", ".gif", ".bmp",
+            ".tif", ".tiff", ".svg"
+        }
+
+        file_type = "Archivo"
 
         if p.suffix.lower() in image_exts:
             try:
                 reader = QtGui.QImageReader(str(p))
                 size = reader.size()
+
                 if size.isValid():
-                    self.lbl_file_info.setText(
-                        f"Tipo: Imagen ({size.width()} x {size.height()})"
+                    file_type = (
+                        f"Imagen ({size.width()} x {size.height()})"
                     )
                 else:
-                    self.lbl_file_info.setText("Tipo: Imagen")
+                    file_type = "Imagen"
+
             except Exception:
-                self.lbl_file_info.setText("Tipo: Imagen")
-            return
+                file_type = "Imagen"
 
-        mime = QtCore.QMimeDatabase().mimeTypeForFile(str(p)).name()
-        group = mime.split("/", 1)[0] if "/" in mime else ""
+        else:
+            mime = QtCore.QMimeDatabase().mimeTypeForFile(str(p)).name()
 
-        type_map = {
-            "audio": "Audio",
-            "video": "Video",
-            "image": "Imagen",
-            "text": "Texto",
-            "application": "Aplicación",
-        }
+            group = mime.split("/", 1)[0] if "/" in mime else ""
 
-        self.lbl_file_info.setText(f"Tipo: {type_map.get(group, 'Archivo')}")
+            type_map = {
+                "audio": "Audio",
+                "video": "Video",
+                "image": "Imagen",
+                "text": "Texto",
+                "application": "Aplicación",
+            }
+
+            file_type = type_map.get(group, "Archivo")
+
+        self.lbl_file_info.setText(
+            "\n".join([
+                f"Tipo: {file_type}",
+                f"Carpeta: {folder_name}",
+                f"Creación: {created_text}",
+                f"Modificación: {modified_text}",
+            ])
+        )
 
     def load_preview(self):
         if not self.filepath: return
