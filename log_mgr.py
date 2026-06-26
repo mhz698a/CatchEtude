@@ -12,7 +12,10 @@ from PyQt6.QtNetwork import QLocalSocket
 
 # Custom logging level for character list activities
 CHARS_LEVEL = 25
+OVERWORLD_LEVEL = 20
 logging.addLevelName(CHARS_LEVEL, "CHARS")
+logging.addLevelName(OVERWORLD_LEVEL, "OVERWORLD")
+
 
 class LogSignals(QObject):
     """Signals for the log viewer."""
@@ -46,7 +49,7 @@ class QtLogHandler(logging.Handler):
             level = "WARN"
         elif record.levelno == CHARS_LEVEL:
             level = "CHARS"
-        elif record.name.startswith("overworld"):
+        elif record.levelno == OVERWORLD_LEVEL:
             level = "OVERWORLD"
         
         _log_history.append((level, msg))
@@ -61,6 +64,9 @@ def get_log_history():
 def log_char(message: str):
     """Convenience function to log character-related activities."""
     logging.log(CHARS_LEVEL, message)
+    
+def log_overworld(message: str):
+    logging.log(OVERWORLD_LEVEL, message)
 
 def setup_logging(log_path):
     """Sets up global logging with the custom Qt handler."""

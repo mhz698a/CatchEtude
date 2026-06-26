@@ -17,15 +17,46 @@ from overworld_cache_mgr import OverworldCacheManager
 from overworld_scanner_mgr import OverworldScanner
 from overworld_ipc_mgr import OVERWORLD_CLIENT_NAME, OVERWORLD_SERVER_NAME
 
-logger = logging.getLogger("overworld.service")
-
 SERVICE_MUTEX_NAME = "CatchEtudeOverworldServiceMutex"
+WATCHDOG_SERVER_NAME = "CatchEtudeLogServer"
 ERROR_ALREADY_EXISTS = 183
 
+class WatchdogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            socket = QtNetwork.QLocalSocket()
+            socket.connectToServer(WATCHDOG_SERVER_NAME)
+
+            if socket.waitForConnected(100):
+                payload = json.dumps({
+                    "cmd": "log",
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": self.format(record),
+                })
+
+                socket.write(payload.encode("utf-8"))
+                socket.waitForBytesWritten(100)
+                socket.disconnectFromServer()
+
+        except Exception:
+            pass
+
+def message_debug_error(msg, title):
+    # MB_ICONERROR (0x10) | MB_SYSTEMMODAL (0x1000) para forzar que salga al frente
+    ctypes.windll.user32.MessageBoxW(
+            0, 
+            msg, 
+            title, 
+            0x10 | 0x1000
+        )
 
 def crash_handler(etype, value, tb):
     err_msg = "".join(traceback.format_exception(etype, value, tb))
-    logger.critical(f"Unhandled exception in OverworldService:\n{err_msg}")
+    logger.critical(
+        "Unhandled exception in OverworldService",
+        exc_info=(etype, value, tb),
+    )
     try:
         CRASH_REPORT_PATH.write_text(f"OVERWORLD_SERVICE_CRASH:\n{err_msg}", encoding="utf-8")
     except Exception:
@@ -33,17 +64,15 @@ def crash_handler(etype, value, tb):
     
     # --- NUEVO: Cuadro de mensaje nativo de Windows antes de morir ---
     try:
-        # MB_ICONERROR (0x10) | MB_SYSTEMMODAL (0x1000) para forzar que salga al frente
-        ctypes.windll.user32.MessageBoxW(
-            0, 
-            f"El servicio Overworld ha fallado.\n\nError: {value}\n\nSe ha guardado un reporte en el log.", 
-            "Error Crítico - Overworld Service", 
-            0x10 | 0x1000
-        )
+        message_debug_error(
+            title=f"El servicio Overworld ha fallado.\n\nError: {value}",
+            msg="Error Crítico - Overworld Service"
+            )
     except Exception:
         pass
     
     sys.exit(1)
+
 
 
 class OverworldService(QtCore.QObject):
@@ -58,6 +87,7 @@ class OverworldService(QtCore.QObject):
         self.server = QtNetwork.QLocalServer(self)
         self.server.newConnection.connect(self._on_new_connection)
         QtNetwork.QLocalServer.removeServer(OVERWORLD_SERVER_NAME)
+        
         if not self.server.listen(OVERWORLD_SERVER_NAME):
             logger.error("Overworld Service could not start: %s", self.server.errorString())
 
@@ -102,16 +132,15 @@ class OverworldService(QtCore.QObject):
                 
                 logger.info(
                     "Scan request year=%s generation=%s path=%s",
-                    year,
-                    generation,
-                    base_path,
-                )
+                    year, generation, base_path,)
 
             elif cmd == "quit":
                 self._cleanup()
                 QtCore.QCoreApplication.quit()
-        except Exception:
-            logger.exception("Error reading Overworld Service socket")
+                
+        except Exception as e:
+            logger.exception(f"Error reading Overworld Service socket: {e}")
+            logger.exception("Invalid IPC message: %r", raw)
         finally:
             socket.disconnectFromServer()
 
@@ -121,7 +150,8 @@ class OverworldService(QtCore.QObject):
         if self._scanner is not None:
             try:
                 self._scanner.abort()
-                self._scanner.wait()
+                if not self._scanner.wait(5000):
+                    logger.warning("Scanner did not stop after 5 seconds.")
             except Exception:
                 pass
 
@@ -133,10 +163,8 @@ class OverworldService(QtCore.QObject):
         self._scanner.finished.connect(lambda: self._on_scan_finished(generation))
         self._scanner.start()
         
-        logger.info(
-            "Scanner started generation=%s",
-            generation,
-        )
+        logger.info("Scanner started generation=%s", generation,)
+        
 
     def _send_update(self, generation: int, name: str, line2: str, line3: str):
         if self._closing or generation != self._active_generation:
@@ -144,11 +172,13 @@ class OverworldService(QtCore.QObject):
 
         socket = QtNetwork.QLocalSocket()
         socket.connectToServer(OVERWORLD_CLIENT_NAME)
-        logger.debug(
-            "Sending update: %s",
-            name,
-        )
+        logger.debug("Sending update: %s", name,)
+        
         if not socket.waitForConnected(300):
+            logger.warning(
+                "Could not connect to client '%s'",
+                OVERWORLD_CLIENT_NAME,
+            )
             return
 
         payload = json.dumps(
@@ -177,19 +207,19 @@ class OverworldService(QtCore.QObject):
         try:
             if self._scanner is not None:
                 self._scanner.abort()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"Cleanup error: {e}")
 
         try:
             if self.server.isListening():
                 self.server.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"Error closing server: {e}")
 
         try:
             QtNetwork.QLocalServer.removeServer(OVERWORLD_SERVER_NAME)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"Error removing local server: {e}")
 
 
 def main():
@@ -218,4 +248,11 @@ def main():
 
 
 if __name__ == "__main__":
+    logger = logging.getLogger("overworld.service")
+    logger.setLevel(logging.DEBUG)
+
+    watchdog_handler = WatchdogHandler()
+    watchdog_handler.setFormatter(logging.Formatter("%(message)s"))
+
+    logger.addHandler(watchdog_handler)
     main()

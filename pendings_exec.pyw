@@ -116,7 +116,7 @@ def play_alarm():
         
         # Ajustar el volumen: 0.0 es silencio, 1.0 es el máximo (ejemplo: 30%)
         # Puedes cambiar este valor según lo necesites
-        volumen = 0.6
+        volumen = 0.1
         pygame.mixer.music.set_volume(volumen)
         
         # Iniciar la reproducción
