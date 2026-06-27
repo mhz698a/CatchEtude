@@ -52,6 +52,9 @@ class SelectionPanel(QWidget):
         self._sub_scanner = None
         self._overworld_client = OverworldServiceClient(self)
         self._overworld_client.result_ready.connect(self._on_overworld_result)
+        self._overworld_client.finished_ready.connect(
+            lambda gen: setattr(self, "_overworld_refresh_pending", False)
+        )
         self._overworld_generation = 0
         self._build_ui()
 

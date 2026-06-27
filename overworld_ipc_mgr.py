@@ -14,6 +14,7 @@ logger = logging.getLogger("overworld.ipc")
 
 class OverworldServiceClient(QtCore.QObject):
     result_ready = QtCore.pyqtSignal(str, str, str)
+    finished_ready = QtCore.pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -112,6 +113,13 @@ class OverworldServiceClient(QtCore.QObject):
                     msg.get("line2", ""),
                     msg.get("line3", ""),
                 )
+            elif msg.get("cmd") == "finish":
+                try:
+                    gen = int(msg.get("generation", -1))
+                except Exception:
+                    gen = -1
+                self.finished_ready.emit(gen)
+                
         except Exception:
             logger.exception("Error processing overworld update from service")
         finally:

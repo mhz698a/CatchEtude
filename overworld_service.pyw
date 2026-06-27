@@ -207,6 +207,17 @@ class OverworldService(QtCore.QObject):
         if generation == self._active_generation:
             logger.info("Overworld scan finished for generation %s", generation)
         self._scanner = None
+        
+        try:
+            socket = QtNetwork.QLocalSocket()
+            socket.connectToServer(OVERWORLD_CLIENT_NAME)
+            if socket.waitForConnected(300):
+                payload = json.dumps({"cmd": "finish", "generation": generation})
+                socket.write(payload.encode("utf-8"))
+                socket.waitForBytesWritten(300)
+                socket.disconnectFromServer()
+        except Exception:
+            logger.exception("Failed to notify client of scan finish")
 
     def _cleanup(self):
         if self._closing:
