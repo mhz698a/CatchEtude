@@ -94,6 +94,13 @@ class WatchdogService(QtCore.QObject):
         print("Main process terminated (Mutex signal).")
         self._handle_termination()
         self._launch_restart()
+        
+        QtCore.QMetaObject.invokeMethod(
+            self,
+            "_show_shutdown_message",
+            QtCore.Qt.ConnectionType.BlockingQueuedConnection
+        )
+            
         self._cleanup()
         QtCore.QCoreApplication.quit()
 

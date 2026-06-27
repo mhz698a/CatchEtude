@@ -236,8 +236,15 @@ class SelectionPanel(QWidget):
                     self._sub_scanner.start()
                     
                 elif t == 8:
+                    if hasattr(self, "_overworld_refresh_pending"):
+                        if self._overworld_refresh_pending:
+                            return
+
+                    self._overworld_refresh_pending = True
+
                     self._overworld_generation += 1
                     self.list_sub.set_loading_placeholder("Cargando...", "Cargando...", reserve_height=60)
+
                     self._overworld_client.request_overworld(
                         year=self.list_year.current_year(),
                         base_path=str(base),
@@ -325,9 +332,11 @@ class SelectionPanel(QWidget):
             return False
 
     def _on_overworld_result(self, name: str, line2: str = "", line3: str = ""):
+        self._overworld_refresh_pending = False
+
         if hasattr(self, "list_sub"):
             self.list_sub.update_button(name, line2, line3)
-
+        
     def _handle_create_folder(self, base_path: Path):
         name, ok = QtWidgets.QInputDialog.getText(
             self, self.loc.get("dlg_create_title"), self.loc.get("dlg_create_label")

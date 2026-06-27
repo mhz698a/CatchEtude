@@ -24,6 +24,9 @@ class OverworldScanner(QtCore.QThread):
         total_size = 0
 
         for root, _, files in os.walk(folder_path):
+            if self._abort:
+                return file_count, total_size
+            
             for fname in files:
                 n_low = fname.lower()
                 if n_low in ("desktop.ini", "thumbs.db"):
@@ -51,14 +54,14 @@ class OverworldScanner(QtCore.QThread):
                 return
 
             for sub_path in subs:
+                if self._abort:
+                    break
+                
                 logger.debug(
                     "Scanning folder %s",
                     sub_path,
                 )
                 
-                if self._abort:
-                    break
-
                 folder_name = Path(sub_path).name
                 line2 = "0 archivos"
                 line3 = "0.0 MB"
@@ -80,6 +83,13 @@ class OverworldScanner(QtCore.QThread):
                         line2 = f"{file_count} archivos"
                         line3 = cached.get("size_mb_str", self._format_size_mb(total_size))
                         self.result_ready.emit(folder_name, line2, line3)
+                        
+                        if self.cache is not None and self.cache._dirty:
+                            try:
+                                self.cache.save()
+                            except Exception:
+                                logger.exception("Incremental cache save failed")
+                                
                         continue
 
                 file_count, total_size = self._scan_folder_stats(sub_path)

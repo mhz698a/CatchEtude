@@ -486,6 +486,11 @@ class StateManager:
 
             # Update parent folder mtime to trigger character service update if applicable
             update_folder_mtime(dst.parent)
+            
+            try:
+                update_folder_mtime(src.parent)
+            except Exception:
+                pass
 
             # Handle cross-drive integrity if src still exists
             if src.exists():

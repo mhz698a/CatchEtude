@@ -150,13 +150,22 @@ class OverworldService(QtCore.QObject):
         if self._scanner is not None:
             try:
                 self._scanner.abort()
-                if not self._scanner.wait(5000):
-                    logger.warning("Scanner did not stop after 5 seconds.")
+                if not self._scanner.wait(1000):
+                    logger.warning("Scanner did not stop after 1 seconds.")
             except Exception:
                 pass
+            
+        if not hasattr(self, "_cache_by_year"):
+            self._cache_by_year = {}
 
-        cache = OverworldCacheManager(year)
-        self._scanner = OverworldScanner(base_path, cache)
+        cache = self._cache_by_year.get(year)
+
+        if cache is None:
+            cache = OverworldCacheManager(year)
+            self._cache_by_year[year] = cache
+
+        self._scanner = OverworldScanner(base_path, cache)        
+        
         self._scanner.result_ready.connect(
             lambda name, line2, line3, gen=generation: self.update_ready.emit(gen, name, line2, line3)
         )
