@@ -16,12 +16,12 @@ from datetime import datetime
 APP_NAME = "CatchEtude"
 MYAPPID = 'EtudeProduts.CatchEtude.CatchEtudeWatcher.v1.0'
 
-# Icons and Paths
-ICON_PATH = r"C:\Users\miche\OneDrive\CatchEtude\catchetude-icon.png"
 APP_DIR = Path(__file__).resolve().parent.as_posix()
-METADATA_EDIT_SCRIPT_PATH = Path(r"C:\Users\miche\OneDrive\foobar2000\profile\ActivityBar\rename_dialog.py")
-
 USER_HOME = Path.home()
+
+ICON_PATH = f"{APP_DIR}/assets/catchetude-icon.png"
+METADATA_EDIT_SCRIPT_PATH = USER_HOME / "OneDrive" / "foobar2000" / "profile" / "ActivityBar" / "rename_dialog.py"
+
 DOWNLOADS = USER_HOME / "Downloads"
 DOCUMENTS = USER_HOME / "Documents"
 CONFLICTS = DOCUMENTS / "_conflicts"
@@ -42,9 +42,7 @@ ONEDRIVE_DOCS = USER_HOME / "OneDrive" / "Documentos"
 ONEDRIVE_DOCTOS_FAMILIA = USER_HOME / "OneDrive" / "Doctos Familia"
 
 # Folder Name Keywords
-CHAR_PANEL_ALWAYS = False # Set to True to keep character panel always visible
 BLUR_LEVEL = 15
-HDD_SPINUP_MS = 1500
 IMAGES_FOLDER = "album"
 MUSIC_FOLDER = "music"
 OVERWORLD_FOLDER = "overworld"
@@ -55,6 +53,7 @@ EXCLUDE_EXT = {'.crdownload', '.part', '.tmp', '.temp', '.catchtmp', '.ini'}
 METADATA_EDIT_EXTS = {".mp3", ".mp4", ".m4a", ".m4v"}
 CURRENT_YEAR = datetime.now().year
 YEARS = list(range(2004, CURRENT_YEAR + 1))
+NONCANON_YEARS = [1999, 2000, 2001, 2002, 2003]
 
 # Initialize Directories
 APPDATA_DIR.mkdir(parents=True, exist_ok=True)
