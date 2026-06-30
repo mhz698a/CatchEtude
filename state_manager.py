@@ -3,11 +3,12 @@ from enum import Enum, auto
 from typing import Optional
 from pathlib import Path
 from collections import deque
+
 from utils import is_file_locked, is_temporary, sha256_file, resolve_duplicate, sanitize_windows_filename, flatten_downloads_root, setctime_blocking, safe_unlink
 from fallback_utils import safe_move_to_conflicts
 from history_mgr import HistoryManager
 
-from config import CONFLICTS, DOWNLOADS
+import config
 from fallback_utils import compute_destination
 from app_signals_mgr import AppSignals
 
@@ -338,7 +339,7 @@ class StateManager:
             if decision['action'] == 'keep':
                 # mover a conflictos
                 keep_name = sanitize_windows_filename(decision.get('new_name', p.stem))
-                dest = resolve_duplicate(CONFLICTS / (keep_name + p.suffix))
+                dest = resolve_duplicate(config.CONFLICTS / (keep_name + p.suffix))
                 shutil.copy2(p, dest)  # preserva atime y mtime
                 setctime_blocking(str(dest), ctime)  # preservar ctime/birthtime
 
@@ -377,7 +378,7 @@ class StateManager:
                 else:
                     logging.error("Integridad fallida al mover; enviando a conflictos")
                     dest.unlink(missing_ok=True)
-                    conflict = resolve_duplicate(CONFLICTS / p.name)
+                    conflict = resolve_duplicate(config.CONFLICTS / p.name)
                     shutil.copy2(p, conflict)
                     setctime_blocking(str(conflict), ctime)
             
@@ -411,7 +412,7 @@ class StateManager:
         except Exception:
             logging.exception("Error durante apply_decision; intentando mover a conflictos")
             try:
-                conflict = resolve_duplicate(CONFLICTS / p.name)
+                conflict = resolve_duplicate(config.CONFLICTS / p.name)
                 shutil.copy2(p, conflict)
                 setctime_blocking(str(conflict), ctime)
             except Exception:
@@ -594,7 +595,7 @@ class StateManager:
 def scan_existing_downloads(state_manager: StateManager):
     try:
         now = time.time()
-        for p in sorted(DOWNLOADS.iterdir()):
+        for p in sorted(config.DOWNLOADS.iterdir()):
             if not p.is_file() or is_temporary(p):
                 continue
 

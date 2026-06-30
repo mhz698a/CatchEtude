@@ -9,7 +9,7 @@ import ctypes
 import subprocess
 from pathlib import Path
 from PyQt6 import QtWidgets, QtCore, QtGui
-from config import APP_NAME, ICON_PATH, MYAPPID, CRASH_REPORT_PATH
+from config import ICON_PATH, MYAPPID, CRASH_REPORT_PATH
 from localization import LocalizationManager
 
 class CrashDialog(QtWidgets.QDialog):

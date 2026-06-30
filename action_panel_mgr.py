@@ -12,8 +12,7 @@ from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider, QSizePolicy
 from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
-
-from config import BLUR_LEVEL, ICON_PATH, METADATA_EDIT_SCRIPT_PATH, METADATA_EDIT_EXTS
+import config
 from localization import LocalizationManager
 from ui_utils_mgr import apply_secure_blur
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
@@ -331,7 +330,7 @@ class ActionPanel(QWidget):
             os.startfile(str(self.filepath))
 
     def _is_metadata_editable(self) -> bool:
-        return bool(self.filepath) and self.filepath.suffix.lower() in METADATA_EDIT_EXTS
+        return bool(self.filepath) and self.filepath.suffix.lower() in config.METADATA_EDIT_EXTS
 
     def _update_metadata_button_visibility(self):
         visible = self._is_metadata_editable()
@@ -344,7 +343,7 @@ class ActionPanel(QWidget):
 
         try:
             subprocess.Popen(
-                ["pythonw", str(METADATA_EDIT_SCRIPT_PATH), str(self.filepath)],
+                ["pythonw", str(config.METADATA_EDIT_SCRIPT_PATH), str(self.filepath)],
                 close_fds=True,
             )
         except Exception:

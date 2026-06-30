@@ -7,7 +7,7 @@ import os
 import logging
 from pathlib import Path
 from PyQt6 import QtCore
-from config import BASE_INTERNAL, IMAGES_FOLDER, MUSIC_FOLDER, OVERWORLD_FOLDER, ONEDRIVE_DOCS, ONEDRIVE_DOCTOS_FAMILIA
+import config
 from episode_cache_mgr import EpisodeCacheManager
 
 class SubfolderScanner(QtCore.QThread):
@@ -85,7 +85,7 @@ class SubfolderScanner(QtCore.QThread):
 
 def get_base_path_for_type_year(movement_type: int, year: int) -> Path:
     """Calculates the base folder for subfolder listing."""
-    year_dir = BASE_INTERNAL / str(year)
+    year_dir = config.BASE_INTERNAL / str(year)
     if not (year_dir.exists() and year_dir.is_dir()):
         logging.warning(f"Year directory not found: {year_dir}")
         return year_dir
@@ -100,7 +100,7 @@ def get_base_path_for_type_year(movement_type: int, year: int) -> Path:
             
             name = child.name.lower()
             if movement_type == 2: # Characters
-                if (prefix in name and IMAGES_FOLDER in name) or (IMAGES_FOLDER in name):
+                if (prefix in name and config.IMAGES_FOLDER in name) or (config.IMAGES_FOLDER in name):
                     base = child
                     break
             elif movement_type == 3: # Episodes
@@ -108,11 +108,11 @@ def get_base_path_for_type_year(movement_type: int, year: int) -> Path:
                     base = child
                     break
             elif movement_type == 4: # Music
-                if (prefix in name and MUSIC_FOLDER in name) or (MUSIC_FOLDER in name):
+                if (prefix in name and config.MUSIC_FOLDER in name) or (config.MUSIC_FOLDER in name):
                     base = child
                     break
             elif movement_type == 8: # Overworld
-                if (prefix in name and OVERWORLD_FOLDER in name) or (OVERWORLD_FOLDER in name):
+                if (prefix in name and config.OVERWORLD_FOLDER in name) or (config.OVERWORLD_FOLDER in name):
                     base = child
                     break
     except Exception:
@@ -120,11 +120,11 @@ def get_base_path_for_type_year(movement_type: int, year: int) -> Path:
 
     if base is None:
         if movement_type == 2:
-            base = year_dir / f"{prefix}. {IMAGES_FOLDER}"
+            base = year_dir / f"{prefix}. {config.IMAGES_FOLDER}"
         elif movement_type == 4:
-            base = year_dir / f"{prefix}. {MUSIC_FOLDER}"
+            base = year_dir / f"{prefix}. {config.MUSIC_FOLDER}"
         elif movement_type == 8:
-            base = year_dir / f"{prefix}. {OVERWORLD_FOLDER}"
+            base = year_dir / f"{prefix}. {config.OVERWORLD_FOLDER}"
         else:
             base = year_dir
             
@@ -132,4 +132,4 @@ def get_base_path_for_type_year(movement_type: int, year: int) -> Path:
 
 def get_base_path_for_docs(movement_type: int) -> Path:
     """Returns base path for OneDrive documents."""
-    return ONEDRIVE_DOCS if movement_type == 5 else ONEDRIVE_DOCTOS_FAMILIA
+    return config.ONEDRIVE_DOCS if movement_type == 5 else config.ONEDRIVE_DOCTOS_FAMILIA

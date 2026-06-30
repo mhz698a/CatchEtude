@@ -8,7 +8,7 @@ from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import QFileIconProvider
 from PyQt6.QtCore import Qt
-from config import BLUR_LEVEL
+import config
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
 
 def apply_secure_blur(image: QtGui.QImage) -> QtGui.QImage:
@@ -17,7 +17,7 @@ def apply_secure_blur(image: QtGui.QImage) -> QtGui.QImage:
     Aplica un desenfoque de seguridad al 85% superior de una imagen.
     """
     if image.isNull(): return image
-    blur_radius = BLUR_LEVEL
+    blur_radius = config.BLUR_LEVEL
     small = image.scaled(image.width() // blur_radius, image.height() // blur_radius, 
                          Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
     blurred = small.scaled(image.width(), image.height(), 

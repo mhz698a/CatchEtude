@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit
 from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
 
-from config import BLUR_LEVEL, ICON_PATH, METADATA_EDIT_SCRIPT_PATH, METADATA_EDIT_EXTS
 from localization import LocalizationManager
 from ui_utils_mgr import apply_secure_blur
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail

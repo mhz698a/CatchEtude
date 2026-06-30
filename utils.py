@@ -3,7 +3,8 @@ import time
 from send2trash import send2trash
 from ctypes import wintypes
 from pathlib import Path
-from config import EXCLUDE_EXT, BASE_INTERNAL, DOWNLOADS, DWMWA_FORCE_ICONIC_REPRESENTATION, DWMWA_HAS_ICONIC_BITMAP, DWMWA_DISALLOW_PEEK
+import config
+from config import EXCLUDE_EXT, DOWNLOADS, DWMWA_FORCE_ICONIC_REPRESENTATION, DWMWA_HAS_ICONIC_BITMAP, DWMWA_DISALLOW_PEEK
 from wctime import setctime_blocking
 from typing import Optional
 
@@ -162,7 +163,7 @@ def update_folder_mtime(folder_path: Path):
         logging.exception(f"Failed to update mtime for folder: {folder_path}")
 
 def is_internal_available() -> bool:
-    return BASE_INTERNAL.exists() and BASE_INTERNAL.is_dir()
+    return config.BASE_INTERNAL.exists() and config.BASE_INTERNAL.is_dir()
 
 def configure_dwm_thumbnail_behavior(hwnd):
     # Forzar que Windows use representación icónica
