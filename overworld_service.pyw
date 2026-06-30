@@ -12,7 +12,8 @@ import win32api
 import win32event
 from PyQt6 import QtCore, QtNetwork
 
-from config import APP_NAME, CRASH_REPORT_PATH, MYAPPID
+from config import APP_NAME, CRASH_REPORT_PATH, MYAPPID, SETTINGS_PATH, apply_settings
+
 from overworld_cache_mgr import OverworldCacheManager
 from overworld_scanner_mgr import OverworldScanner
 from overworld_ipc_mgr import OVERWORLD_CLIENT_NAME, OVERWORLD_SERVER_NAME
@@ -100,6 +101,17 @@ class OverworldService(QtCore.QObject):
         app = QtCore.QCoreApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._cleanup)
+            
+        self._setup_settings_watcher()
+
+    def _setup_settings_watcher(self):
+        self._settings_watcher = QtCore.QFileSystemWatcher([str(SETTINGS_PATH)], self)
+        self._settings_watcher.fileChanged.connect(self._on_settings_file_changed)
+
+    def _on_settings_file_changed(self, path):
+        apply_settings()
+        if str(SETTINGS_PATH) not in self._settings_watcher.files():
+            self._settings_watcher.addPath(str(SETTINGS_PATH))
 
     def _check_main_process(self):
         handle = None

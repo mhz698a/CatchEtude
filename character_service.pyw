@@ -17,7 +17,7 @@ from pathlib import Path
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from PyQt6 import QtCore, QtNetwork
-from config import BASE_INTERNAL, IMAGES_FOLDER, CRASH_REPORT_PATH, APP_NAME, MYAPPID
+from config import BASE_INTERNAL, IMAGES_FOLDER, CRASH_REPORT_PATH, APP_NAME, MYAPPID, SETTINGS_PATH, apply_settings
 from character_cache_mgr import CharacterCacheManager
 
 SERVICE_MUTEX_NAME = "CatchEtudeCharacterServiceMutex"
@@ -52,6 +52,17 @@ class CharacterService(QtCore.QObject):
         app = QtCore.QCoreApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._cleanup)
+            
+        self._setup_settings_watcher()
+
+    def _setup_settings_watcher(self):
+        self._settings_watcher = QtCore.QFileSystemWatcher([str(SETTINGS_PATH)], self)
+        self._settings_watcher.fileChanged.connect(self._on_settings_file_changed)
+
+    def _on_settings_file_changed(self, path):
+        apply_settings()
+        if str(SETTINGS_PATH) not in self._settings_watcher.files():
+            self._settings_watcher.addPath(str(SETTINGS_PATH))
 
     def _log_to_watchdog(self, level, message):
         socket = QtNetwork.QLocalSocket()

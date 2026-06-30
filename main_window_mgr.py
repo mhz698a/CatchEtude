@@ -25,9 +25,8 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTime
 
 from config import (
-    APP_NAME, LOG_PATH, CRASH_REPORT_PATH,
-    YEARS, ICON_PATH, CONFIG_PATH, MYAPPID, DOWNLOADS,
-    BASE_INTERNAL, IMAGES_FOLDER, MUSIC_FOLDER,
+    APP_NAME, ICON_PATH, CONFIG_PATH, DOWNLOADS,
+    SETTINGS_PATH, apply_settings
 ) 
 from utils import (
     resolve_duplicate, 
@@ -114,6 +113,24 @@ class MainWindow(QWidget):
         self._queue_maintenance_timer.start()
         
         self._pending_scheduler = None
+        
+        self._setup_settings_watcher()
+
+    def _setup_settings_watcher(self):
+        self._settings_watcher = QtCore.QFileSystemWatcher([str(SETTINGS_PATH)], self)
+        self._settings_watcher.fileChanged.connect(self._on_settings_file_changed)
+
+    def _on_settings_file_changed(self, path):
+        logging.info(f"Settings file changed: {path}. Reloading...")
+        apply_settings()
+        
+        # QFileSystemWatcher might lose the file after it's overwritten by some editors
+        if str(SETTINGS_PATH) not in self._settings_watcher.files():
+            self._settings_watcher.addPath(str(SETTINGS_PATH))
+
+        self.retranslate_ui()
+        # Some changes might require more specific updates
+        self.selection_panel.refresh_classification_ui()
 
     def _build_ui(self):
         main_vbox = QVBoxLayout(self)
@@ -397,19 +414,24 @@ class MainWindow(QWidget):
         if not hasattr(self, 'tray'):
             self.tray = QSystemTrayIcon(icon, self)
             self.tray.setToolTip(APP_NAME)
+            
         self.tray_menu = QMenu(self)
         show_action = QAction(self.loc.get("tray_show"), self)
         show_action.triggered.connect(self._bring_and_center)
         self.tray_menu.addAction(show_action)
+        
         hide_action = QAction(self.loc.get("tray_hide"), self)
         hide_action.triggered.connect(self._manual_hide)
         self.tray_menu.addAction(hide_action)
+        
         rescan_action = QAction(self.loc.get("tray_rescan"), self)
         rescan_action.triggered.connect(self._rescan_downloads)
         self.tray_menu.addAction(rescan_action)
+        
         order_pending_action = QAction(self.loc.get("tray_order_pending"), self)
         order_pending_action.triggered.connect(self._on_order_pending_clicked)
         self.tray_menu.addAction(order_pending_action)
+        
         run_pendings_action = QAction(self.loc.get("tray_run_pendings"), self)
         run_pendings_action.triggered.connect(self._run_pendings)
         self.tray_menu.addAction(run_pendings_action)
@@ -428,17 +450,27 @@ class MainWindow(QWidget):
         undo_action = QAction(self.loc.get("tray_undo"), self)
         undo_action.triggered.connect(self._on_undo_clicked)
         self.tray_menu.addAction(undo_action)
+        
         center_action = QAction(self.loc.get("tray_center"), self)
         center_action.triggered.connect(self._bring_and_center)
         self.tray_menu.addAction(center_action)
+        
         logs_action = QAction(self.loc.get("tray_logs"), self)
         logs_action.triggered.connect(self._show_logs)
         self.tray_menu.addAction(logs_action)
+        
+        settings_action = QAction(self.loc.get("tray_settings"), self)
+        settings_action.triggered.connect(self._open_settings_dialog)
+        self.tray_menu.addAction(settings_action)
+
         restart_action = QAction(self.loc.get("tray_restart"), self)
         restart_action.triggered.connect(self._restart_service)
         self.tray_menu.addAction(restart_action)
+        
         quit_action = QAction(self.loc.get("tray_exit"), self)
         quit_action.triggered.connect(self._on_exit_clicked)
+        self.tray_menu.addAction(quit_action)
+        
         self.tray.setContextMenu(self.tray_menu)
         self.tray.show()
 
@@ -462,7 +494,8 @@ class MainWindow(QWidget):
         
     def _show_warning_message(self, text):
         QMessageBox.warning(self, "Aviso", text)
-        
+    
+    
     def _check_destination_collision(self, candidate: Path, 
                                      allow_retry: bool = False) -> tuple[str, Optional[Path]]:
         if not candidate.exists():
@@ -525,6 +558,18 @@ class MainWindow(QWidget):
             socket.write(data.encode('utf-8'))
             socket.waitForBytesWritten(100)
             socket.disconnectFromServer()
+
+    def _open_settings_dialog(self):
+        settings_script = Path(__file__).resolve().parent / "settings_dialog.pyw"
+
+        python_exe = sys.executable
+        if python_exe.lower().endswith("python.exe"):
+            python_exe = python_exe[:-10] + "pythonw.exe"
+
+        subprocess.Popen(
+            [python_exe, str(settings_script)],
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+        )
 
     def _bring_and_center(self):
         if hasattr(self, '_pending_dialog'):
