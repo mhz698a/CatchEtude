@@ -13,6 +13,7 @@ import win32event
 from PyQt6 import QtCore, QtNetwork
 
 from config import APP_NAME, CRASH_REPORT_PATH, MYAPPID, SETTINGS_PATH, apply_settings
+
 from overworld_cache_mgr import OverworldCacheManager
 from overworld_scanner_mgr import OverworldScanner
 from overworld_ipc_mgr import OVERWORLD_CLIENT_NAME, OVERWORLD_SERVER_NAME
@@ -100,7 +101,7 @@ class OverworldService(QtCore.QObject):
         app = QtCore.QCoreApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._cleanup)
-
+            
         self._setup_settings_watcher()
 
     def _setup_settings_watcher(self):

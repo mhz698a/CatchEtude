@@ -1,6 +1,7 @@
 import sys
+import ctypes
 from PyQt6.QtWidgets import (
-    QApplication, QDialog, QVBoxLayout, QHBoxLayout,
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, 
     QLabel, QLineEdit, QPushButton, QFormLayout, QScrollArea, QWidget
 )
 from PyQt6.QtGui import QIcon
@@ -12,41 +13,41 @@ class SettingsDialog(QDialog):
         super().__init__()
         self.setWindowTitle(f"Ajustes - {config.APP_NAME}")
         self.setWindowIcon(QIcon(config.ICON_PATH))
-        self.setMinimumWidth(500)
-
+        self.setMinimumWidth(800)
+        
         self.settings = config.load_settings()
         self.inputs = {}
-
+        
         self.init_ui()
-
+        
     def init_ui(self):
         layout = QVBoxLayout(self)
-
+        
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll_content = QWidget()
         form_layout = QFormLayout(scroll_content)
-
+        
         for key in config.DEFAULT_SETTINGS.keys():
             value = self.settings.get(key, config.DEFAULT_SETTINGS[key])
             line_edit = QLineEdit(str(value))
             form_layout.addRow(QLabel(key), line_edit)
             self.inputs[key] = line_edit
-
+            
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll)
-
+        
         buttons_layout = QHBoxLayout()
         btn_save = QPushButton("Guardar")
         btn_save.clicked.connect(self.save)
         btn_discard = QPushButton("Descartar")
         btn_discard.clicked.connect(self.reject)
-
+        
         buttons_layout.addStretch()
         buttons_layout.addWidget(btn_save)
         buttons_layout.addWidget(btn_discard)
         layout.addLayout(buttons_layout)
-
+        
     def save(self):
         new_settings = {}
         for key, line_edit in self.inputs.items():
@@ -58,12 +59,19 @@ class SettingsDialog(QDialog):
                 except ValueError:
                     pass
             new_settings[key] = value
-
+            
         config.save_settings(new_settings)
         self.accept()
 
 def main():
+    try:
+        # Use the same MYAPPID to group with the main application and share the icon
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
+    except Exception:
+        pass
+    
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(config.ICON_PATH))
     dialog = SettingsDialog()
     dialog.show()
     sys.exit(app.exec())

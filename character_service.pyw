@@ -52,7 +52,7 @@ class CharacterService(QtCore.QObject):
         app = QtCore.QCoreApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._cleanup)
-
+            
         self._setup_settings_watcher()
 
     def _setup_settings_watcher(self):
