@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 import config
-from utils import sha256_file, resolve_duplicate, sanitize_windows_filename, setctime_blocking
+from utils import resolve_duplicate, sanitize_windows_filename, setctime_blocking
 
 
 def safe_move_to_conflicts(p: Path):
@@ -33,9 +33,8 @@ def safe_move_to_conflicts(p: Path):
         ctime = getattr(stat, "st_birthtime", stat.st_ctime)
         
         shutil.copy2(p, dest)
-        if sha256_file(p) == sha256_file(dest):
-            setctime_blocking(dest, ctime)
-            p.unlink(missing_ok=True)
+        setctime_blocking(dest, ctime)
+        p.unlink(missing_ok=True)
             
         if p.exists():
             logging.critical(f"Source not removed after safe move: {p}")

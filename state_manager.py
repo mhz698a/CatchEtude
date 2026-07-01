@@ -4,7 +4,7 @@ from typing import Optional
 from pathlib import Path
 from collections import deque
 
-from utils import is_file_locked, is_temporary, sha256_file, resolve_duplicate, sanitize_windows_filename, flatten_downloads_root, setctime_blocking, safe_unlink
+from utils import is_file_locked, is_temporary, resolve_duplicate, sanitize_windows_filename, flatten_downloads_root, setctime_blocking, safe_unlink
 from fallback_utils import safe_move_to_conflicts
 from history_mgr import HistoryManager
 
@@ -343,22 +343,17 @@ class StateManager:
                 shutil.copy2(p, dest)  # preserva atime y mtime
                 setctime_blocking(str(dest), ctime)  # preservar ctime/birthtime
 
-                if sha256_file(p) == sha256_file(dest):
-                    p.unlink(missing_ok=True)
-                    logging.info(f"Archivo 'keep' movido a conflictos: {dest}")
-                    self._history.record_move(
-                        p, 
-                        dest, 
-                        {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime}
-                    )
-                    
-                    post_action = decision.get("post_action", "none")
-                    if post_action in ("open_file", "open_folder") and self.notifier:
-                        self.notifier.post_action_ready.emit(str(dest), post_action)
-                    
-                else:
-                    logging.error("Integridad fallida al mover a conflictos; archivo original intacto")
-                    dest.unlink(missing_ok=True)
+                p.unlink(missing_ok=True)
+                logging.info(f"Archivo 'keep' movido a conflictos: {dest}")
+                self._history.record_move(
+                    p, 
+                    dest, 
+                    {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime}
+                )
+                
+                post_action = decision.get("post_action", "none")
+                if post_action in ("open_file", "open_folder") and self.notifier:
+                    self.notifier.post_action_ready.emit(str(dest), post_action)
 
             elif decision['action'] == 'move':
                 # calcular destino final
@@ -367,13 +362,12 @@ class StateManager:
                 shutil.copy2(p, dest)
                 setctime_blocking(str(dest), ctime)
 
-                if sha256_file(p) == sha256_file(dest):
-                    p.unlink(missing_ok=True)
-                    logging.info(f"Archivo movido a: {dest}")
-                    
-                    post_action = decision.get("post_action", "none")
-                    if post_action in ("open_file", "open_folder") and self.notifier:
-                        self.notifier.post_action_ready.emit(str(dest), post_action)                    
+                p.unlink(missing_ok=True)
+                logging.info(f"Archivo movido a: {dest}")
+                
+                post_action = decision.get("post_action", "none")
+                if post_action in ("open_file", "open_folder") and self.notifier:
+                    self.notifier.post_action_ready.emit(str(dest), post_action)                    
                     
                 else:
                     logging.error("Integridad fallida al mover; enviando a conflictos")
@@ -392,15 +386,13 @@ class StateManager:
                 shutil.copy2(p, dest)
                 setctime_blocking(str(dest), ctime)
 
-                if sha256_file(p) == sha256_file(dest):
-                    p.unlink(missing_ok=True)
-                    logging.info(f"Archivo movido (custom) a: {dest}")
-                    
-                    post_action = decision.get("post_action", "none")
-                    if post_action in ("open_file", "open_folder") and self.notifier:
-                        self.notifier.post_action_ready.emit(str(dest), post_action)
+                p.unlink(missing_ok=True)
+                logging.info(f"Archivo movido (custom) a: {dest}")
+                
+                post_action = decision.get("post_action", "none")
+                if post_action in ("open_file", "open_folder") and self.notifier:
+                    self.notifier.post_action_ready.emit(str(dest), post_action)
 
-                    
                 else:
                     logging.error("Integridad fallida en move_custom")
                     dest.unlink(missing_ok=True)
@@ -448,10 +440,6 @@ class StateManager:
             )
             setctime_blocking(str(copied_path), src_meta["ctime"])
 
-            # validar integridad
-            if sha256_file(src) != sha256_file(copied_path):
-                logging.error("Hash mismatch")
-
             # borrar origen si aún existe
             if src and src.exists():
                 src.unlink(missing_ok=True)
@@ -497,19 +485,15 @@ class StateManager:
             if src.exists():
                 
                 if not is_same_drive(src, dst):
+                        
+                    if not safe_unlink(src):
+                        logging.warning(f"Could not delete source after retries: {src}")
+                        return
                     
-                    if sha256_file(src) == sha256_file(dst):
-                        
-                        if not safe_unlink(src):
-                            logging.warning(f"Could not delete source after retries: {src}")
-                            return
-                        
-                        src.unlink(missing_ok=True)
-                        logging.info(f"Background move finalized (cross-drive): {dst}")
-                        self._history.record_move(src, dst, src_meta)
-                    else:
-                        logging.error(f"Integrity check failed for {src}")
-                        safe_move_to_conflicts(src)
+                    src.unlink(missing_ok=True)
+                    logging.info(f"Background move finalized (cross-drive): {dst}")
+                    self._history.record_move(src, dst, src_meta)
+                    
                 else:
                     # Same drive, src still exists? Fallback move might have been a copy
                     src.unlink(missing_ok=True)
@@ -591,6 +575,7 @@ class StateManager:
             return False
         self._skip_missing_active_file(reason)
         return True
+
 
 def scan_existing_downloads(state_manager: StateManager):
     try:

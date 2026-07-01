@@ -40,16 +40,6 @@ shell32.SHFileOperationW.restype = ctypes.c_int
 # Utilities
 # -----------------------
 
-def sha256_file(p: Path, block_size=65536) -> Optional[str]:
-    try:
-        h = hashlib.sha256()
-        with p.open('rb') as f:
-            for chunk in iter(lambda: f.read(block_size), b''):
-                h.update(chunk)
-        return h.hexdigest()
-    except Exception:
-        return None
-
 def is_temporary(p: Path) -> bool:
     return p.suffix.lower() in config.EXCLUDE_EXT
     
@@ -204,13 +194,9 @@ def flatten_downloads_root():
 
                 shutil.copy2(f, dest)
 
-                if sha256_file(f) == sha256_file(dest):
-                    setctime_blocking(str(dest), ctime)
-                    f.unlink(missing_ok=True)
-                    logging.info(f"Flattened: {f} -> {dest}")
-                else:
-                    dest.unlink(missing_ok=True)
-                    logging.error(f"Hash mismatch flattening {f}")
+                setctime_blocking(str(dest), ctime)
+                f.unlink(missing_ok=True)
+                logging.info(f"Flattened: {f} -> {dest}")
 
             except Exception:
                 logging.exception(f"Error flattening file {f}")

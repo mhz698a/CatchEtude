@@ -24,7 +24,6 @@ from service_mgr import (
     start_character_service, start_overworld_service, stop_parallel_services
 )
 import config
-from config_manager import ConfigurationManager, SettingDef, SettingType # type: ignore
 from main_window_mgr import MainWindow
 from PyQt6 import QtCore
 

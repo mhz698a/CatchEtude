@@ -5,6 +5,7 @@ Módulo de Localización: gestiona las cadenas de la aplicación en varios idiom
 
 import json
 import logging
+from pathlib import Path
 import config
 from typing import Dict
 
@@ -169,12 +170,13 @@ class LocalizationManager:
     Gestiona el idioma actual y proporciona cadenas traducidas.
     """
     def __init__(self):
+        self.lang_path = config.LANG_PATH
         self.lang = self._load_lang()
-
+        
     def _load_lang(self) -> str:
-        if config.LANG_PATH.exists():
+        if self.lang_path.exists():
             try:
-                with open(config.LANG_PATH, 'r', encoding='utf-8') as f:
+                with open(self.lang_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     return config.get("lang", "es")
             except Exception:
@@ -183,7 +185,7 @@ class LocalizationManager:
 
     def _save_lang(self):
         try:
-            with open(config.LANG_PATH, 'w', encoding='utf-8') as f:
+            with open(self.lang_path, 'w', encoding='utf-8') as f:
                 json.dump({"lang": self.lang}, f, indent=4)
         except Exception:
             logging.exception("Error saving language config")

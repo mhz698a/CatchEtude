@@ -22,13 +22,13 @@ CONFIG_PATH = APPDATA_DIR / "config.json"
 HISTORY_PATH = APPDATA_DIR / "history.json"
 SETTINGS_PATH = APPDATA_DIR / "settings.toml"
 CRASH_REPORT_PATH = APPDATA_DIR / "last_crash.txt"
-LANG_PATH = APPDATA_DIR / "lang.json"
 
 # Logs Constrains
 LOG_FILENAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".log"
 LOG_DIR = APPDATA_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 LOG_PATH = LOG_DIR / LOG_FILENAME
+LANG_PATH = APPDATA_DIR / "lang.json"
 
 # Cache constrains
 CACHE_DIR = APPDATA_DIR / ".cache"
