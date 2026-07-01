@@ -24,6 +24,7 @@ config.py                rutas, settings, carga/propagación de settings
 Cómo encaja: al arrancar catchetude.pyw se inicializan logging y servicios (service_mgr.start_*), se crea StateManager y AppSignals, se lanza WatcherThread que usa watchdog.observers para detectar nuevos ficheros en Downloads. Las utilidades de utils.py realizan flattening y movimientos (uso de SHFileOperation/ctypes). service_mgr gestiona IPC por QLocalSocket y mutex Win32 para coordinar servicios auxiliares.
 
 ## Cómo ejecutarlo (mínimo)
+Requiere python 3.12+
 Requisitos detectados: Python en Windows, PyQt6, watchdog, pywin32, send2trash. No hay requirements.txt; conviene crear uno con versiones pinneadas.
 Comandos mínimos (desde PowerShell/CMD en Windows):
 ```bash
