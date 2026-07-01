@@ -38,8 +38,10 @@ def main():
     
     try:
         stop_parallel_services(timeout=10.0)
-    except Exception:
-        pass
+    except TimeoutError:
+        logging.warning("Previous services cleanup timed out, proceeding anyway")
+    except Exception as e:
+        logging.warning(f"Previous services cleanup failed ({type(e).__name__}): {e}, proceeding with startup")
     
     # Ensure single instance
     mutex = ensure_single_instance()
@@ -105,8 +107,12 @@ def main():
         try:
             if config.CRASH_REPORT_PATH.exists():
                 config.CRASH_REPORT_PATH.unlink()
-        except Exception:
-            pass
+        except FileNotFoundError:
+            deleted = 1  # File already deleted, expected
+        except PermissionError:
+            logging.warning(f"Cannot delete crash report (permission denied): {config.CRASH_REPORT_PATH}")
+        except Exception as e:
+            logging.warning(f"Failed to delete crash report: {e}")
 
         sys.exit(app.exec())
         

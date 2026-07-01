@@ -1,3 +1,4 @@
+import logging
 import sys
 import ctypes
 from PyQt6.QtWidgets import (
@@ -57,7 +58,7 @@ class SettingsDialog(QDialog):
                 try:
                     value = int(value)
                 except ValueError:
-                    pass
+                    logging.debug(f"Int Value is not int value")
             new_settings[key] = value
             
         config.save_settings(new_settings)
@@ -67,8 +68,10 @@ def main():
     try:
         # Use the same MYAPPID to group with the main application and share the icon
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
-    except Exception:
-        pass
+    except OSError as e:
+        logging.debug(f"Failed to set AppUserModelID (Windows integration): {e}")
+    except Exception as e:
+        logging.debug(f"Unexpected error setting AppUserModelID: {e}")
     
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(config.ICON_PATH))

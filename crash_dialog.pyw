@@ -3,6 +3,7 @@ Crash Dialog for CatchEtude.
 Shows error details and provides a restart button.
 """
 
+import logging
 import sys
 import os
 import ctypes
@@ -86,8 +87,10 @@ def main():
     # Set AppUserModelID
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
-    except Exception:
-        pass
+    except OSError as e:
+        logging.debug(f"Failed to set AppUserModelID (Windows integration): {e}")
+    except Exception as e:
+        logging.debug(f"Unexpected error setting AppUserModelID: {e}")
 
     app = QtWidgets.QApplication(sys.argv)
     
@@ -95,8 +98,13 @@ def main():
     if config.CRASH_REPORT_PATH.exists():
         try:
             traceback_text = config.CRASH_REPORT_PATH.read_text(encoding='utf-8')
-        except Exception:
-            pass
+        except FileNotFoundError:
+            logging.warning(f"Crash report file disappeared: {config.CRASH_REPORT_PATH}")
+        except UnicodeDecodeError as e:
+            logging.warning(f"Crash report has encoding issues: {e}, showing raw")
+            traceback_text = config.CRASH_REPORT_PATH.read_text(encoding='utf-8', errors='replace')
+        except Exception as e:
+            logging.error(f"Failed to read crash report: {e}")
             
     dialog = CrashDialog(traceback_text)
     dialog.exec()

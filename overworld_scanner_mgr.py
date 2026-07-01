@@ -34,8 +34,8 @@ class OverworldScanner(QtCore.QThread):
                 file_count += 1
                 try:
                     total_size += os.path.getsize(os.path.join(root, fname))
-                except OSError:
-                    pass
+                except OSError as e:
+                    logger.exception(f"Error get size file: {e}")
 
         return file_count, total_size
 

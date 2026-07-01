@@ -3,6 +3,7 @@ Character Service - Parallel service for character list data.
 Servicio de Personajes: servicio paralelo para los datos de la lista de personajes.
 """
 
+import logging
 import sys
 import os
 import json
@@ -271,15 +272,26 @@ class CharacterService(QtCore.QObject):
                 if len(parts) >= 2 and parts[1] != "_": alter = parts[1]
                 if len(parts) >= 3 and parts[2] != "_": name = parts[2]
                 if len(parts) >= 4 and parts[3] not in ("_", None, ""):
-                    try: datetime.fromisoformat(parts[3]); birthday_iso = parts[3]
-                    except ValueError: pass
+                    try: 
+                        datetime.fromisoformat(parts[3]); birthday_iso = parts[3]
+                    except ValueError as e:
+                        logging.debug(f"Invalid ISO format birthday: {birthday_iso} ({e})")
+                    except Exception as e:
+                        logging.warning(f"Error parsing birthday: {e}")
                 if len(parts) >= 5 and parts[4] != "_" and parts[4].isdigit(): origin_age = int(parts[4])
-            except Exception: pass
+            except ValueError as e:
+                logging.debug(f"Error parsing origin age from parts: {parts} ({e})")
+            except Exception as e:
+                logging.warning(f"Unexpected error parsing metadata: {e}")
+        
         return {"num": num, "alter": alter, "name": name, "birthday_iso": birthday_iso, "origin_age": origin_age}
 
     def _format_ui_strings(self, birthday_iso: str, total_size: int) -> tuple[str, str]:
-        try: birthday = datetime.fromisoformat(birthday_iso)
-        except Exception: birthday = datetime(1970, 1, 1)
+        try: 
+            birthday = datetime.fromisoformat(birthday_iso)
+        except Exception: 
+            birthday = datetime(1970, 1, 1)
+            
         if birthday.year == 1970: age_str = ""
         else:
             delta = relativedelta(datetime.now(), birthday)
@@ -308,8 +320,16 @@ class CharacterService(QtCore.QObject):
                             total_size += st.st_size
                             total_count += 1
                             
-                    except (PermissionError, FileNotFoundError, OSError): continue
-        except Exception: pass
+                    except (PermissionError, FileNotFoundError, OSError): 
+                        continue
+                    
+        except FileNotFoundError:
+            logging.warning(f"Path disappeared during scan: {path_str}")
+        except PermissionError:
+            logging.warning(f"Permission denied scanning path: {path_str}")
+        except Exception as e:
+            logging.error(f"Error scanning folder {path_str}: {e}")
+            
         return total_count, total_size
 
     def _monitor_process(self):
@@ -335,12 +355,12 @@ class CharacterService(QtCore.QObject):
         try:
             if self.server.isListening():
                 self.server.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Failed cleanup in listening: {e}") 
         try:
             QtNetwork.QLocalServer.removeServer(SERVER_NAME)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Failed cleanup in remove server: {e}") 
 
 def crash_handler(etype, value, tb):
     err_msg = "".join(traceback.format_exception(etype, value, tb))
@@ -353,21 +373,27 @@ def crash_handler(etype, value, tb):
             socket.write(data.encode('utf-8'))
             socket.waitForBytesWritten(200)
             socket.disconnectFromServer()
-    except Exception: 
-        pass
+    except Exception as e: 
+        print(f"Failed to send crash log to watchdog: {e}")  # Puede usar print pq es crash handler
     
     try: 
         config.CRASH_REPORT_PATH.write_text(f"CHAR_SERVICE_CRASH:\n{err_msg}", encoding='utf-8')
-    except Exception: 
-        pass
+    except IOError as e:
+        print(f"Failed to write character service crash report: {e}")
+    except Exception as e:
+        print(f"Unexpected error writing crash report: {e}")
     sys.exit(1)
 
 def main():
     sys.excepthook = crash_handler
     
     # Set AppUserModelID for Taskbar
-    try: ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
-    except Exception: pass
+    try: 
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
+    except OSError as e:
+        logging.debug(f"Failed to set AppUserModelID (Windows integration): {e}")
+    except Exception as e:
+        logging.debug(f"Unexpected error setting AppUserModelID: {e}")
 
     # Mutex for single instance
     mutex = win32event.CreateMutex(None, False, SERVICE_MUTEX_NAME)

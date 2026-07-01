@@ -139,7 +139,7 @@ def apply_settings():
                 if hasattr(mod, key):
                     try:
                         setattr(mod, key, getattr(module, key))
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.error(f"Error to propagate to other modules: {e}")
 
 apply_settings()

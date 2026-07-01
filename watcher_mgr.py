@@ -135,5 +135,5 @@ class WatcherThread(threading.Thread):
             self.observer.stop()
             self.observer.join()
             logging.info("Watcher stopped")
-        except Exception:
-            pass
+        except Exception as e:
+            print("Error to stop the observer")

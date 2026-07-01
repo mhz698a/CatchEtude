@@ -3,6 +3,7 @@ Watchdog and Log Service for CatchEtude.
 Servicio de Vigilancia y Registros para CatchEtude.
 """
 
+import logging
 import sys
 import os
 import json
@@ -93,7 +94,8 @@ class WatchdogService(QtCore.QObject):
                 else:
                     # Main app not running yet, wait and try again
                     time.sleep(1)
-            except Exception:
+            except Exception as e:
+                logging.debug(f"Mutex check failed (app likely closed): {e}")
                 # Mutex does not exist or cannot be opened, app is likely closed
                 break
             
@@ -120,8 +122,12 @@ class WatchdogService(QtCore.QObject):
                 try:
                     if config.CRASH_REPORT_PATH.exists():
                         config.CRASH_REPORT_PATH.unlink()
-                except Exception:
-                    pass
+                except FileNotFoundError:
+                    deleted = 1
+                except PermissionError:
+                    logging.warning(f"Cannot delete old crash report: {config.CRASH_REPORT_PATH}")
+                except Exception as e:
+                    logging.warning(f"Error deleting crash report: {e}")
                 
                 # Show window on crash
                 QtCore.QMetaObject.invokeMethod(self.log_viewer, "show", QtCore.Qt.ConnectionType.QueuedConnection)
@@ -135,12 +141,13 @@ class WatchdogService(QtCore.QObject):
         try:
             if self.server.isListening():
                 self.server.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Error closing server during cleanup: {e}")
+    
         try:
             QtNetwork.QLocalServer.removeServer(LOG_SERVER_NAME)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Error removing server from registry: {e}")
 
     def _pythonw_executable(self) -> str:
         exe = Path(sys.executable)
@@ -170,10 +177,11 @@ class WatchdogService(QtCore.QObject):
 def main():
     # Set AppUserModelID for Windows Taskbar icon grouping
     try:
-        # Use the same MYAPPID to group with the main application and share the icon
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
-    except Exception:
-        pass
+    except OSError as e:
+        logging.debug(f"Failed to set AppUserModelID (Windows integration): {e}")
+    except Exception as e:
+        logging.debug(f"Unexpected error setting AppUserModelID: {e}")
 
     app = QtWidgets.QApplication(sys.argv)
     app.setWindowIcon(QIcon(config.ICON_PATH))

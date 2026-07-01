@@ -31,7 +31,14 @@ class SubfolderScanner(QtCore.QThread):
             try:
                 with os.scandir(str(self.base_path)) as it:
                     subs = sorted([e.path for e in it if e.is_dir()])
-            except Exception:
+            except FileNotFoundError:
+                logging.warning(f"Base path not found during subfolder scan: {self.base_path}")
+                return
+            except PermissionError:
+                logging.warning(f"Permission denied scanning subfolders: {self.base_path}")
+                return
+            except Exception as e:
+                logging.error(f"Error scanning base path {self.base_path}: {e}")
                 return
 
             for sub_path in subs:
@@ -43,9 +50,16 @@ class SubfolderScanner(QtCore.QThread):
                                         
                     try:
                         mtime_ns = os.stat(sub_path).st_mtime_ns
-                    except Exception:
+                    except FileNotFoundError:
+                        logging.debug(f"Subfolder disappeared during scan: {sub_path}")
                         mtime_ns = None
-
+                    except PermissionError:
+                        logging.warning(f"Permission denied accessing folder stats: {sub_path}")
+                        mtime_ns = None
+                    except Exception as e:
+                        logging.warning(f"Error getting folder stats {sub_path}: {e}")
+                        mtime_ns = None
+                        
                     cached = None
                     if self.cache is not None and mtime_ns is not None:
                         cached = self.cache.get_folder_data(sub_path)
@@ -62,8 +76,12 @@ class SubfolderScanner(QtCore.QThread):
                                     n_low = entry.name.lower()
                                     if not (n_low.endswith(".ini") or n_low.endswith(".db")):
                                         files.append(entry.name)
-                    except Exception:
-                        pass
+                    except FileNotFoundError:
+                        logging.debug(f"Subfolder disappeared during file listing: {sub_path}")
+                    except PermissionError:
+                        logging.warning(f"Permission denied listing files in: {sub_path}")
+                    except Exception as e:
+                        logging.warning(f"Error listing files in {sub_path}: {e}")
 
                     if files:
                         files.sort()
@@ -72,8 +90,8 @@ class SubfolderScanner(QtCore.QThread):
                     if self.cache is not None and mtime_ns is not None:
                         self.cache.update_folder(sub_path, mtime_ns, last_file)                    
                         
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.error(f"Unexpected error in subfolder scanner for {sub_path}: {e}")
                 
                 self.result_ready.emit(Path(sub_path).name, last_file)
                 

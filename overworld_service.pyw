@@ -39,8 +39,8 @@ class WatchdogHandler(logging.Handler):
                 socket.waitForBytesWritten(100)
                 socket.disconnectFromServer()
 
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Failed to send log to watchdog: {e}")
 
 def message_debug_error(msg, title):
     # MB_ICONERROR (0x10) | MB_SYSTEMMODAL (0x1000) para forzar que salga al frente
@@ -59,8 +59,10 @@ def crash_handler(etype, value, tb):
     )
     try:
         config.CRASH_REPORT_PATH.write_text(f"OVERWORLD_SERVICE_CRASH:\n{err_msg}", encoding="utf-8")
-    except Exception:
-        pass
+    except IOError as e:
+        print(f"Failed to write overworld crash report: {e}")
+    except Exception as e:
+        print(f"Unexpected error writing crash report: {e}")
     
     # --- NUEVO: Cuadro de mensaje nativo de Windows antes de morir ---
     try:
@@ -68,8 +70,8 @@ def crash_handler(etype, value, tb):
             title=f"El servicio Overworld ha fallado.\n\nError: {value}",
             msg="Error Crítico - Overworld Service"
             )
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Failed to show crash dialog: {e}")
     
     sys.exit(1)
 
@@ -119,8 +121,10 @@ class OverworldService(QtCore.QObject):
             if handle:
                 win32api.CloseHandle(handle)
                 return
-        except Exception:
-            pass
+        except OSError as e:
+            logging.debug(f"Mutex check failed (expected if app closed): {e}")
+        except Exception as e:
+            logging.warning(f"Unexpected error checking main process: {e}")
 
         self._cleanup()
         QtCore.QCoreApplication.quit()
@@ -169,8 +173,8 @@ class OverworldService(QtCore.QObject):
                 self._scanner.abort()
                 if not self._scanner.wait(1000):
                     logger.warning("Scanner did not stop after 1 seconds.")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Error in abort scanner wait: {e}")
             
         if not hasattr(self, "_cache_by_year"):
             self._cache_by_year = {}
@@ -264,8 +268,10 @@ def main():
 
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
-    except Exception:
-        pass
+    except OSError as e:
+        logging.debug(f"Failed to set AppUserModelID (Windows integration): {e}")
+    except Exception as e:
+        logging.debug(f"Unexpected error setting AppUserModelID: {e}")
 
     mutex = win32event.CreateMutex(None, False, SERVICE_MUTEX_NAME)
     if win32api.GetLastError() == ERROR_ALREADY_EXISTS:

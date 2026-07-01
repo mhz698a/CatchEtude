@@ -478,7 +478,8 @@ class StateManager:
             
             try:
                 update_folder_mtime(src.parent)
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Could not update mtime for oring folder: {e}")
                 pass
 
             # Handle cross-drive integrity if src still exists

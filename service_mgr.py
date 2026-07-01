@@ -64,8 +64,13 @@ def crash_handler(etype, value, tb):
     logging.critical(f"Unhandled exception:\n{err_msg}")
     try:
         config.CRASH_REPORT_PATH.write_text(err_msg, encoding='utf-8')
-    except Exception:
-        pass
+        logging.info(f"Crash report saved to: {config.CRASH_REPORT_PATH}")
+    except IOError as e:
+        logging.error(f"Failed to save crash report (IO error): {e}")
+    except PermissionError:
+        logging.error(f"Permission denied writing crash report: {config.CRASH_REPORT_PATH}")
+    except Exception as e:
+        logging.error(f"Unexpected error saving crash report: {e}")
     
     # Launch crash dialog via os.startfile
     try:
@@ -85,8 +90,10 @@ def _mutex_exists(name: str) -> bool:
         if handle:
             try:
                 win32api.CloseHandle(handle)
-            except Exception:
-                pass
+            except OSError as e:
+                logging.debug(f"Failed to close mutex handle: {e}")
+            except Exception as e:
+                logging.warning(f"Unexpected error closing mutex handle: {e}")
 
 def _server_alive(server_name: str, timeout_ms: int = 150) -> bool:
     socket = _connect_local_socket(server_name, timeout_ms)
@@ -94,8 +101,8 @@ def _server_alive(server_name: str, timeout_ms: int = 150) -> bool:
         return False
     try:
         socket.disconnectFromServer()
-    except Exception:
-        pass
+    except Exception as e:
+        logging.debug(f"Socket disconnect failed in _server_alive: {e}")
     return True
 
 
@@ -112,12 +119,11 @@ def _connect_local_socket(server_name: str, timeout_ms: int):
         logging.debug("Could not connect to %r: %s", name, socket.errorString())
         try:
             socket.abort()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Socket abort failed: {e}")
         return None
 
     return socket
-
 
 def _wait_for_server(server_name: str, timeout: float = 5.0) -> bool:
     deadline = time.time() + timeout
@@ -155,8 +161,12 @@ def _force_kill_helper_scripts() -> None:
             timeout=10,
             creationflags=CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
         )
-    except Exception:
-        logging.exception("Forced cleanup of helper scripts failed")
+    except FileNotFoundError:
+        logging.error("PowerShell not found, cannot force kill helpers")
+    except subprocess.TimeoutExpired:
+        logging.error("Force kill helper script timed out after 10 seconds")
+    except Exception as e:
+        logging.exception(f"Forced cleanup of helper scripts failed ({type(e).__name__}): {e}")
 
 def stop_parallel_services(timeout: float = 8.0) -> bool:
     """Intentos con backoff y luego forzar kill si no se apagan."""
@@ -228,8 +238,8 @@ def _send_quit(server_name: str, timeout_ms: int = 1000) -> bool:
     finally:
         try:
             socket.disconnectFromServer()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Socket disconnect in _send_quit failed: {e}")
     return True
 
 def start_overworld_service():
@@ -267,8 +277,8 @@ def _send_quit_with_ack(server_name: str, timeout_ms: int = 1000) -> bool:
     if not socket.waitForConnected(timeout_ms):
         try:
             socket.abort()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Socket disconnect failed in _server_alive: {e}")
         return False
 
     try:
@@ -288,5 +298,5 @@ def _send_quit_with_ack(server_name: str, timeout_ms: int = 1000) -> bool:
     finally:
         try:
             socket.disconnectFromServer()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.debug(f"Socket disconnect failed in _server_alive: {e}")

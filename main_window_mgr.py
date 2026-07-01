@@ -16,8 +16,8 @@ from typing import Optional
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QFileDialog,
-    QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, QLabel, QMessageBox, QStatusBar,
-    QCheckBox, QTimeEdit
+    QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, 
+    QMessageBox, QStatusBar, QCheckBox, QTimeEdit
 )
 from pending_scheduler_mgr import PendingScheduler
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
@@ -587,8 +587,14 @@ class MainWindow(QWidget):
         flags = 0x00000010 
         try:
             subprocess.Popen([sys.executable, restart_script, str(pid), script_path], creationflags=flags)
-        except Exception:
-            subprocess.Popen([sys.executable, restart_script, str(pid), script_path])
+        except OSError as e:
+            logging.warning(f"Failed to restart with flags, trying without: {e}")
+            try:
+                subprocess.Popen([sys.executable, restart_script, str(pid), script_path])
+            except Exception as e2:
+                logging.error(f"Failed to restart service even without flags: {e2}")
+        except Exception as e:
+            logging.error(f"Unexpected error restarting service: {e}")
         QApplication.quit()
 
     def _rescan_downloads(self):

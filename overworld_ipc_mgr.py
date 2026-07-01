@@ -56,8 +56,8 @@ class OverworldServiceClient(QtCore.QObject):
                 )
                 try:
                     socket.abort()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Socket abort failed in overworld request: {e}")
                 socket.deleteLater()
                 time.sleep(0.15)
                 continue
@@ -85,7 +85,7 @@ class OverworldServiceClient(QtCore.QObject):
                 try:
                     socket.disconnectFromServer()
                 except Exception:
-                    pass
+                    logger.debug(f"Socket disconnect in overworld failed: {e}")
                 socket.deleteLater()
 
             time.sleep(0.15)
@@ -116,8 +116,13 @@ class OverworldServiceClient(QtCore.QObject):
             elif msg.get("cmd") == "finish":
                 try:
                     gen = int(msg.get("generation", -1))
-                except Exception:
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Invalid generation value in overworld message: {msg.get('generation')} ({e})")
                     gen = -1
+                except Exception as e:
+                    logger.error(f"Unexpected error parsing generation: {e}")
+                    gen = -1
+                    
                 self.finished_ready.emit(gen)
                 
         except Exception:

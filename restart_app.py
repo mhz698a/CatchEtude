@@ -3,6 +3,7 @@ Restart Utility for CatchEtude - GUI version.
 Utilidad de reinicio para CatchEtude - versión GUI.
 """
 
+import logging
 import sys
 import os
 import time
@@ -94,8 +95,10 @@ class RestartWorker(QtCore.QThread):
                 if handle:
                     try:
                         win32api.CloseHandle(handle)
-                    except Exception:
-                        pass
+                    except OSError as e:
+                        logging.debug(f"Failed to close handle in restart: {e}")
+                    except Exception as e:
+                        logging.warning(f"Unexpected error closing handle: {e}")
         return False
 
     def run(self):
@@ -139,8 +142,10 @@ def main():
     try:
         # Use the same MYAPPID to group with the main application and share the icon
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
-    except Exception:
-        pass
+    except OSError as e:
+        logging.debug(f"Failed to set AppUserModelID (Windows integration): {e}")
+    except Exception as e:
+        logging.debug(f"Unexpected error setting AppUserModelID: {e}")
 
     app = QtWidgets.QApplication(sys.argv)
     app.setWindowIcon(QtGui.QIcon(config.ICON_PATH))
