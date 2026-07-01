@@ -1,0 +1,24 @@
+# CatchEtude - Requirements
+# Python 3.11+ (tomllib requirement)
+# Windows only (pywin32, send2trash, watchdog)
+
+# GUI Framework
+PyQt6==6.6.1
+
+# File monitoring
+watchdog==3.0.0
+
+# Windows-specific utilities
+pywin32==306
+
+# File operations (recycle bin)
+send2trash==1.8.1
+
+# Metadata extraction (if used in future media processing)
+# pillow==10.1.0  # For video thumbnails
+
+# Development/Testing (optional)
+# pytest==7.4.3
+# pytest-cov==4.1.0
+# black==23.12.0
+# pylint==3.0.3
