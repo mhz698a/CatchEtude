@@ -12,8 +12,7 @@ import win32api
 import win32event
 from PyQt6 import QtCore, QtNetwork
 
-from config import APP_NAME, CRASH_REPORT_PATH, MYAPPID, SETTINGS_PATH, apply_settings
-
+import config
 from overworld_cache_mgr import OverworldCacheManager
 from overworld_scanner_mgr import OverworldScanner
 from overworld_ipc_mgr import OVERWORLD_CLIENT_NAME, OVERWORLD_SERVER_NAME
@@ -59,7 +58,7 @@ def crash_handler(etype, value, tb):
         exc_info=(etype, value, tb),
     )
     try:
-        CRASH_REPORT_PATH.write_text(f"OVERWORLD_SERVICE_CRASH:\n{err_msg}", encoding="utf-8")
+        config.CRASH_REPORT_PATH.write_text(f"OVERWORLD_SERVICE_CRASH:\n{err_msg}", encoding="utf-8")
     except Exception:
         pass
     
@@ -105,18 +104,18 @@ class OverworldService(QtCore.QObject):
         self._setup_settings_watcher()
 
     def _setup_settings_watcher(self):
-        self._settings_watcher = QtCore.QFileSystemWatcher([str(SETTINGS_PATH)], self)
+        self._settings_watcher = QtCore.QFileSystemWatcher([str(config.SETTINGS_PATH)], self)
         self._settings_watcher.fileChanged.connect(self._on_settings_file_changed)
 
     def _on_settings_file_changed(self, path):
-        apply_settings()
-        if str(SETTINGS_PATH) not in self._settings_watcher.files():
-            self._settings_watcher.addPath(str(SETTINGS_PATH))
+        config.apply_settings()
+        if str(config.SETTINGS_PATH) not in self._settings_watcher.files():
+            self._settings_watcher.addPath(str(config.SETTINGS_PATH))
 
     def _check_main_process(self):
         handle = None
         try:
-            handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+            handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, config.APP_NAME)
             if handle:
                 win32api.CloseHandle(handle)
                 return
@@ -258,7 +257,7 @@ def main():
     sys.excepthook = crash_handler
 
     try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(MYAPPID)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
     except Exception:
         pass
 
@@ -267,7 +266,7 @@ def main():
         return
 
     try:
-        handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+        handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, config.APP_NAME)
         if not handle:
             return
         win32api.CloseHandle(handle)

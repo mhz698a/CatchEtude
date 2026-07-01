@@ -17,7 +17,7 @@ from pathlib import Path
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from PyQt6 import QtCore, QtNetwork
-from config import BASE_INTERNAL, IMAGES_FOLDER, CRASH_REPORT_PATH, APP_NAME, MYAPPID, SETTINGS_PATH, apply_settings
+import config
 from character_cache_mgr import CharacterCacheManager
 
 SERVICE_MUTEX_NAME = "CatchEtudeCharacterServiceMutex"
@@ -56,13 +56,13 @@ class CharacterService(QtCore.QObject):
         self._setup_settings_watcher()
 
     def _setup_settings_watcher(self):
-        self._settings_watcher = QtCore.QFileSystemWatcher([str(SETTINGS_PATH)], self)
+        self._settings_watcher = QtCore.QFileSystemWatcher([str(config.SETTINGS_PATH)], self)
         self._settings_watcher.fileChanged.connect(self._on_settings_file_changed)
 
     def _on_settings_file_changed(self, path):
-        apply_settings()
-        if str(SETTINGS_PATH) not in self._settings_watcher.files():
-            self._settings_watcher.addPath(str(SETTINGS_PATH))
+        config.apply_settings()
+        if str(config.SETTINGS_PATH) not in self._settings_watcher.files():
+            self._settings_watcher.addPath(str(config.SETTINGS_PATH))
 
     def _log_to_watchdog(self, level, message):
         socket = QtNetwork.QLocalSocket()
@@ -132,7 +132,7 @@ class CharacterService(QtCore.QObject):
             socket.disconnectFromServer()
 
     def _loader_worker(self, year, generation):
-        base = BASE_INTERNAL / str(year)
+        base = config.BASE_INTERNAL / str(year)
         prefix = f"{year - 2003:02d}"
         
         try:
@@ -150,7 +150,7 @@ class CharacterService(QtCore.QObject):
                     for entry in it:
                         if not entry.is_dir(): continue
                         name_low = entry.name.lower()
-                        if (prefix in name_low and IMAGES_FOLDER in name_low) or (IMAGES_FOLDER in name_low):
+                        if (prefix in name_low and config.IMAGES_FOLDER in name_low) or (config.IMAGES_FOLDER in name_low):
                             root_path = entry.path
                             break
             except Exception: pass
@@ -310,7 +310,7 @@ class CharacterService(QtCore.QObject):
     def _monitor_process(self):
         while True:
             try:
-                handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+                handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, config.APP_NAME)
                 if handle:
                     win32event.WaitForSingleObject(handle, win32event.INFINITE)
                     win32api.CloseHandle(handle)
@@ -348,17 +348,20 @@ def crash_handler(etype, value, tb):
             socket.write(data.encode('utf-8'))
             socket.waitForBytesWritten(200)
             socket.disconnectFromServer()
-    except Exception: pass
+    except Exception: 
+        pass
     
-    try: CRASH_REPORT_PATH.write_text(f"CHAR_SERVICE_CRASH:\n{err_msg}", encoding='utf-8')
-    except Exception: pass
+    try: 
+        config.CRASH_REPORT_PATH.write_text(f"CHAR_SERVICE_CRASH:\n{err_msg}", encoding='utf-8')
+    except Exception: 
+        pass
     sys.exit(1)
 
 def main():
     sys.excepthook = crash_handler
     
     # Set AppUserModelID for Taskbar
-    try: ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(MYAPPID)
+    try: ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
     except Exception: pass
 
     # Mutex for single instance
@@ -368,7 +371,7 @@ def main():
     
     # Detect if main service is running
     try:
-        handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+        handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, config.APP_NAME)
         if not handle:
             print("Main app not running, character service exiting.")
             return

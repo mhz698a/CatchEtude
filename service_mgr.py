@@ -16,7 +16,7 @@ from pathlib import Path
 from PyQt6.QtNetwork import QLocalSocket
 from PyQt6.QtWidgets import QMessageBox
 
-from config import APP_NAME, ERROR_ALREADY_EXISTS, CRASH_REPORT_PATH
+import config
 
 WATCHDOG_SERVER_NAME = "CatchEtudeLogServer"
 CHARACTER_SERVER_NAME = "CatchEtudeCharacterServer"
@@ -30,11 +30,11 @@ def ensure_single_instance():
     """Ensures only one instance of the application is running."""
     # Standard local mutex to avoid permission issues with Global\.
     # bInitialOwner=True so the main app owns it and it remains non-signaled for waiters.
-    mutex = win32event.CreateMutex(None, True, APP_NAME)
-    if win32api.GetLastError() == ERROR_ALREADY_EXISTS:
+    mutex = win32event.CreateMutex(None, True, config.APP_NAME)
+    if win32api.GetLastError() == config.ERROR_ALREADY_EXISTS:
         QMessageBox.warning(
             None,
-            APP_NAME,
+            config.APP_NAME,
             "CatchEtude ya está abierta.\n\n"
             "Usa la ventana existente o el icono de la bandeja."
         )
@@ -63,7 +63,7 @@ def crash_handler(etype, value, tb):
     err_msg = "".join(traceback.format_exception(etype, value, tb))
     logging.critical(f"Unhandled exception:\n{err_msg}")
     try:
-        CRASH_REPORT_PATH.write_text(err_msg, encoding='utf-8')
+        config.CRASH_REPORT_PATH.write_text(err_msg, encoding='utf-8')
     except Exception:
         pass
     

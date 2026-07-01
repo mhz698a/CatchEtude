@@ -10,7 +10,7 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
 
-from config import DOWNLOADS
+import config
 from utils import is_temporary, is_file_locked
 
 
@@ -42,7 +42,7 @@ class WatcherHandler(FileSystemEventHandler):
         """
         try:
             # Check if it's in the monitored folder
-            if p.parent != DOWNLOADS:
+            if p.parent != config.DOWNLOADS:
                 return
             
             # Filter temporary files
@@ -117,9 +117,9 @@ class WatcherThread(threading.Thread):
         """Starts the observer and waits."""
         try:
             handler = WatcherHandler(self.enqueue_callback)
-            self.observer.schedule(handler, str(DOWNLOADS), recursive=False)
+            self.observer.schedule(handler, str(config.DOWNLOADS), recursive=False)
             self.observer.start()
-            logging.info(f"Watcher started on: {DOWNLOADS}")
+            logging.info(f"Watcher started on: {config.DOWNLOADS}")
             
             # Keep the thread alive
             while self.observer.is_alive():

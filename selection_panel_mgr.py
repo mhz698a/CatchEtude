@@ -13,7 +13,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import QSize
 from PyQt6.QtWidgets import QListWidgetItem
 
-from config import YEARS, ICON_PATH, APP_DIR
+import config
 from localization import LocalizationManager
 from subfolder_list_mgr import SubfolderButtonList
 from classification_mgr import get_base_path_for_type_year, get_base_path_for_docs, SubfolderScanner
@@ -37,16 +37,16 @@ class SelectionPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.loc = LocalizationManager()
-        self._app_icon = QIcon(ICON_PATH)
+        self._app_icon = QIcon(config.ICON_PATH)
         
         self._type_icon_paths = {
-            2: f"{APP_DIR}/assets/me-gusta.png",
-            3: f"{APP_DIR}/assets/película.png",
-            4: f"{APP_DIR}/assets/música.png",
-            5: f"{APP_DIR}/assets/aula-de-google.png",
-            6: f"{APP_DIR}/assets/identificación-verificada.png",
-            7: f"{APP_DIR}/assets/adobe-acrobat.png",
-            8: f"{APP_DIR}/assets/mundo.png",
+            2: f"{config.APP_DIR}/assets/me-gusta.png",
+            3: f"{config.APP_DIR}/assets/película.png",
+            4: f"{config.APP_DIR}/assets/música.png",
+            5: f"{config.APP_DIR}/assets/aula-de-google.png",
+            6: f"{config.APP_DIR}/assets/identificación-verificada.png",
+            7: f"{config.APP_DIR}/assets/adobe-acrobat.png",
+            8: f"{config.APP_DIR}/assets/mundo.png",
         }
         
         self._sub_scanner = None
@@ -118,7 +118,7 @@ class SelectionPanel(QWidget):
         
         v_year = QVBoxLayout()
 
-        self.list_year = YearsTableWidget(YEARS, self)
+        self.list_year = YearsTableWidget(config.YEARS, self)
         self.list_year.setMaximumHeight(430)
         self.list_year.setMaximumWidth(100)
         self.list_year.setStyleSheet("""

@@ -16,7 +16,7 @@ from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtNetwork
 from PyQt6.QtGui import QIcon
 from log_viewer import LogViewerWindow
-from config import APP_NAME, CRASH_REPORT_PATH, ICON_PATH, MYAPPID
+import config
 
 WATCHDOG_NAME = "CatchEtudeWatchdog"
 LOG_SERVER_NAME = "CatchEtudeLogServer"
@@ -27,7 +27,7 @@ class WatchdogService(QtCore.QObject):
         super().__init__()
         self.log_viewer = LogViewerWindow()
         self.log_viewer.setWindowTitle("CatchEtude - Watchdog & Logs")
-        self.log_viewer.setWindowIcon(QIcon(ICON_PATH))
+        self.log_viewer.setWindowIcon(QIcon(config.ICON_PATH))
         
         self.server = QtNetwork.QLocalServer(self)
         self.server.newConnection.connect(self._on_new_connection)
@@ -72,11 +72,11 @@ class WatchdogService(QtCore.QObject):
         socket.disconnectFromServer()
 
     def _monitor_process(self):
-        print(f"Monitoring main app via Mutex: {APP_NAME}")
+        print(f"Monitoring main app via Mutex: {config.APP_NAME}")
         
         while True:
             try:
-                handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, APP_NAME)
+                handle = win32event.OpenMutex(win32event.SYNCHRONIZE, False, config.APP_NAME)
                 if handle:
                     # Use WaitForSingleObject to wait efficiently until the mutex is released (app terminates)
                     win32event.WaitForSingleObject(handle, win32event.INFINITE)
@@ -105,14 +105,14 @@ class WatchdogService(QtCore.QObject):
         QtCore.QCoreApplication.quit()
 
     def _handle_termination(self):
-        if CRASH_REPORT_PATH.exists():
+        if config.CRASH_REPORT_PATH.exists():
             try:
-                crash_data = CRASH_REPORT_PATH.read_text(encoding='utf-8')
+                crash_data = config.CRASH_REPORT_PATH.read_text(encoding='utf-8')
                 self.log_viewer.add_log("ERROR", f"CRASH DETECTED IN MAIN PROCESS:\n{crash_data}")
                 
                 try:
-                    if CRASH_REPORT_PATH.exists():
-                        CRASH_REPORT_PATH.unlink()
+                    if config.CRASH_REPORT_PATH.exists():
+                        config.CRASH_REPORT_PATH.unlink()
                 except Exception:
                     pass
                 
@@ -164,12 +164,12 @@ def main():
     # Set AppUserModelID for Windows Taskbar icon grouping
     try:
         # Use the same MYAPPID to group with the main application and share the icon
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(MYAPPID)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
     except Exception:
         pass
 
     app = QtWidgets.QApplication(sys.argv)
-    app.setWindowIcon(QIcon(ICON_PATH))
+    app.setWindowIcon(QIcon(config.ICON_PATH))
     app.setQuitOnLastWindowClosed(False)
 
     # Ensure single instance

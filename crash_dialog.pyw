@@ -9,7 +9,7 @@ import ctypes
 import subprocess
 from pathlib import Path
 from PyQt6 import QtWidgets, QtCore, QtGui
-from config import ICON_PATH, MYAPPID, CRASH_REPORT_PATH
+import config
 from localization import LocalizationManager
 
 class CrashDialog(QtWidgets.QDialog):
@@ -21,7 +21,7 @@ class CrashDialog(QtWidgets.QDialog):
         
     def _build_ui(self):
         self.setWindowTitle(self.loc.get("crash_title"))
-        self.setWindowIcon(QtGui.QIcon(ICON_PATH))
+        self.setWindowIcon(QtGui.QIcon(config.ICON_PATH))
         self.setFixedSize(600, 450)
         
         layout = QtWidgets.QVBoxLayout(self)
@@ -85,16 +85,16 @@ class CrashDialog(QtWidgets.QDialog):
 def main():
     # Set AppUserModelID
     try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(MYAPPID)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
     except Exception:
         pass
 
     app = QtWidgets.QApplication(sys.argv)
     
     traceback_text = "No traceback available."
-    if CRASH_REPORT_PATH.exists():
+    if config.CRASH_REPORT_PATH.exists():
         try:
-            traceback_text = CRASH_REPORT_PATH.read_text(encoding='utf-8')
+            traceback_text = config.CRASH_REPORT_PATH.read_text(encoding='utf-8')
         except Exception:
             pass
             

@@ -5,8 +5,8 @@ Módulo de Localización: gestiona las cadenas de la aplicación en varios idiom
 
 import json
 import logging
+import config
 from typing import Dict
-from config import LANG_PATH
 
 STRINGS = {
     "es": {
@@ -37,7 +37,9 @@ STRINGS = {
         "tray_hide": "Ocultar",
         "tray_rescan": "Volver a escanear",
         "tray_logs": "Ver Logs",
+        "tray_settings": "Ajustes",
         "tray_restart": "Reiniciar servicio",
+        "tray_exit": "Cerrar CatchEtude",
         "lang_name": "Español",
         "lang_toggle": "EN",
         "btn_history": "Deshacer",
@@ -111,7 +113,9 @@ STRINGS = {
         "tray_hide": "Hide",
         "tray_rescan": "Rescan",
         "tray_logs": "View Logs",
+        "tray_settings": "Settings",
         "tray_restart": "Restart Service",
+        "tray_exit": "Close this service",
         "lang_name": "English",
         "lang_toggle": "ES",
         "btn_history": "Undo",
@@ -168,9 +172,9 @@ class LocalizationManager:
         self.lang = self._load_lang()
 
     def _load_lang(self) -> str:
-        if LANG_PATH.exists():
+        if config.LANG_PATH.exists():
             try:
-                with open(LANG_PATH, 'r', encoding='utf-8') as f:
+                with open(config.LANG_PATH, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     return config.get("lang", "es")
             except Exception:
@@ -179,7 +183,7 @@ class LocalizationManager:
 
     def _save_lang(self):
         try:
-            with open(LANG_PATH, 'w', encoding='utf-8') as f:
+            with open(config.LANG_PATH, 'w', encoding='utf-8') as f:
                 json.dump({"lang": self.lang}, f, indent=4)
         except Exception:
             logging.exception("Error saving language config")

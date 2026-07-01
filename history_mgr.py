@@ -1,9 +1,8 @@
 import json
 import logging
-import shutil
 from pathlib import Path
 from typing import Optional, Dict, List
-from config import HISTORY_PATH
+import config
 
 class HistoryManager:
     """
@@ -15,9 +14,9 @@ class HistoryManager:
         self.history: List[Dict] = self._load_history()
 
     def _load_history(self) -> List[Dict]:
-        if HISTORY_PATH.exists():
+        if config.HISTORY_PATH.exists():
             try:
-                with open(HISTORY_PATH, 'r', encoding='utf-8') as f:
+                with open(config.HISTORY_PATH, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception:
                 logging.exception("Failed to load history")
@@ -25,7 +24,7 @@ class HistoryManager:
 
     def _save_history(self):
         try:
-            with open(HISTORY_PATH, 'w', encoding='utf-8') as f:
+            with open(config.HISTORY_PATH, 'w', encoding='utf-8') as f:
                 json.dump(self.history, f, indent=4)
         except Exception:
             logging.exception("Failed to save history")
