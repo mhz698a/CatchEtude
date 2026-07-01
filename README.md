@@ -1,4 +1,4 @@
-# CatchEtude
+# 👁️ CatchEtude
 
 ## What this is
 CatchEtude es una aplicación de escritorio exclusivo para Windows (PyQt6) que actúa como watchdog/organizador para la carpeta Downloads, arrancando servicios auxiliares (watchdog, character, overworld) y una UI principal para gestionar pendientes y colas.
@@ -34,11 +34,3 @@ pip install PyQt6 watchdog pywin32 send2trash
 python catchetude.pyw
 ```
 Notas: tomllib se usa en config.py (disponible en Python 3.11); para Python <3.11 debe añadirse dependencia tomli o ajustar load_settings.
-
-
-## Try asking
-- ¿Quieres que añada un requirements.txt/pyproject.toml con dependencias detectadas y versiones sugeridas?
-- ¿Deseas que implemente y someta un parche para is_file_locked usando pywin32 (con fallback ctypes) y un test pequeño para validar bloqueo?
-- ¿Prefieres que mejore stop_parallel_services para ACK/retries y añada un script stop_services.py para detener los helpers de forma fiable?
-
-Dime cuál de las tres acciones prefieres y la implemento (preparo el parche/PR o el conjunto de cambios listo).
