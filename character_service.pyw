@@ -97,6 +97,11 @@ class CharacterService(QtCore.QObject):
                 self.pause_event.set()
                 self._log_info("Character Service: Scanning resumed")
             elif cmd == "quit":
+                self._log_info("Character Service: Quit request received. Sending OK response.")
+                # 1. Responder al cliente que la orden fue recibida correctamente
+                socket.write(json.dumps({"status": "ok"}).encode('utf-8'))
+                socket.flush()
+                # 2. Proceder con la desconexión limpia y el cierre de Qt
                 self._cleanup()
                 QtCore.QCoreApplication.quit()
             elif cmd == "update_pid":

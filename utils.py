@@ -1,5 +1,8 @@
-import hashlib, ctypes, shutil, logging, os
+import os
+import hashlib, ctypes, shutil, logging
 import time
+import win32file, win32con, pywintypes
+
 from send2trash import send2trash
 from ctypes import wintypes
 from pathlib import Path
@@ -44,11 +47,14 @@ def is_temporary(p: Path) -> bool:
     return p.suffix.lower() in config.EXCLUDE_EXT
     
 def is_file_locked(p: Path) -> bool:
+    """Verifica si el archivo está bloqueado sin interferir con otros procesos."""
     try: 
-        with open(p, 'rb'): 
+        # 'r+b' pide verificar lectura/escritura, lo que detecta descargas y conversiones activas
+        with open(p, 'r+b'): 
             return False
-    except OSError:
-        return True    
+    except (OSError, PermissionError):
+        return True
+
 
 def safe_unlink(path: Path, retries=20, delay=0.25):
     for i in range(retries):

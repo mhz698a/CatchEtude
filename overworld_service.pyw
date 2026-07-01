@@ -143,9 +143,15 @@ class OverworldService(QtCore.QObject):
                 
                 logger.info(
                     "Scan request year=%s generation=%s path=%s",
-                    year, generation, base_path,)
+                    year, generation, base_path,
+                )
 
             elif cmd == "quit":
+                logger.info("Quit request received from client. Initiating orderly shutdown.")
+                # 1. Responder al cliente que todo está OK antes de cerrar
+                socket.write(json.dumps({"status": "ok"}).encode("utf-8"))
+                socket.flush() 
+                # 2. Ejecutar limpieza y detener el loop de Qt
                 self._cleanup()
                 QtCore.QCoreApplication.quit()
                 
@@ -287,3 +293,5 @@ if __name__ == "__main__":
 
     logger.addHandler(watchdog_handler)
     main()
+    
+    

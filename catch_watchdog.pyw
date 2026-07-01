@@ -62,8 +62,15 @@ class WatchdogService(QtCore.QObject):
                 self.log_viewer.raise_()
                 self.log_viewer.activateWindow()
             elif cmd == "quit":
+                print("Watchdog Service: Quit request received. Sending OK response.")
+                # 1. Responder al cliente que todo está listo antes de apagar
+                socket.write(json.dumps({"status": "ok"}).encode('utf-8'))
+                socket.flush()
+                # 2. Desconectarse, limpiar y cerrar el loop de Qt
+                socket.disconnectFromServer()
                 self._cleanup()
                 QtCore.QCoreApplication.quit()
+                return  # Salimos de inmediato para no repetir el disconnect posterior
             elif cmd == "update_pid":
                 # Deprecated but kept for compatibility during transition
                 pass

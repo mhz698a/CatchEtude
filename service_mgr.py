@@ -127,21 +127,6 @@ def _wait_for_server(server_name: str, timeout: float = 5.0) -> bool:
         time.sleep(0.1)
     return False
 
-
-def _send_quit(server_name: str, timeout_ms: int = 1000) -> bool:
-    socket = _connect_local_socket(server_name, timeout_ms)
-    if socket is None:
-        return False
-    try:
-        socket.write(json.dumps({"cmd": "quit"}).encode("utf-8"))
-        socket.waitForBytesWritten(timeout_ms)
-    finally:
-        try:
-            socket.disconnectFromServer()
-        except Exception:
-            pass
-    return True
-
 def wait_for_services_stopped(timeout: float = 8.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -174,17 +159,27 @@ def _force_kill_helper_scripts() -> None:
         logging.exception("Forced cleanup of helper scripts failed")
 
 def stop_parallel_services(timeout: float = 8.0) -> bool:
-    """Sends quit to both services and waits until they are really gone."""
+    """Intentos con backoff y luego forzar kill si no se apagan."""
+    # intentos progresivos
+    start = time.time()
+    backoff = 0.1
+    deadline = start + timeout
 
-    _send_quit(WATCHDOG_SERVER_NAME)
-    _send_quit(CHARACTER_SERVER_NAME)
-    _send_quit(OVERWORLD_SERVER_NAME)
-    
+    # pedir quit a cada servicio con ACK
+    for server in (WATCHDOG_SERVER_NAME, CHARACTER_SERVER_NAME, OVERWORLD_SERVER_NAME):
+        for attempt in range(4):
+            if _send_quit_with_ack(server, timeout_ms=int(500 + 500*attempt)):
+                break
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 1.0)
+
+    # esperar que se apaguen (reutiliza wait_for_services_stopped)
     if wait_for_services_stopped(timeout):
         return True
 
+    # fallback: forzar kill y volver a esperar
     _force_kill_helper_scripts()
-    return wait_for_services_stopped(timeout)
+    return wait_for_services_stopped(max(2.0, timeout/2))
 
 def _pythonw_executable() -> str:
     exe = Path(sys.executable)
@@ -223,6 +218,20 @@ def start_character_service():
     except Exception:
         logging.exception("Failed to start character service")
 
+def _send_quit(server_name: str, timeout_ms: int = 1000) -> bool:
+    socket = _connect_local_socket(server_name, timeout_ms)
+    if socket is None:
+        return False
+    try:
+        socket.write(json.dumps({"cmd": "quit"}).encode("utf-8"))
+        socket.waitForBytesWritten(timeout_ms)
+    finally:
+        try:
+            socket.disconnectFromServer()
+        except Exception:
+            pass
+    return True
+
 def start_overworld_service():
     """Starts the parallel overworld data service."""
     try:
@@ -250,3 +259,34 @@ def send_character_service_command(cmd: str, **kwargs):
         socket.write(json.dumps(data).encode('utf-8'))
         socket.waitForBytesWritten(200)
         socket.disconnectFromServer()
+
+def _send_quit_with_ack(server_name: str, timeout_ms: int = 1000) -> bool:
+    """Enviar quit y esperar ack (JSON {'status':'ok'})"""
+    socket = QLocalSocket()
+    socket.connectToServer(server_name)
+    if not socket.waitForConnected(timeout_ms):
+        try:
+            socket.abort()
+        except Exception:
+            pass
+        return False
+
+    try:
+        data = json.dumps({"cmd": "quit"}).encode("utf-8")
+        socket.write(data)
+        socket.waitForBytesWritten(timeout_ms)
+
+        # esperar respuesta breve
+        if socket.waitForReadyRead(timeout_ms):
+            resp = bytes(socket.readAll()).decode("utf-8", errors="ignore")
+            try:
+                j = json.loads(resp)
+                return j.get("status") in ("ok", "shutting_down")
+            except Exception:
+                return False
+        return False
+    finally:
+        try:
+            socket.disconnectFromServer()
+        except Exception:
+            pass
