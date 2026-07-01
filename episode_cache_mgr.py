@@ -1,12 +1,11 @@
 import json
 import logging
-from config import CACHE_DIR
-
+import config
 
 class EpisodeCacheManager:
     def __init__(self, year: int):
         self.year = year
-        self.cache_path = CACHE_DIR / f"episodes_{year}.json"
+        self.cache_path = config.CACHE_DIR / f"episodes_{year}.json"
         self.data = self._load()
         self._dirty = False
 

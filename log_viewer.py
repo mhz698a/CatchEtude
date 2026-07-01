@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QPlainTextEdit
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, pyqtSlot
 from log_mgr import get_log_history
-from config import ICON_PATH
+import config
 
 class LogViewerWindow(QWidget):
     """
@@ -18,7 +18,7 @@ class LogViewerWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("CatchEtude - Log Viewer")
-        self.setWindowIcon(QIcon(ICON_PATH))
+        self.setWindowIcon(QIcon(config.ICON_PATH))
         self.resize(700, 500)
 
         layout = QVBoxLayout(self)

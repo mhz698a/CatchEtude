@@ -14,9 +14,6 @@ from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
-from config import (
-    APP_NAME, LOG_PATH, ICON_PATH, CRASH_REPORT_PATH
-) 
 from utils import flatten_downloads_root
 from state_manager import StateManager, scan_existing_downloads
 from watcher_mgr import WatcherThread
@@ -26,7 +23,8 @@ from service_mgr import (
     ensure_single_instance, add_to_startup, crash_handler, start_watchdog, 
     start_character_service, start_overworld_service, stop_parallel_services
 )
-
+import config
+from config_manager import ConfigurationManager, SettingDef, SettingType # type: ignore
 from main_window_mgr import MainWindow
 from PyQt6 import QtCore
 
@@ -36,7 +34,7 @@ def main():
     
     # Initialize Application
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon(ICON_PATH))
+    app.setWindowIcon(QIcon(config.ICON_PATH))
     app.setQuitOnLastWindowClosed(False)
     
     try:
@@ -48,7 +46,7 @@ def main():
     mutex = ensure_single_instance()
     
     # Setup logging
-    setup_logging(LOG_PATH)
+    setup_logging(config.LOG_PATH)
     
     try:
         # Start background services
@@ -101,13 +99,13 @@ def main():
         # Startup registration
         mypath = str(Path(sys.argv[0]).resolve())
         try:
-            add_to_startup(APP_NAME, mypath, True)
+            add_to_startup(config.APP_NAME, mypath, True)
         except Exception:
             logging.exception("add_to_startup failed")
             
         try:
-            if CRASH_REPORT_PATH.exists():
-                CRASH_REPORT_PATH.unlink()
+            if config.CRASH_REPORT_PATH.exists():
+                config.CRASH_REPORT_PATH.unlink()
         except Exception:
             pass
 

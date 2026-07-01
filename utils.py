@@ -4,7 +4,6 @@ from send2trash import send2trash
 from ctypes import wintypes
 from pathlib import Path
 import config
-from config import EXCLUDE_EXT, DOWNLOADS, DWMWA_FORCE_ICONIC_REPRESENTATION, DWMWA_HAS_ICONIC_BITMAP, DWMWA_DISALLOW_PEEK
 from wctime import setctime_blocking
 from typing import Optional
 
@@ -52,7 +51,7 @@ def sha256_file(p: Path, block_size=65536) -> Optional[str]:
         return None
 
 def is_temporary(p: Path) -> bool:
-    return p.suffix.lower() in EXCLUDE_EXT
+    return p.suffix.lower() in config.EXCLUDE_EXT
     
 def is_file_locked(p: Path) -> bool:
     try: 
@@ -167,13 +166,13 @@ def is_internal_available() -> bool:
 
 def configure_dwm_thumbnail_behavior(hwnd):
     # Forzar que Windows use representación icónica
-    dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_FORCE_ICONIC_REPRESENTATION,
+    dwmapi.DwmSetWindowAttribute(hwnd, config.DWMWA_FORCE_ICONIC_REPRESENTATION,
                                  ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int))
     # Indicar que no tiene bitmap
-    dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_HAS_ICONIC_BITMAP,
+    dwmapi.DwmSetWindowAttribute(hwnd, config.DWMWA_HAS_ICONIC_BITMAP,
                                  ctypes.byref(ctypes.c_int(0)), ctypes.sizeof(ctypes.c_int(1)))
     # Deshabilitar peek
-    dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_DISALLOW_PEEK,
+    dwmapi.DwmSetWindowAttribute(hwnd, config.DWMWA_DISALLOW_PEEK,
                                  ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int(1)))
 
 
@@ -182,7 +181,7 @@ def flatten_downloads_root():
     Aplana subcarpetas en Downloads de forma segura.
     NO interrumpe descargas.
     """
-    for sub in DOWNLOADS.iterdir():
+    for sub in config.DOWNLOADS.iterdir():
         if not sub.is_dir():
             continue
 
@@ -197,7 +196,7 @@ def flatten_downloads_root():
             if not f.is_file():
                 continue
 
-            dest = resolve_duplicate(DOWNLOADS / f.name)
+            dest = resolve_duplicate(config.DOWNLOADS / f.name)
 
             try:
                 stat = f.stat()

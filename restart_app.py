@@ -11,10 +11,10 @@ import traceback
 import ctypes
 import win32event
 import win32api
+import config
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
 from service_mgr import stop_parallel_services, wait_for_services_stopped
-from config import APP_NAME, ICON_PATH, MYAPPID
 
 class RestartWindow(QtWidgets.QWidget):
     def __init__(self, pid, script_path):
@@ -22,8 +22,8 @@ class RestartWindow(QtWidgets.QWidget):
         self.pid = pid
         self.script_path = script_path
         
-        self.setWindowTitle(f"{APP_NAME} - Restarting")
-        self.setWindowIcon(QtGui.QIcon(ICON_PATH))
+        self.setWindowTitle(f"{config.APP_NAME} - Restarting")
+        self.setWindowIcon(QtGui.QIcon(config.ICON_PATH))
         self.setFixedSize(400, 150)
         
         # Window flags: stays on top
@@ -104,7 +104,7 @@ class RestartWorker(QtCore.QThread):
             stop_parallel_services(timeout=10.0)
 
             # 2) Espera a que la app principal realmente desaparezca
-            if not self._wait_for_mutex_absent(APP_NAME, 15.0):
+            if not self._wait_for_mutex_absent(config.APP_NAME, 15.0):
                 raise TimeoutError("El proceso principal no terminó a tiempo.")
 
             # 3) Asegura que watchdog y character service ya no estén vivos
@@ -138,12 +138,12 @@ def main():
     # Set AppUserModelID
     try:
         # Use the same MYAPPID to group with the main application and share the icon
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(MYAPPID)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.MYAPPID)
     except Exception:
         pass
 
     app = QtWidgets.QApplication(sys.argv)
-    app.setWindowIcon(QtGui.QIcon(ICON_PATH))
+    app.setWindowIcon(QtGui.QIcon(config.ICON_PATH))
     
     win = RestartWindow(pid_to_wait, path_to_restart)
     win.show()

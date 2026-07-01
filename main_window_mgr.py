@@ -24,10 +24,7 @@ from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTime
 
-from config import (
-    APP_NAME, ICON_PATH, CONFIG_PATH, DOWNLOADS,
-    SETTINGS_PATH, apply_settings
-) 
+import config
 from utils import (
     resolve_duplicate, 
     configure_dwm_thumbnail_behavior, is_internal_available,
@@ -67,7 +64,7 @@ class MainWindow(QWidget):
         self.signals.warning_message.connect(self.show_status)
         self.signals.post_action_ready.connect(self._queue_or_run_post_action)
         
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle(config.APP_NAME)
         
         flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint
         flags |= QtCore.Qt.WindowType.Tool
@@ -117,16 +114,16 @@ class MainWindow(QWidget):
         self._setup_settings_watcher()
 
     def _setup_settings_watcher(self):
-        self._settings_watcher = QtCore.QFileSystemWatcher([str(SETTINGS_PATH)], self)
+        self._settings_watcher = QtCore.QFileSystemWatcher([str(config.SETTINGS_PATH)], self)
         self._settings_watcher.fileChanged.connect(self._on_settings_file_changed)
 
     def _on_settings_file_changed(self, path):
         logging.info(f"Settings file changed: {path}. Reloading...")
-        apply_settings()
+        config.apply_settings()
         
         # QFileSystemWatcher might lose the file after it's overwritten by some editors
-        if str(SETTINGS_PATH) not in self._settings_watcher.files():
-            self._settings_watcher.addPath(str(SETTINGS_PATH))
+        if str(config.SETTINGS_PATH) not in self._settings_watcher.files():
+            self._settings_watcher.addPath(str(config.SETTINGS_PATH))
 
         self.retranslate_ui()
         # Some changes might require more specific updates
@@ -230,8 +227,8 @@ class MainWindow(QWidget):
     
     def _load_config(self):
         try:
-            if CONFIG_PATH.exists():
-                with CONFIG_PATH.open('r', encoding='utf-8') as f:
+            if config.CONFIG_PATH.exists():
+                with config.CONFIG_PATH.open('r', encoding='utf-8') as f:
                     data = json.load(f)
                 self._hide_secure = data.get("hide_secure", False)
                 self._post_action_mode = data.get("post_action_mode", "none")
@@ -248,14 +245,14 @@ class MainWindow(QWidget):
     def _save_config(self):
         try:
             data = {}
-            if CONFIG_PATH.exists():
-                with CONFIG_PATH.open('r', encoding='utf-8') as f:
+            if config.CONFIG_PATH.exists():
+                with config.CONFIG_PATH.open('r', encoding='utf-8') as f:
                     data = json.load(f)
             data["hide_secure"] = self._hide_secure
             data["post_action_mode"] = self._post_action_mode
             data["auto_run_pendings"] = getattr(self, "_pending_auto_run_enabled", False)
             data["auto_run_pendings_time"] = getattr(self, "_pending_auto_run_time", QTime(20, 15)).toString("HH:mm")
-            with CONFIG_PATH.open('w', encoding='utf-8') as f:
+            with config.CONFIG_PATH.open('w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
         except Exception:
             logging.exception("Failed to save config")
@@ -410,10 +407,10 @@ class MainWindow(QWidget):
 
     def _build_tray(self):
         icon = QIcon.fromTheme("folder-downloads")
-        if icon.isNull(): icon = QIcon(ICON_PATH)
+        if icon.isNull(): icon = QIcon(config.ICON_PATH)
         if not hasattr(self, 'tray'):
             self.tray = QSystemTrayIcon(icon, self)
-            self.tray.setToolTip(APP_NAME)
+            self.tray.setToolTip(config.APP_NAME)
             
         self.tray_menu = QMenu(self)
         show_action = QAction(self.loc.get("tray_show"), self)
@@ -598,7 +595,7 @@ class MainWindow(QWidget):
         threading.Thread(target=lambda: scan_existing_downloads(self.state_manager), daemon=True).start()
 
     def _on_order_pending_clicked(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Folder to Process", str(DOWNLOADS))
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder to Process", str(config.DOWNLOADS))
         if folder: self._process_pending_folder(Path(folder))
 
     def _run_pendings(self):

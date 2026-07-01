@@ -5,8 +5,8 @@ Gestor de Caché de Personajes: persistencia JSON atómica para metadatos de per
 
 import json
 import logging
+import config
 from pathlib import Path
-from config import CACHE_DIR
 
 class CharacterCacheManager:
     """
@@ -15,7 +15,7 @@ class CharacterCacheManager:
     """
     def __init__(self, year: int):
         self.year = year
-        self.cache_path = CACHE_DIR / f"characters_{year}.json"
+        self.cache_path = config.CACHE_DIR / f"characters_{year}.json"
         self.data = self._load()
         self._dirty = False
 
