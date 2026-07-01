@@ -27,8 +27,8 @@ Cómo encaja: al arrancar catchetude.pyw se inicializan logging y servicios (ser
 Requisitos detectados: Python en Windows, PyQt6, watchdog, pywin32, send2trash. No hay requirements.txt; conviene crear uno con versiones pinneadas.
 Comandos mínimos (desde PowerShell/CMD en Windows):
 ```bash
-# instalar deps (ejemplo)
-pip install PyQt6 watchdog pywin32 send2trash
+# intala dependencias primero
+pip install -r requirements.txt
 
 # ejecutar la app
 python catchetude.pyw
