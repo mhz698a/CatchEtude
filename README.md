@@ -35,3 +35,5 @@ pip install -r requirements.txt
 python catchetude.pyw
 ```
 Notas: tomllib se usa en config.py (disponible en Python 3.11); para Python <3.11 debe añadirse dependencia tomli o ajustar load_settings.
+
+**NOTA CRITICA**: Este es un proyecto personal de automatización diseñado específicamente para ejecutarse en entornos locales parametrizados.
