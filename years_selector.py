@@ -4,13 +4,18 @@ from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QAbstractItemView
 
+import config
+from localization import LocalizationManager
 
 class YearsTableWidget(QTableWidget):
     yearChanged = QtCore.pyqtSignal(int)
 
     def __init__(self, years, parent=None):
         super().__init__(0, 0, parent)
+        self.loc = LocalizationManager()
         self._years = list(years)
+        self._hidden_years = config.NONCANON_YEARS
+        self._current_hidden_year = None
         self._min_cell_w = 40
         self._cell_h = 28
         self._selected_year = 2004 if 2004 in self._years else (self._years[0] if self._years else None)
@@ -33,13 +38,37 @@ class YearsTableWidget(QTableWidget):
         self._rebuild()
 
     def current_year(self):
+        if self._current_hidden_year is not None:
+            return self._current_hidden_year
         item = self.currentItem()
         return int(item.text()) if item else None
 
     def _emit_year_changed(self):
+        if self.currentItem() is not None:
+            self._current_hidden_year = None
         year = self.current_year()
         if year is not None:
             self.yearChanged.emit(year)
+
+    def contextMenuEvent(self, event):
+        menu = QtWidgets.QMenu(self)
+        hidden_menu = menu.addMenu(self.loc.get("menu_hidden_years"))
+
+        for y in self._hidden_years:
+            action = hidden_menu.addAction(str(y))
+            action.setCheckable(True)
+            action.setChecked(y == self._current_hidden_year)
+            action.triggered.connect(lambda checked, year=y: self._select_hidden_year(year))
+
+        menu.exec(event.globalPos())
+
+    def _select_hidden_year(self, year):
+        self._current_hidden_year = year
+        self.blockSignals(True)
+        self.clearSelection()
+        self.setCurrentItem(None)
+        self.blockSignals(False)
+        self.yearChanged.emit(year)
 
     def _rebuild(self):
         if not self._years:

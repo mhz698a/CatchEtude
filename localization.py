@@ -5,8 +5,8 @@ Módulo de Localización: gestiona las cadenas de la aplicación en varios idiom
 
 import json
 import logging
-from pathlib import Path
 import config
+from pathlib import Path
 from typing import Dict
 
 STRINGS = {
@@ -60,6 +60,7 @@ STRINGS = {
         "menu_create_folder": "Crear nueva carpeta aqui",
         "menu_rename_folder": "Renombrar esta carpeta",
         "menu_delete_folder": "Eliminar esta carpeta vacía",
+        "menu_hidden_years": "Seleccionar años ocultos",
         "dlg_create_title": "Nueva carpeta",
         "dlg_create_label": "Nombre de la carpeta:",
         "dlg_rename_title": "Renombrar carpeta",
@@ -136,6 +137,7 @@ STRINGS = {
         "menu_create_folder": "Create new folder here",
         "menu_rename_folder": "Rename this folder",
         "menu_delete_folder": "Delete this empty folder",
+        "menu_hidden_years": "Select hidden years",
         "dlg_create_title": "New folder",
         "dlg_create_label": "Folder name:",
         "dlg_rename_title": "Rename folder",
