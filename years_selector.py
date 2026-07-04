@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QAbstractItemView
 import config
 from localization import LocalizationManager
 
-
 class YearsTableWidget(QTableWidget):
     yearChanged = QtCore.pyqtSignal(int)
 

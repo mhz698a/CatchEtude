@@ -5,8 +5,8 @@ Módulo de Localización: gestiona las cadenas de la aplicación en varios idiom
 
 import json
 import logging
-from pathlib import Path
 import config
+from pathlib import Path
 from typing import Dict
 
 STRINGS = {
