@@ -72,10 +72,13 @@ def crash_handler(etype, value, tb):
     except Exception as e:
         logging.error(f"Unexpected error saving crash report: {e}")
     
-    # Launch crash dialog via os.startfile
+    # Launch crash dialog via subprocess using pythonw
     try:
         crash_dialog_script = str(Path(__file__).resolve().parent / "crash_dialog.pyw")
-        os.startfile(crash_dialog_script)
+        subprocess.Popen(
+            [_pythonw_executable(), crash_dialog_script],
+            creationflags=CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+        )
     except Exception:
         logging.exception("Failed to launch crash dialog")
 

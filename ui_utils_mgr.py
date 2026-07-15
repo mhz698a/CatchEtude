@@ -45,76 +45,86 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
             self._thumb_cache.clear()
 
     def paint(self, painter, option, index):
-        painter.save()
-        
-        path_str = index.data(Qt.ItemDataRole.UserRole)
-        is_active = index.data(Qt.ItemDataRole.UserRole + 1)
-        p = Path(path_str)
-        
-        rect = option.rect
-        
-        if is_active:
-            # Highlight active file
-            painter.fillRect(rect, QtGui.QColor("#e1f5fe"))
-            painter.setPen(QtGui.QColor("#01579b"))
-        elif option.state & QtWidgets.QStyle.StateFlag.State_Selected:
-            painter.fillRect(rect, option.palette.highlight())
-            painter.setPen(option.palette.highlightedText().color())
-        else:
-            painter.setPen(option.palette.text().color())
+        try:
+            painter.save()
             
-        # Draw icon/thumbnail
-        icon_rect = QtCore.QRect(rect.left() + 5, rect.top() + 5, 40, 40)
-        
-        if path_str not in self._thumb_cache:
-            try:
-                ext = p.suffix.lower()
+            path_str = index.data(Qt.ItemDataRole.UserRole)
+            if not path_str:
+                painter.restore()
+                return
 
-                if should_use_shell_thumbnail(ext):
-                    shell_pixmap = get_shell_thumbnail_pixmap(path_str, 40)
-                    if shell_pixmap and not shell_pixmap.isNull():
-                        if self._hide_secure:
-                            img = apply_secure_blur(shell_pixmap.toImage())
-                            shell_pixmap = QtGui.QPixmap.fromImage(img)
-                        self._thumb_cache[path_str] = shell_pixmap
-                    else:
-                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+            is_active = index.data(Qt.ItemDataRole.UserRole + 1)
+            p = Path(path_str)
 
-                elif ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
-                    reader = QtGui.QImageReader(path_str)
-                    reader.setAutoTransform(True)
-                    img_size = reader.size()
-                    if img_size.isValid():
-                        reader.setScaledSize(img_size.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio))
-                    img = reader.read()
-                    if not img.isNull():
-                        if self._hide_secure:
-                            img = apply_secure_blur(img)
-                        self._thumb_cache[path_str] = QtGui.QPixmap.fromImage(img)
-                    else:
-                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
-                else:
-                    self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
-            except Exception:
+            rect = option.rect
+
+            if is_active:
+                # Highlight active file
+                painter.fillRect(rect, QtGui.QColor("#e1f5fe"))
+                painter.setPen(QtGui.QColor("#01579b"))
+            elif option.state & QtWidgets.QStyle.StateFlag.State_Selected:
+                painter.fillRect(rect, option.palette.highlight())
+                painter.setPen(option.palette.highlightedText().color())
+            else:
+                painter.setPen(option.palette.text().color())
+
+            # Draw icon/thumbnail
+            icon_rect = QtCore.QRect(rect.left() + 5, rect.top() + 5, 40, 40)
+
+            if path_str not in self._thumb_cache:
                 try:
-                    self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+                    ext = p.suffix.lower()
+
+                    if should_use_shell_thumbnail(ext):
+                        shell_pixmap = get_shell_thumbnail_pixmap(path_str, 40)
+                        if shell_pixmap and not shell_pixmap.isNull():
+                            if self._hide_secure:
+                                img = apply_secure_blur(shell_pixmap.toImage())
+                                shell_pixmap = QtGui.QPixmap.fromImage(img)
+                            self._thumb_cache[path_str] = shell_pixmap
+                        else:
+                            self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+
+                    elif ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
+                        reader = QtGui.QImageReader(path_str)
+                        reader.setAutoTransform(True)
+                        img_size = reader.size()
+                        if img_size.isValid():
+                            reader.setScaledSize(img_size.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio))
+                        img = reader.read()
+                        if not img.isNull():
+                            if self._hide_secure:
+                                img = apply_secure_blur(img)
+                            self._thumb_cache[path_str] = QtGui.QPixmap.fromImage(img)
+                        else:
+                            self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+                    else:
+                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
                 except Exception:
-                    self._thumb_cache[path_str] = None
-        
-        obj = self._thumb_cache.get(path_str)
-        if isinstance(obj, QtGui.QPixmap):
-            # Center pixmap in icon_rect
-            pix_rect = obj.rect()
-            pix_rect.moveCenter(icon_rect.center())
-            painter.drawPixmap(pix_rect.topLeft(), obj)
-        elif obj is not None:
-            obj.paint(painter, icon_rect)
-        
-        # Draw text
-        text_rect = rect.adjusted(55, 0, -5, 0)
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, p.name)
-        
-        painter.restore()
+                    try:
+                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+                    except Exception:
+                        self._thumb_cache[path_str] = None
+
+            obj = self._thumb_cache.get(path_str)
+            if isinstance(obj, QtGui.QPixmap):
+                # Center pixmap in icon_rect
+                pix_rect = obj.rect()
+                pix_rect.moveCenter(icon_rect.center())
+                painter.drawPixmap(pix_rect.topLeft(), obj)
+            elif obj is not None:
+                obj.paint(painter, icon_rect)
+
+            # Draw text
+            text_rect = rect.adjusted(55, 0, -5, 0)
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, p.name)
+
+            painter.restore()
+        except Exception:
+            try:
+                painter.restore()
+            except Exception:
+                pass
 
     def sizeHint(self, option, index):
         return QtCore.QSize(200, 50)

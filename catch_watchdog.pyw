@@ -103,12 +103,6 @@ class WatchdogService(QtCore.QObject):
         print("Main process terminated (Mutex signal).")
         self._handle_termination()
         self._launch_restart()
-        
-        QtCore.QMetaObject.invokeMethod(
-            self,
-            "_show_shutdown_message",
-            QtCore.Qt.ConnectionType.BlockingQueuedConnection
-        )
             
         self._cleanup()
         QtCore.QCoreApplication.quit()
@@ -163,7 +157,7 @@ class WatchdogService(QtCore.QObject):
         self._restart_sent = True
 
         try:
-            restart_script = str(Path(__file__).resolve().parent / "restart_app.pyw")
+            restart_script = str(Path(__file__).resolve().parent / "restart_app.py")
             main_script = str(Path(__file__).resolve().parent / "catchetude.pyw")
 
             subprocess.Popen(

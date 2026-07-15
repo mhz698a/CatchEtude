@@ -647,12 +647,22 @@ class MainWindow(QWidget):
                 logging.exception("Failed to process pending folder")
         threading.Thread(target=worker, daemon=True).start()
 
+    def _set_ui_enabled_for_move(self, enabled: bool):
+        self.action_panel.btn_custom.setEnabled(enabled)
+        self.action_panel.btn_move.setEnabled(enabled)
+        self.btn_delete_header.setEnabled(enabled)
+        self.btn_undo.setEnabled(enabled)
+        self.selection_panel.set_subfolders_enabled(enabled)
+
     @QtCore.pyqtSlot(str)
     def on_file_detected(self, path_str: str):
         p = Path(path_str)
         if not p.exists(): return
         if self.state_manager.current_state() != State.FILE_DETECTED: return
         if not self.state_manager.declare_user_deciding(): return
+
+        self.btn_delete_header.setEnabled(True)
+        self.btn_undo.setEnabled(True)
 
         self.filepath = p
         self.action_panel.set_file(p, self._hide_secure)
@@ -857,15 +867,16 @@ class MainWindow(QWidget):
         
 
     def _start_move_task(self, decision: dict, final_dest: Path):
-        self.action_panel.btn_custom.setEnabled(False)
-        self.action_panel.btn_move.setEnabled(False)
+        self._set_ui_enabled_for_move(False)
         
         src = self.filepath
         if not src: 
+            self._set_ui_enabled_for_move(True)
             return
         
         if is_file_locked(src):
             self.show_status(self.loc.get("msg_file_locked"), 5000)
+            self._set_ui_enabled_for_move(True)
             return
         
         send_character_service_command("pause")
@@ -881,6 +892,7 @@ class MainWindow(QWidget):
         except Exception:
             logging.exception(f"Error in _start_move_task for {src}")
             send_character_service_command("resume")
+            self._set_ui_enabled_for_move(True)
             self.state_manager.discard_active_file()
             self.action_panel.set_progress(0)
             return
@@ -904,6 +916,7 @@ class MainWindow(QWidget):
             else:
                 if msg == "FILE_LOCKED":
                     self.show_status(self.loc.get("msg_file_locked"), 5000)
+                self._set_ui_enabled_for_move(True)
                 
             worker_thread.quit()
 

@@ -46,7 +46,7 @@ class StateManager:
         # new 3
         self._enqueue_allowed = threading.Event()
         self._enqueue_allowed.set()
-        
+
         self._pending: set[Path] = set()
         self._queue_list: list[Path] = []
         self._is_scanning = False
@@ -69,7 +69,7 @@ class StateManager:
             self._state_event.set()
 
         self._purge_missing_queue_entries()
-        
+
         # 🔽 NUEVO: cuando el sistema queda libre, aplanar descargas
         if s == State.IDLE:
             try:
@@ -82,7 +82,7 @@ class StateManager:
     def can_enqueue(self) -> bool:
         """Watcher reads this: only allow enqueue when NOT in USER_DECIDING."""
         return self.current_state() != State.USER_DECIDING
-        
+
     def _emit_queue_update(self):
         if self.notifier:
             # Send copy of current queue list and active file path
@@ -120,14 +120,14 @@ class StateManager:
                     self.notifier.queue_empty.emit()
 
         return removed
-    
+
 
     def enqueue_file(self, p: Path):
         # ✅ deduplicación
         if not p.exists():
             logging.debug(f"Skipping missing file before enqueue: {p}")
             return
-        
+
         with self._lock:
             if p in self._pending:
                 logging.debug(f"Already pending: {p}")
@@ -169,7 +169,7 @@ class StateManager:
                     self._state_event.clear()
 
                 p: Path = self._q.get()
-                
+
                 if not p.exists():
                     with self._lock:
                         self._pending.discard(p)
@@ -179,7 +179,7 @@ class StateManager:
                         if not self._pending and self._active_file is None and self.notifier:
                             self.notifier.queue_empty.emit()
                     continue
-                
+
                 # Double check IDLE state after popping
                 if self.current_state() != State.IDLE:
                     self._q.put(p)
@@ -189,7 +189,7 @@ class StateManager:
                 with self._lock:
                     self._active_file = p
                     self._emit_queue_update()
-                    
+
                 self._set_state(State.FILE_DETECTED)
 
                 # Notify UI
@@ -201,12 +201,12 @@ class StateManager:
                     safe_move_to_conflicts(p)
                     self._active_file = None
                     self._set_state(State.IDLE)
-                
+
                 # Wait until the UI transitions state beyond FILE_DETECTED
                 while self.current_state() == State.FILE_DETECTED:
                     self._state_event.wait(1)
                     self._state_event.clear()
-                
+
             except Exception:
                 logging.exception("StateManager queue processing error")
                 time.sleep(1)
@@ -229,7 +229,7 @@ class StateManager:
         if self.current_state() != State.USER_DECIDING:
             logging.warning(f"handover_active_file called in state {self.current_state()}")
             return
-        
+
         logging.info("Handing over active file; returning to IDLE")
         with self._lock:
             if self._active_file in self._queue_list:
@@ -252,9 +252,9 @@ class StateManager:
                 if src in self._queue_list:
                     self._queue_list.remove(src)
             logging.info(f"Discarded active file: {src.name}")
-            
+
         self.handover_active_file()
-        
+
         if not self._pending and self.notifier:
             self.notifier.queue_empty.emit()
 
@@ -265,26 +265,26 @@ class StateManager:
         entry = self._history.pop_last()
         if not entry:
             return False
-            
+
         src = Path(entry["src"])
         dst = Path(entry["dst"])
         meta = entry["meta"]
-        
+
         if not dst.exists():
             logging.error(f"Cannot undo: destination file missing: {dst}")
             return False
-            
+
         try:
             # Re-resolve duplicate if someone else took the name in Downloads (unlikely)
             target = resolve_duplicate(src)
             shutil.move(str(dst), str(target))
-            
+
             # Restore timestamps
             os.utime(target, (meta["atime"], meta["mtime"]))
             setctime_blocking(str(target), meta["ctime"])
-            
+
             logging.info(f"Undo successful: {dst} -> {target}")
-            
+
             # HOT-SWAP logic for Undo:
             if self.current_state() == State.USER_DECIDING and self._active_file:
                 # Put current active file back to queue
@@ -296,7 +296,7 @@ class StateManager:
                         self._queue_list.remove(current)
                     self._queue_list.insert(0, target)
                     self._queue_list.insert(1, current)
-                    
+
                     # Show restored file immediately
                     self._active_file = target
                     self._pending.add(target)
@@ -325,14 +325,14 @@ class StateManager:
             sub: str o None
             new_name: str (sin extensión)
         """
-        
+
         if self.current_state() != State.USER_DECIDING:
             logging.error("apply_decision llamado fuera de USER_DECIDING")
             return False
 
-        
+
         p: Path = self._active_file
-        
+
         if p is None:
             logging.warning("No hay archivo activo para decidir")
             self._skip_missing_active_file("No hay archivo activo para decidir; se omite.")
@@ -367,11 +367,11 @@ class StateManager:
                 p.unlink(missing_ok=True)
                 logging.info(f"Archivo 'keep' movido a conflictos: {dest}")
                 self._history.record_move(
-                    p, 
-                    dest, 
+                    p,
+                    dest,
                     {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime}
                 )
-                
+
                 post_action = decision.get("post_action", "none")
                 if post_action in ("open_file", "open_folder") and self.notifier:
                     self.notifier.post_action_ready.emit(str(dest), post_action)
@@ -383,20 +383,25 @@ class StateManager:
                 shutil.copy2(p, dest)
                 setctime_blocking(str(dest), ctime)
 
-                p.unlink(missing_ok=True)
-                logging.info(f"Archivo movido a: {dest}")
-                
-                post_action = decision.get("post_action", "none")
-                if post_action in ("open_file", "open_folder") and self.notifier:
-                    self.notifier.post_action_ready.emit(str(dest), post_action)                    
-                    
+                if dest.exists():
+                    p.unlink(missing_ok=True)
+                    logging.info(f"Archivo movido a: {dest}")
+                    self._history.record_move(
+                        p,
+                        dest,
+                        {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime}
+                    )
+
+                    post_action = decision.get("post_action", "none")
+                    if post_action in ("open_file", "open_folder") and self.notifier:
+                        self.notifier.post_action_ready.emit(str(dest), post_action)
                 else:
                     logging.error("Integridad fallida al mover; enviando a conflictos")
                     dest.unlink(missing_ok=True)
                     conflict = resolve_duplicate(config.CONFLICTS / p.name)
                     shutil.copy2(p, conflict)
                     setctime_blocking(str(conflict), ctime)
-            
+
             elif decision['action'] == 'move_custom':
                 dest_dir = Path(decision['custom_dir'])
                 dest_dir.mkdir(parents=True, exist_ok=True)
@@ -407,18 +412,23 @@ class StateManager:
                 shutil.copy2(p, dest)
                 setctime_blocking(str(dest), ctime)
 
-                p.unlink(missing_ok=True)
-                logging.info(f"Archivo movido (custom) a: {dest}")
-                
-                post_action = decision.get("post_action", "none")
-                if post_action in ("open_file", "open_folder") and self.notifier:
-                    self.notifier.post_action_ready.emit(str(dest), post_action)
+                if dest.exists():
+                    p.unlink(missing_ok=True)
+                    logging.info(f"Archivo movido (custom) a: {dest}")
+                    self._history.record_move(
+                        p,
+                        dest,
+                        {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime}
+                    )
 
+                    post_action = decision.get("post_action", "none")
+                    if post_action in ("open_file", "open_folder") and self.notifier:
+                        self.notifier.post_action_ready.emit(str(dest), post_action)
                 else:
                     logging.error("Integridad fallida en move_custom")
                     dest.unlink(missing_ok=True)
                     raise RuntimeError("Integrity check failed")
-            
+
             else:
                 logging.error(f"Acción desconocida en decisión: {decision['action']}")
 
@@ -444,7 +454,7 @@ class StateManager:
         self._set_state(State.IDLE)
         self._enqueue_allowed.set()
         return True
-    
+
     def finalize_copied_file(self, decision: dict, copied_path: Path, src_meta: dict):
         if self.current_state() != State.USER_DECIDING:
             logging.error("finalize_copied_file fuera de USER_DECIDING")
@@ -477,7 +487,7 @@ class StateManager:
         self._set_state(State.RESUME_WATCHER)
         self._set_state(State.IDLE)
         return True
-    
+
     def finalize_background_move(self, src: Path, dst: Path, src_meta: dict, post_action: str = "none"):
         """
         Completes the move process in the background.
@@ -496,7 +506,7 @@ class StateManager:
 
             # Update parent folder mtime to trigger character service update if applicable
             update_folder_mtime(dst.parent)
-            
+
             try:
                 update_folder_mtime(src.parent)
             except Exception as e:
@@ -505,17 +515,17 @@ class StateManager:
 
             # Handle cross-drive integrity if src still exists
             if src.exists():
-                
+
                 if not is_same_drive(src, dst):
-                        
+
                     if not safe_unlink(src):
                         logging.warning(f"Could not delete source after retries: {src}")
                         return
-                    
+
                     src.unlink(missing_ok=True)
                     logging.info(f"Background move finalized (cross-drive): {dst}")
                     self._history.record_move(src, dst, src_meta)
-                    
+
                 else:
                     # Same drive, src still exists? Fallback move might have been a copy
                     src.unlink(missing_ok=True)
@@ -531,7 +541,7 @@ class StateManager:
 
         except Exception:
             logging.exception("Error in finalize_background_move")
-            
+
         finally:
             self._pending.discard(src)
             if not self._pending and self.notifier:
@@ -564,7 +574,7 @@ class StateManager:
         with self._lock:
             if self._is_scanning: return
             self._is_scanning = True
-        
+
         try:
             scan_existing_downloads(self)
         finally:
@@ -612,10 +622,10 @@ def scan_existing_downloads(state_manager: StateManager):
                 # If modified within the last 1 second, skip it (will be caught later)
                 if now - stat.st_mtime < 1:
                     continue
-                
+
                 if is_file_locked(p):
                     continue
-                    
+
                 to_enqueue.append(p)
             except Exception:
                 continue
