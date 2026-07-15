@@ -583,8 +583,8 @@ class MainWindow(QWidget):
     def _restart_service(self):
         pid = os.getpid()
         script_path = str(Path(sys.argv[0]).resolve())
-        restart_script = str(Path(__file__).resolve().parent / "restart_app.pyw")
-        flags = 0x00000010 | 0x08000000
+        restart_script = str(Path(__file__).resolve().parent / "restart_app.py")
+        flags = 0x00000010
         try:
             subprocess.Popen([sys.executable, restart_script, str(pid), script_path], creationflags=flags)
         except OSError as e:
