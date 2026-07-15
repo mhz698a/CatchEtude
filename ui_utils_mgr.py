@@ -67,41 +67,47 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
         icon_rect = QtCore.QRect(rect.left() + 5, rect.top() + 5, 40, 40)
         
         if path_str not in self._thumb_cache:
-            ext = p.suffix.lower()
+            try:
+                ext = p.suffix.lower()
 
-            if should_use_shell_thumbnail(ext):
-                shell_pixmap = get_shell_thumbnail_pixmap(path_str, 40)
-                if shell_pixmap and not shell_pixmap.isNull():
-                    if self._hide_secure:
-                        img = apply_secure_blur(shell_pixmap.toImage())
-                        shell_pixmap = QtGui.QPixmap.fromImage(img)
-                    self._thumb_cache[path_str] = shell_pixmap
+                if should_use_shell_thumbnail(ext):
+                    shell_pixmap = get_shell_thumbnail_pixmap(path_str, 40)
+                    if shell_pixmap and not shell_pixmap.isNull():
+                        if self._hide_secure:
+                            img = apply_secure_blur(shell_pixmap.toImage())
+                            shell_pixmap = QtGui.QPixmap.fromImage(img)
+                        self._thumb_cache[path_str] = shell_pixmap
+                    else:
+                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+
+                elif ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
+                    reader = QtGui.QImageReader(path_str)
+                    reader.setAutoTransform(True)
+                    img_size = reader.size()
+                    if img_size.isValid():
+                        reader.setScaledSize(img_size.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio))
+                    img = reader.read()
+                    if not img.isNull():
+                        if self._hide_secure:
+                            img = apply_secure_blur(img)
+                        self._thumb_cache[path_str] = QtGui.QPixmap.fromImage(img)
+                    else:
+                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
                 else:
                     self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
-
-            elif ext in {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'}:
-                reader = QtGui.QImageReader(path_str)
-                reader.setAutoTransform(True)
-                img_size = reader.size()
-                if img_size.isValid():
-                    reader.setScaledSize(img_size.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio))
-                img = reader.read()
-                if not img.isNull():
-                    if self._hide_secure:
-                        img = apply_secure_blur(img)
-                    self._thumb_cache[path_str] = QtGui.QPixmap.fromImage(img)
-                else:
+            except Exception:
+                try:
                     self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
-            else:
-                self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))        
+                except Exception:
+                    self._thumb_cache[path_str] = None
         
-        obj = self._thumb_cache[path_str]
+        obj = self._thumb_cache.get(path_str)
         if isinstance(obj, QtGui.QPixmap):
             # Center pixmap in icon_rect
             pix_rect = obj.rect()
             pix_rect.moveCenter(icon_rect.center())
             painter.drawPixmap(pix_rect.topLeft(), obj)
-        else:
+        elif obj is not None:
             obj.paint(painter, icon_rect)
         
         # Draw text

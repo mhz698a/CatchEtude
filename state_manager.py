@@ -139,6 +139,27 @@ class StateManager:
             self._q.put(p)
             self._emit_queue_update()
 
+    def enqueue_files(self, paths: list[Path]):
+        if not paths:
+            return
+        with self._lock:
+            added = False
+            for p in paths:
+                if not p.exists():
+                    logging.debug(f"Skipping missing file before enqueue: {p}")
+                    continue
+                if p in self._pending:
+                    logging.debug(f"Already pending: {p}")
+                    continue
+
+                logging.info(f"Enqueueing file: {p}")
+                self._pending.add(p)
+                self._queue_list.append(p)
+                self._q.put(p)
+                added = True
+            if added:
+                self._emit_queue_update()
+
     def _process_queue(self):
         while True:
             try:
@@ -581,6 +602,7 @@ class StateManager:
 def scan_existing_downloads(state_manager: StateManager):
     try:
         now = time.time()
+        to_enqueue = []
         for p in sorted(config.DOWNLOADS.iterdir()):
             if not p.is_file() or is_temporary(p):
                 continue
@@ -594,8 +616,10 @@ def scan_existing_downloads(state_manager: StateManager):
                 if is_file_locked(p):
                     continue
                     
-                state_manager.enqueue_file(p)
+                to_enqueue.append(p)
             except Exception:
                 continue
+        if to_enqueue:
+            state_manager.enqueue_files(to_enqueue)
     except Exception:
         logging.exception("Error during scan_existing_downloads")

@@ -201,7 +201,13 @@ class COMApartment:
 
 
 def should_use_shell_thumbnail(path_or_suffix: str | Path) -> bool:
-    suffix = path_or_suffix.lower() if isinstance(path_or_suffix, str) else Path(path_or_suffix).suffix.lower()
+    if isinstance(path_or_suffix, Path):
+        suffix = path_or_suffix.suffix.lower()
+    else:
+        if path_or_suffix.startswith("."):
+            suffix = path_or_suffix.lower()
+        else:
+            suffix = Path(path_or_suffix).suffix.lower()
     return sys.platform.startswith("win") and suffix in WINDOWS_SHELL_THUMBNAIL_EXTS
 
 

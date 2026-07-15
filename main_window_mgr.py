@@ -616,10 +616,35 @@ class MainWindow(QWidget):
 
     def _process_pending_folder(self, folder: Path):
         def worker():
-            files = sorted(folder.rglob('*'))
-            for f in files:
-                if f.is_file() and not is_temporary(f):
-                    self.state_manager.enqueue_file(f)
+            try:
+                logging.info(f"Processing pending folder: {folder}")
+                files = []
+                try:
+                    for f in folder.rglob("*"):
+                        files.append(f)
+                except Exception as e:
+                    logging.warning(f"Error while scanning folder {folder}: {e}")
+
+                try:
+                    files.sort()
+                except Exception as e:
+                    logging.warning(f"Error sorting files: {e}")
+
+                to_enqueue = []
+                for f in files:
+                    try:
+                        if f.is_file() and not is_temporary(f):
+                            to_enqueue.append(f)
+                    except Exception as e:
+                        logging.debug(f"Error checking file {f}: {e}")
+
+                if to_enqueue:
+                    self.state_manager.enqueue_files(to_enqueue)
+                    logging.info(f"Enqueued {len(to_enqueue)} files from folder: {folder}")
+                else:
+                    logging.info(f"No files to enqueue from folder: {folder}")
+            except Exception:
+                logging.exception("Failed to process pending folder")
         threading.Thread(target=worker, daemon=True).start()
 
     @QtCore.pyqtSlot(str)
