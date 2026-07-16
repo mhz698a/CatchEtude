@@ -7,6 +7,7 @@ Inicializa la aplicación, los servicios y la ventana principal de la interfaz.
 """
 
 import sys
+import faulthandler
 import logging
 import threading
 from pathlib import Path
@@ -26,6 +27,20 @@ from service_mgr import (
 import config
 from main_window_mgr import MainWindow
 from PyQt6 import QtCore
+from PyQt6.QtCore import qInstallMessageHandler
+
+DEBUGER = False
+
+def qt_handler(mode, context, message):
+    logging.error("QT: %s", message)
+    
+if DEBUGER:
+    faulthandler.enable(all_threads=True)
+
+    if hasattr(sys, "stderr"):
+        faulthandler.dump_traceback_later(10, repeat=True)
+
+    qInstallMessageHandler(qt_handler)
 
 def main():
     # Set exception hook for crash reporting

@@ -1,4 +1,5 @@
 """
+character_mgr.py
 Module for managing character list loading and display.
 Módulo para gestionar la carga y visualización de la lista de personajes.
 """
@@ -71,6 +72,7 @@ class CharacterListModel(QtCore.QAbstractListModel):
     def _on_new_connection(self):
         socket = self.server.nextPendingConnection()
         socket.readyRead.connect(lambda: self._read_socket(socket))
+        socket.disconnected.connect(socket.deleteLater)
 
     def _read_socket(self, socket):
         data = socket.readAll().data().decode('utf-8')

@@ -1,4 +1,5 @@
 """
+character_service.pyw
 Character Service - Parallel service for character list data.
 Servicio de Personajes: servicio paralelo para los datos de la lista de personajes.
 """
@@ -73,14 +74,30 @@ class CharacterService(QtCore.QObject):
             socket.write(data.encode('utf-8'))
             socket.waitForBytesWritten(100)
             socket.disconnectFromServer()
-
-    def _log_info(self, msg): self._log_to_watchdog("INFO", msg)
-    def _log_char(self, msg): self._log_to_watchdog("CHARS", msg)
-    def _log_error(self, msg): self._log_to_watchdog("ERROR", msg)
+        socket.disconnectFromServer()
+        socket.disconnected.connect(socket.deleteLater)
+        
+    def _send_update(self, msg_dict):
+        """Sends an update back to the main app via a new connection."""
+        # Main app's CharacterListModel will listen on a specific name or we can reuse a name.
+        # Better: Main app listens on "CatchEtudeCharacterClient"
+        socket = QtNetwork.QLocalSocket()
+        socket.connectToServer("CatchEtudeCharacterClient")
+        if socket.waitForConnected(500):
+            socket.write(json.dumps(msg_dict).encode('utf-8'))
+            socket.flush()
+            socket.waitForBytesWritten(500)
+        socket.disconnectFromServer()
+        socket.disconnected.connect(socket.deleteLater)
 
     def _on_new_connection(self):
         socket = self.server.nextPendingConnection()
         socket.readyRead.connect(lambda: self._read_socket(socket))
+        socket.disconnected.connect(socket.deleteLater)
+                
+    def _log_info(self, msg): self._log_to_watchdog("INFO", msg)
+    def _log_char(self, msg): self._log_to_watchdog("CHARS", msg)
+    def _log_error(self, msg): self._log_to_watchdog("ERROR", msg)
 
     def _read_socket(self, socket):
         data = socket.readAll().data().decode('utf-8')
@@ -125,17 +142,6 @@ class CharacterService(QtCore.QObject):
                 self._log_error(f"Error in Character Service queue worker: {traceback.format_exc()}")
             finally:
                 self.task_queue.task_done()
-
-    def _send_update(self, msg_dict):
-        """Sends an update back to the main app via a new connection."""
-        # Main app's CharacterListModel will listen on a specific name or we can reuse a name.
-        # Better: Main app listens on "CatchEtudeCharacterClient"
-        socket = QtNetwork.QLocalSocket()
-        socket.connectToServer("CatchEtudeCharacterClient")
-        if socket.waitForConnected(500):
-            socket.write(json.dumps(msg_dict).encode('utf-8'))
-            socket.waitForBytesWritten(500)
-            socket.disconnectFromServer()
 
     def _loader_worker(self, year, generation):
         base = config.BASE_INTERNAL / str(year)
@@ -373,6 +379,9 @@ def crash_handler(etype, value, tb):
             socket.write(data.encode('utf-8'))
             socket.waitForBytesWritten(200)
             socket.disconnectFromServer()
+        
+        socket.deleteLater()
+        
     except Exception as e: 
         print(f"Failed to send crash log to watchdog: {e}")  # Puede usar print pq es crash handler
     

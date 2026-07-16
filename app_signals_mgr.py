@@ -1,4 +1,5 @@
 """
+app_signals_mgr.py
 App Signals module - Centralized Qt signals for communication between components.
 Módulo App Signals: señales de Qt centralizadas para la comunicación entre componentes.
 """

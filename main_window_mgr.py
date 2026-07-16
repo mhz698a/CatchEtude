@@ -104,10 +104,10 @@ class MainWindow(QWidget):
         self._pending_year = None
         self._char_load_generation = 0
         
-        self._queue_maintenance_timer = QtCore.QTimer(self)
-        self._queue_maintenance_timer.setInterval(3000)
-        self._queue_maintenance_timer.timeout.connect(self.state_manager.maintenance_tick)
-        self._queue_maintenance_timer.start()
+        # self._queue_maintenance_timer = QtCore.QTimer(self)
+        # self._queue_maintenance_timer.setInterval(3000)
+        # self._queue_maintenance_timer.timeout.connect(self.state_manager.maintenance_tick)
+        # self._queue_maintenance_timer.start()
         
         self._pending_scheduler = None
         
@@ -584,7 +584,7 @@ class MainWindow(QWidget):
         pid = os.getpid()
         script_path = str(Path(sys.argv[0]).resolve())
         restart_script = str(Path(__file__).resolve().parent / "restart_app.py")
-        flags = 0x00000010
+        flags = 0x00000010 | 0x08000000
         try:
             subprocess.Popen([sys.executable, restart_script, str(pid), script_path], creationflags=flags)
         except OSError as e:
@@ -656,34 +656,68 @@ class MainWindow(QWidget):
 
     @QtCore.pyqtSlot(str)
     def on_file_detected(self, path_str: str):
-        p = Path(path_str)
-        if not p.exists(): return
-        if self.state_manager.current_state() != State.FILE_DETECTED: return
-        if not self.state_manager.declare_user_deciding(): return
+        logging.info("FD 1")
 
+        p = Path(path_str)
+
+        logging.info("FD 2")
+        if not p.exists():
+            logging.info("FD 2a")
+            return
+
+        logging.info("FD 3")
+        if self.state_manager.current_state() != State.FILE_DETECTED:
+            logging.info("FD 3a")
+            return
+
+        logging.info("FD 4")
+        if not self.state_manager.declare_user_deciding():
+            logging.info("FD 4a")
+            return
+
+        logging.info("FD 5")
         self.btn_delete_header.setEnabled(True)
+
+        logging.info("FD 6")
         self.btn_undo.setEnabled(True)
 
+        logging.info("FD 7")
         self.filepath = p
+
+        logging.info("FD 8")
         self.action_panel.set_file(p, self._hide_secure)
+
+        logging.info("FD 9")
         self.action_panel.set_progress(0)
-        
-        # Sync panels
+
+        logging.info("FD 10")
         self.selection_panel.refresh_classification_ui()
+
+        logging.info("FD 11")
         sel = self.selection_panel.get_selection()
-        self._on_type_changed(sel['type'])
-        
-        self.selection_panel.set_keep_mode(self.action_panel.is_keep_downloads())
+
+        logging.info("FD 12")
+        self._on_type_changed(sel["type"])
+
+        logging.info("FD 13")
+        self.selection_panel.set_keep_mode(
+            self.action_panel.is_keep_downloads()
+        )
+
+        logging.info("FD 14")
         self._sync_apply_button()
-        
+
+        logging.info("FD 15")
         if self._hide_t_active:
             self._restore_from_hide_t()
         elif not self.isVisible() and self._internal_available_at_start:
             self._bring_and_center()
-        
+
+        logging.info("FD 16")
         if self._bulk_subfolder_name:
             self._move_to_subfolder(self._bulk_subfolder_name)
-            return
+
+        logging.info("FD END")
 
     def _on_type_changed(self, t: int):
         if t == 2:
