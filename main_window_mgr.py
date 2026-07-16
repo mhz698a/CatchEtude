@@ -392,6 +392,14 @@ class MainWindow(QWidget):
             send_character_service_command("resume")
 
     def _on_exit_clicked(self):
+        if self._active_workers:
+            QtWidgets.QMessageBox.warning(
+                self,
+                self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
+                self.loc.get("msg_cannot_close_moving") or "No se puede cerrar la aplicación mientras se realiza un movimiento de archivos. Por favor, espere a que termine."
+            )
+            return
+
         reply = QtWidgets.QMessageBox.question(
             self, self.loc.get("msg_exit_title"), self.loc.get("msg_exit_confirm"),
             QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
@@ -399,6 +407,17 @@ class MainWindow(QWidget):
         )
         if reply == QtWidgets.QMessageBox.StandardButton.Yes:
             QApplication.quit()
+
+    def closeEvent(self, event):
+        if self._active_workers:
+            QtWidgets.QMessageBox.warning(
+                self,
+                self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
+                self.loc.get("msg_cannot_close_moving") or "No se puede cerrar la aplicación mientras se realiza un movimiento de archivos. Por favor, espere a que termine."
+            )
+            event.ignore()
+        else:
+            event.accept()
 
     def _manual_hide(self):
         self.hide()
@@ -581,6 +600,14 @@ class MainWindow(QWidget):
         self.activateWindow()
 
     def _restart_service(self):
+        if self._active_workers:
+            QtWidgets.QMessageBox.warning(
+                self,
+                self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
+                self.loc.get("msg_cannot_close_moving") or "No se puede cerrar la aplicación mientras se realiza un movimiento de archivos. Por favor, espere a que termine."
+            )
+            return
+
         pid = os.getpid()
         script_path = str(Path(sys.argv[0]).resolve())
         restart_script = str(Path(__file__).resolve().parent / "restart_app.py")
@@ -805,8 +832,9 @@ class MainWindow(QWidget):
                 "new_name": self.action_panel.get_new_name() or self.filepath.stem,
                 "post_action": self.action_panel.get_post_action_mode(),
             }
-            self.state_manager.apply_decision(decision)
-            self._hide_if_idle()
+            keep_name = sanitize_windows_filename(decision.get('new_name', self.filepath.stem))
+            dest = resolve_duplicate(config.CONFLICTS / (keep_name + self.filepath.suffix))
+            self._start_move_task(decision, dest)
             return
             
         decision = {

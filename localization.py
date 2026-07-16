@@ -86,6 +86,8 @@ STRINGS = {
         "status_post_action_none": "No se ejecutarán acciones posteriores.",
         "status_post_action_consumed": "La acción posterior fue consumida y volvió automáticamente a 'No hacer nada después'.",
         "status_bulk_open_file_disabled": "'Abrir archivo tras la acción' no está disponible para 'Mover todo a esta carpeta'. Se utilizará 'No hacer nada después'.",
+        "msg_cannot_close_moving_title": "Operación en progreso",
+        "msg_cannot_close_moving": "No se puede cerrar la aplicación mientras se realiza un movimiento de archivos. Por favor, espere a que termine.",
     },
     "en": {
         "btn_keep": "Keep",
@@ -162,7 +164,9 @@ STRINGS = {
         "status_post_action_open_folder": "The next action will open the destination folder only once.",
         "status_post_action_none": "No subsequent actions will be performed.",
         "status_post_action_consumed": "The subsequent action was consumed and automatically reverted to 'Do nothing after'.",
-        "status_bulk_open_file_disabled": "'Open file after action' is not available for 'Move everything to this folder'. 'Do nothing after' will be used."
+        "status_bulk_open_file_disabled": "'Open file after action' is not available for 'Move everything to this folder'. 'Do nothing after' will be used.",
+        "msg_cannot_close_moving_title": "Operation in progress",
+        "msg_cannot_close_moving": "The application cannot be closed while a file is being moved. Please wait for the operation to complete."
     }
 }
 
