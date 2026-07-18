@@ -4,8 +4,10 @@ Módulo File Worker: gestiona las operaciones de archivos en segundo plano.
 """
 
 import os
+import shutil
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
+from utils import is_same_drive
 
 
 class FileMoveWorker(QObject):
@@ -30,36 +32,60 @@ class FileMoveWorker(QObject):
         try:
             if not self.stat:
                 self.stat = self.src.stat()
-                
-            total = self.stat.st_size
-            copied = 0
 
             # Ensure destination directory exists
             self.dst.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(self.src, 'rb') as fsrc, open(self.dst, 'wb') as fdst:
-                while True:
-                    chunk = fsrc.read(1024 * 1024) # 1MB chunks
-                    if not chunk:
-                        break
-                    fdst.write(chunk)
-                    copied += len(chunk)
-                    
-                    if total > 0:
-                        self.progress.emit(int(copied * 100 / total))
+            if is_same_drive(self.src, self.dst):
+                # Same-drive move is atomic, fast and extremely safe.
+                shutil.move(str(self.src), str(self.dst))
 
-                fdst.flush()
-                os.fsync(fdst.fileno())  # Ensure data is written to disk
+                # Restore timestamps
+                os.utime(
+                    self.dst,
+                    (self.stat.st_atime, self.stat.st_mtime)
+                )
+                self.progress.emit(100)
+                self.finished.emit(True, self.dst, "ok")
+            else:
+                total = self.stat.st_size
+                copied = 0
 
-            # Restore timestamps
-            os.utime(
-                self.dst,
-                (self.stat.st_atime, self.stat.st_mtime)
-            )
+                with open(self.src, 'rb') as fsrc, open(self.dst, 'wb') as fdst:
+                    while True:
+                        chunk = fsrc.read(1024 * 1024) # 1MB chunks
+                        if not chunk:
+                            break
+                        fdst.write(chunk)
+                        copied += len(chunk)
 
-            self.finished.emit(True, self.dst, "ok")
+                        if total > 0:
+                            self.progress.emit(int(copied * 100 / total))
+
+                    fdst.flush()
+                    os.fsync(fdst.fileno())  # Ensure data is written to disk
+
+                # Restore timestamps
+                os.utime(
+                    self.dst,
+                    (self.stat.st_atime, self.stat.st_mtime)
+                )
+
+                self.finished.emit(True, self.dst, "ok")
 
         except PermissionError:
+            # Clean up partially written file if cross-drive failed mid-way
+            if self.dst.exists():
+                try:
+                    self.dst.unlink(missing_ok=True)
+                except Exception:
+                    pass
             self.finished.emit(False, self.dst, "FILE_LOCKED")
         except Exception as e:
+            # Clean up partially written file if cross-drive failed mid-way
+            if self.dst.exists():
+                try:
+                    self.dst.unlink(missing_ok=True)
+                except Exception:
+                    pass
             self.finished.emit(False, self.dst, str(e))
