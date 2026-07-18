@@ -393,6 +393,7 @@ class MainWindow(QWidget):
 
     def _on_exit_clicked(self):
         if self._active_workers:
+            logging.warning("Exit blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
                 self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
@@ -410,6 +411,7 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event):
         if self._active_workers:
+            logging.warning("Close event blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
                 self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
@@ -601,6 +603,7 @@ class MainWindow(QWidget):
 
     def _restart_service(self):
         if self._active_workers:
+            logging.warning("Restart service blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
                 self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",

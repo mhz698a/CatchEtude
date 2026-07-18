@@ -5,6 +5,7 @@ Módulo File Worker: gestiona las operaciones de archivos en segundo plano.
 
 import os
 import shutil
+import logging
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
 from utils import is_same_drive
@@ -40,38 +41,53 @@ class FileMoveWorker(QObject):
                 # Same-drive move is atomic, fast and extremely safe.
                 shutil.move(str(self.src), str(self.dst))
 
-                # Restore timestamps
-                os.utime(
-                    self.dst,
-                    (self.stat.st_atime, self.stat.st_mtime)
-                )
+                # Restore timestamps - wrap in try-except so a failing utime doesn't destroy the file
+                try:
+                    os.utime(
+                        self.dst,
+                        (self.stat.st_atime, self.stat.st_mtime)
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not restore timestamps on same-drive move: {e}")
+
                 self.progress.emit(100)
                 self.finished.emit(True, self.dst, "ok")
             else:
                 total = self.stat.st_size
                 copied = 0
 
-                with open(self.src, 'rb') as fsrc, open(self.dst, 'wb') as fdst:
-                    while True:
-                        chunk = fsrc.read(1024 * 1024) # 1MB chunks
-                        if not chunk:
-                            break
-                        fdst.write(chunk)
-                        copied += len(chunk)
+                try:
+                    with open(self.src, 'rb') as fsrc, open(self.dst, 'wb') as fdst:
+                        while True:
+                            chunk = fsrc.read(1024 * 1024) # 1MB chunks
+                            if not chunk:
+                                break
+                            fdst.write(chunk)
+                            copied += len(chunk)
 
-                        if total > 0:
-                            self.progress.emit(int(copied * 100 / total))
+                            if total > 0:
+                                self.progress.emit(int(copied * 100 / total))
 
-                    fdst.flush()
-                    os.fsync(fdst.fileno())  # Ensure data is written to disk
+                        fdst.flush()
+                        os.fsync(fdst.fileno())  # Ensure data is written to disk
 
-                # Restore timestamps
-                os.utime(
-                    self.dst,
-                    (self.stat.st_atime, self.stat.st_mtime)
-                )
+                    # Restore timestamps
+                    try:
+                        os.utime(
+                            self.dst,
+                            (self.stat.st_atime, self.stat.st_mtime)
+                        )
+                    except Exception as e:
+                        logging.warning(f"Could not restore timestamps on cross-drive copy: {e}")
 
-                self.finished.emit(True, self.dst, "ok")
+                    self.finished.emit(True, self.dst, "ok")
+                except Exception as copy_err:
+                    if self.dst.exists():
+                        try:
+                            self.dst.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    raise copy_err
 
         except PermissionError:
             # Clean up partially written file if cross-drive failed mid-way
