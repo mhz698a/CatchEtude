@@ -979,22 +979,16 @@ class MainWindow(QWidget):
             if msg == "FILE_LOCKED":
                 self.show_status(self.loc.get("msg_file_locked"), 5000)
             self.state_manager.fail_background_move(src)
-            if self.filepath == src:
-                self._set_ui_enabled_for_move(True)
 
         self._hide_if_idle()
 
     def _start_move_task(self, decision: dict, final_dest: Path):
-        self._set_ui_enabled_for_move(False)
-        
         src = self.filepath
         if not src: 
-            self._set_ui_enabled_for_move(True)
             return
         
         if is_file_locked(src):
             self.show_status(self.loc.get("msg_file_locked"), 5000)
-            self._set_ui_enabled_for_move(True)
             return
         
         send_character_service_command("pause")
@@ -1010,9 +1004,8 @@ class MainWindow(QWidget):
         except Exception:
             logging.exception(f"Error in _start_move_task for {src}")
             send_character_service_command("resume")
-            self._set_ui_enabled_for_move(True)
             self.state_manager.discard_active_file()
-            self.action_panel.set_progress(0)
+            self.action_panel.clear()
             return
 
         # Enqueue the move task inside our new BackgroundMoveManager
@@ -1020,11 +1013,10 @@ class MainWindow(QWidget):
 
         if not self.state_manager.start_background_move(src):
             logging.warning(f"StateManager failed to start background move for {src}")
-            # Even if state transition failed, BackgroundMoveManager already has it.
-            # But normally start_background_move(src) always returns True.
             return
 
-        self.action_panel.set_progress(0)
+        self.filepath = None
+        self.action_panel.clear()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

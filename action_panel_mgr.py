@@ -367,7 +367,7 @@ class ActionPanel(QWidget):
         self.filepath = None
         self.preview_label.clear()
         self.rename_input.setText("")
-        self.lbl_file_info.setText("")
+        self.lbl_file_info.setText(self.loc.get("msg_no_file"))
         self.progress.setValue(0)
         self.drag_icon.set_file(None)
         self.btn_hide_t.setEnabled(False)
