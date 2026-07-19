@@ -984,7 +984,9 @@ class MainWindow(QWidget):
             else:
                 if msg == "FILE_LOCKED":
                     self.show_status(self.loc.get("msg_file_locked"), 5000)
-                self._set_ui_enabled_for_move(True)
+                self.state_manager.fail_background_move(src)
+                if self.filepath == src:
+                    self._set_ui_enabled_for_move(True)
                 
             worker_thread.quit()
 
@@ -992,9 +994,15 @@ class MainWindow(QWidget):
         worker.finished.connect(worker.deleteLater)
         worker_thread.finished.connect(worker_thread.deleteLater)
         worker_thread.finished.connect(lambda: (self._active_workers.discard((worker, worker_thread)), self._hide_if_idle()))
-        worker_thread.start()
 
-        self.state_manager.handover_active_file()
+        if not self.state_manager.start_background_move(src):
+            self._active_workers.discard((worker, worker_thread))
+            worker.deleteLater()
+            worker_thread.deleteLater()
+            self._set_ui_enabled_for_move(True)
+            return
+
+        worker_thread.start()
         self.action_panel.set_progress(0)
 
     def resizeEvent(self, event):
