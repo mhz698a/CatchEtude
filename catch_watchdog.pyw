@@ -157,7 +157,8 @@ class WatchdogService(QtCore.QObject):
         self._restart_sent = True
 
         try:
-            restart_script = str(Path(__file__).resolve().parent / "restart_app.py")
+            # No cambiar a py sin permisos del autor
+            restart_script = str(Path(__file__).resolve().parent / "restart_app.pyw")
             main_script = str(Path(__file__).resolve().parent / "catchetude.pyw")
 
             subprocess.Popen(

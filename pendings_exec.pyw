@@ -21,12 +21,12 @@ SERVER_NAME = "CatchEtudeCommandServer"
 USE_DECK_MODE = True
 # Si usted activa esto y es viernes, sabado y domingo o lunes
 # Debera tener cuidado con el contenido que CatchEtude
-# No debe desactivar bajo ninguna circunstancia el hide secure
+# No debe desactivar bajo ninguna circunstancia sin el hide secure
 # ----------------------------------------------------------------------------------
 
 DECK_DIR = Path(__file__).resolve().parent / "deck"
 ALARM_MP3 = Path(__file__).resolve().parent / "assets" / "alarm.mp3"
-MAX_FILES = 150
+MAX_FILES = 250
 
 def get_years_for_today():
     """
