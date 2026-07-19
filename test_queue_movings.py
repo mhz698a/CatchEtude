@@ -2,7 +2,37 @@ import unittest
 import sys
 from pathlib import Path
 
-# Dynamic mocking of PyQt6 for headless/CI environments where PyQt6 is not installed
+# Mock ctypes windll and WinDLL for Linux/CI environment
+import ctypes
+if not hasattr(ctypes, 'windll'):
+    class MockWinDLL:
+        def __getattr__(self, name):
+            class MockDLL:
+                def __getattr__(self, func):
+                    return lambda *args, **kwargs: 1
+            return MockDLL()
+    ctypes.windll = MockWinDLL()
+    ctypes.WinDLL = lambda name: MockWinDLL()
+
+# Dynamic mocking of Windows-specific and PyQt6 modules for headless Linux/CI environments
+try:
+    import win32file
+except ImportError:
+    # Mock pywin32 modules
+    sys.modules['win32file'] = type('MockWin32File', (), {})
+    sys.modules['win32con'] = type('MockWin32Con', (), {})
+    sys.modules['pywintypes'] = type('MockPyWinTypes', (), {
+        'error': Exception
+    })
+
+try:
+    import send2trash
+except ImportError:
+    # Mock send2trash
+    sys.modules['send2trash'] = type('MockSend2Trash', (), {
+        'send2trash': lambda x: True
+    })
+
 try:
     from PyQt6 import QtCore, QtWidgets, QtGui
     from PyQt6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QLabel, QProgressBar
@@ -15,6 +45,7 @@ except ImportError:
     class MockQt:
         class ItemDataRole:
             UserRole = 0
+            UserRolePlusOne = 1
         class AlignmentFlag:
             AlignLeft = 1
             AlignVCenter = 2
@@ -24,9 +55,23 @@ except ImportError:
             SmoothTransformation = 1
         class WindowType:
             WindowStaysOnTopHint = 1
+    MockQt.ItemDataRole.UserRole = 0
+
+    class MockQThread:
+        def __init__(self, parent=None):
+            self.started = MockSignal()
+        def start(self): pass
+        def quit(self): pass
+        def wait(self): pass
+        def deleteLater(self): pass
+
+    class MockSignal:
+        def connect(self, slot): pass
+        def emit(self, *args, **kwargs): pass
 
     class MockQtCore:
         Qt = MockQt
+        QThread = MockQThread
         class QObject:
             def __init__(self, parent=None): pass
         class QSize:
@@ -34,9 +79,6 @@ except ImportError:
         class QRect:
             def __init__(self, x, y, w, h): pass
         def pyqtSignal(*args, **kwargs):
-            class MockSignal:
-                def connect(self, slot): pass
-                def emit(self, *args): pass
             return MockSignal()
 
     class MockQWidget:
@@ -160,6 +202,7 @@ except ImportError:
 from queue_movings_widget import MovingItemWidget, QueueMovingsWidget
 from localization import LocalizationManager
 from history_mgr import HistoryManager
+from background_move_mgr import BackgroundMoveManager
 import config
 
 class TestQueueMovings(unittest.TestCase):
@@ -237,6 +280,45 @@ class TestQueueMovings(unittest.TestCase):
         popped = mgr.pop_last()
         self.assertEqual(popped, last)
         self.assertIsNone(mgr.get_last_move())
+
+    def test_background_move_mgr_prioritization(self):
+        """Test enqueuing and prioritization in BackgroundMoveManager."""
+        mgr = BackgroundMoveManager()
+
+        # Create temp files of different sizes
+        p_light = Path("light_file.txt")
+        p_heavy = Path("heavy_file.txt")
+        p_medium = Path("medium_file.txt")
+
+        # Mock size returns or write dummy data
+        p_light.write_bytes(b"A" * 10)         # 10 bytes
+        p_medium.write_bytes(b"A" * 100)       # 100 bytes
+        p_heavy.write_bytes(b"A" * 1000)       # 1000 bytes
+
+        try:
+            # Mock the active workers dictionary so they don't actually run,
+            # letting everything stay in pending_tasks to test sorting.
+            mgr._max_concurrent = 0
+
+            mgr.enqueue_move(p_light, Path("target_light.txt"), {}, {})
+            mgr.enqueue_move(p_heavy, Path("target_heavy.txt"), {}, {})
+            mgr.enqueue_move(p_medium, Path("target_medium.txt"), {}, {})
+
+            # Since _max_concurrent is 0, they should all be in _pending_tasks sorted by size (heaviest first)
+            self.assertEqual(len(mgr._pending_tasks), 3)
+
+            # Heaviest first (1000 bytes)
+            self.assertEqual(mgr._pending_tasks[0]["src"], p_heavy)
+            # Medium next (100 bytes)
+            self.assertEqual(mgr._pending_tasks[1]["src"], p_medium)
+            # Lightest last (10 bytes)
+            self.assertEqual(mgr._pending_tasks[2]["src"], p_light)
+
+        finally:
+            # Clean up temp files
+            for p in (p_light, p_medium, p_heavy):
+                if p.exists():
+                    p.unlink()
 
 if __name__ == "__main__":
     unittest.main()

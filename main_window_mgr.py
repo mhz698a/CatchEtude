@@ -43,6 +43,7 @@ from queue_panel_mgr import QueuePanel
 from service_mgr import send_character_service_command
 from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
+from background_move_mgr import BackgroundMoveManager
 
 
 class MainWindow(QWidget):
@@ -56,7 +57,10 @@ class MainWindow(QWidget):
         self.signals = signals
         self.loc = LocalizationManager()
         
-        self._active_workers = set()
+        self.background_move_mgr = BackgroundMoveManager(self)
+        self.background_move_mgr.move_started.connect(self._on_background_move_started)
+        self.background_move_mgr.move_progress.connect(self._on_background_move_progress)
+        self.background_move_mgr.move_finished.connect(self._on_background_move_finished)
         
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
@@ -406,7 +410,7 @@ class MainWindow(QWidget):
             send_character_service_command("resume")
 
     def _on_exit_clicked(self):
-        if self._active_workers:
+        if not self.background_move_mgr.is_idle():
             logging.warning("Exit blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
@@ -424,7 +428,7 @@ class MainWindow(QWidget):
             QApplication.quit()
 
     def closeEvent(self, event):
-        if self._active_workers:
+        if not self.background_move_mgr.is_idle():
             logging.warning("Close event blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
@@ -616,7 +620,7 @@ class MainWindow(QWidget):
         self.activateWindow()
 
     def _restart_service(self):
-        if self._active_workers:
+        if not self.background_move_mgr.is_idle():
             logging.warning("Restart service blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
@@ -952,6 +956,34 @@ class MainWindow(QWidget):
             return
         
 
+    def _on_background_move_started(self, src: Path, dst: Path):
+        self.queue_panel.queue_movings_widget.add_movement(src, dst)
+
+    def _on_background_move_progress(self, src: Path, val: int):
+        self.queue_panel.queue_movings_widget.update_progress(src, val)
+        if self.filepath == src:
+            self.action_panel.set_progress(val)
+
+    def _on_background_move_finished(self, src: Path, dst: Path, ok: bool, msg: str, src_meta: dict, decision: dict):
+        send_character_service_command("resume")
+        self.queue_panel.queue_movings_widget.remove_movement(src)
+
+        if ok:
+            threading.Thread(
+                target=self.state_manager.finalize_background_move,
+                args=(src, dst, src_meta, decision.get("post_action", "none")),
+                daemon=True
+            ).start()
+            self._build_tray()
+        else:
+            if msg == "FILE_LOCKED":
+                self.show_status(self.loc.get("msg_file_locked"), 5000)
+            self.state_manager.fail_background_move(src)
+            if self.filepath == src:
+                self._set_ui_enabled_for_move(True)
+
+        self._hide_if_idle()
+
     def _start_move_task(self, decision: dict, final_dest: Path):
         self._set_ui_enabled_for_move(False)
         
@@ -982,51 +1014,16 @@ class MainWindow(QWidget):
             self.state_manager.discard_active_file()
             self.action_panel.set_progress(0)
             return
-        
-        worker_thread = QtCore.QThread(self)
-        worker = FileMoveWorker(src, final_dest)
-        worker.moveToThread(worker_thread)
-        self._active_workers.add((worker, worker_thread))
-        worker_thread.started.connect(worker.run)
-        worker.progress.connect(lambda val: self.queue_panel.queue_movings_widget.update_progress(src, val))
-        worker.progress.connect(lambda val: self.action_panel.set_progress(val) if self.filepath == src else None)
 
-        def on_finished(ok: bool, copied_path: Path, msg: str):
-            send_character_service_command("resume")
-            self.queue_panel.queue_movings_widget.remove_movement(src)
-            if ok:
-                threading.Thread(
-                    target=self.state_manager.finalize_background_move,
-                    args=(src, copied_path, src_meta, decision.get("post_action", "none")),
-                    daemon=True
-                ).start()
-                self._build_tray()
-            else:
-                if msg == "FILE_LOCKED":
-                    self.show_status(self.loc.get("msg_file_locked"), 5000)
-                self.state_manager.fail_background_move(src)
-                if self.filepath == src:
-                    self._set_ui_enabled_for_move(True)
-                
-            worker_thread.quit()
-
-        worker.finished.connect(on_finished)
-        worker.finished.connect(worker.deleteLater)
-        worker_thread.finished.connect(worker_thread.deleteLater)
-        worker_thread.finished.connect(lambda: (self._active_workers.discard((worker, worker_thread)), self._hide_if_idle()))
-
-        # Add to the queue_movings_widget
-        self.queue_panel.queue_movings_widget.add_movement(src, final_dest)
+        # Enqueue the move task inside our new BackgroundMoveManager
+        self.background_move_mgr.enqueue_move(src, final_dest, decision, src_meta)
 
         if not self.state_manager.start_background_move(src):
-            self.queue_panel.queue_movings_widget.remove_movement(src)
-            self._active_workers.discard((worker, worker_thread))
-            worker.deleteLater()
-            worker_thread.deleteLater()
-            self._set_ui_enabled_for_move(True)
+            logging.warning(f"StateManager failed to start background move for {src}")
+            # Even if state transition failed, BackgroundMoveManager already has it.
+            # But normally start_background_move(src) always returns True.
             return
 
-        worker_thread.start()
         self.action_panel.set_progress(0)
 
     def resizeEvent(self, event):
@@ -1034,7 +1031,7 @@ class MainWindow(QWidget):
         self.action_panel.load_preview()
 
     def _hide_if_idle(self):
-        if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work():
+        if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work() and self.background_move_mgr.is_idle():
             self._flush_post_actions()
             self._bulk_subfolder_name = None
             self.action_panel.clear()
