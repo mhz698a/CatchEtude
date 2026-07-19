@@ -215,12 +215,24 @@ class MainWindow(QWidget):
         """)
         
         self.retranslate_ui()
+        self._update_undo_button_tooltip()
         
         self._pending_scheduler = PendingScheduler(self._run_pendings, self)
         self._apply_pending_schedule_state()
         
         # Initial size adjustment
         self.resize(self.base_width + self.queue_panel.width(), self.base_height)
+
+    def _update_undo_button_tooltip(self):
+        last_move = self.state_manager._history.get_last_move()
+        if last_move:
+            dest_path = Path(last_move["dst"])
+            tooltip_text = f"{self.loc.get('btn_undo')}: {dest_path.name}"
+            self.btn_undo.setToolTip(tooltip_text)
+            self.btn_undo.setEnabled(True)
+        else:
+            self.btn_undo.setToolTip("")
+            self.btn_undo.setEnabled(False)
 
     def show_status(self, text: str, ms: int = 5000):
         self.status_bar.showMessage(text, ms)
@@ -352,6 +364,7 @@ class MainWindow(QWidget):
         self.queue_panel.retranslate_ui()
         if hasattr(self, '_pending_dialog'):
             self._pending_dialog.retranslate_ui()
+        self._update_undo_button_tooltip()
 
     def _on_lang_toggle(self):
         self.loc.toggle_lang()
@@ -388,6 +401,7 @@ class MainWindow(QWidget):
                 QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
             else:
                 self._build_tray()
+                self._update_undo_button_tooltip()
         finally:
             send_character_service_command("resume")
 
@@ -681,7 +695,10 @@ class MainWindow(QWidget):
         self.action_panel.btn_custom.setEnabled(enabled)
         self.action_panel.btn_move.setEnabled(enabled)
         self.btn_delete_header.setEnabled(enabled)
-        self.btn_undo.setEnabled(enabled)
+        if not enabled:
+            self.btn_undo.setEnabled(False)
+        else:
+            self._update_undo_button_tooltip()
         self.selection_panel.set_subfolders_enabled(enabled)
 
     @QtCore.pyqtSlot(str)
@@ -709,7 +726,7 @@ class MainWindow(QWidget):
         self.btn_delete_header.setEnabled(True)
 
         logging.info("FD 6")
-        self.btn_undo.setEnabled(True)
+        self._update_undo_button_tooltip()
 
         logging.info("FD 7")
         self.filepath = p
@@ -797,6 +814,7 @@ class MainWindow(QWidget):
     @QtCore.pyqtSlot(list, str)
     def _on_queue_updated(self, queue_list: list[Path], active_path_str: str):
         self.queue_panel.update_queue(queue_list, active_path_str)
+        self._update_undo_button_tooltip()
 
     def _update_character_buttons(self):
         t = self.selection_panel.get_selection()['type']
@@ -970,10 +988,12 @@ class MainWindow(QWidget):
         worker.moveToThread(worker_thread)
         self._active_workers.add((worker, worker_thread))
         worker_thread.started.connect(worker.run)
+        worker.progress.connect(lambda val: self.queue_panel.queue_movings_widget.update_progress(src, val))
         worker.progress.connect(lambda val: self.action_panel.set_progress(val) if self.filepath == src else None)
 
         def on_finished(ok: bool, copied_path: Path, msg: str):
             send_character_service_command("resume")
+            self.queue_panel.queue_movings_widget.remove_movement(src)
             if ok:
                 threading.Thread(
                     target=self.state_manager.finalize_background_move,
@@ -995,7 +1015,11 @@ class MainWindow(QWidget):
         worker_thread.finished.connect(worker_thread.deleteLater)
         worker_thread.finished.connect(lambda: (self._active_workers.discard((worker, worker_thread)), self._hide_if_idle()))
 
+        # Add to the queue_movings_widget
+        self.queue_panel.queue_movings_widget.add_movement(src, final_dest)
+
         if not self.state_manager.start_background_move(src):
+            self.queue_panel.queue_movings_widget.remove_movement(src)
             self._active_workers.discard((worker, worker_thread))
             worker.deleteLater()
             worker_thread.deleteLater()
