@@ -56,6 +56,9 @@ class WatchdogService(QtCore.QObject):
             cmd = msg.get("cmd")
             if cmd == "log":
                 level = msg.get("level")
+                logger_name = msg.get("logger", "")
+                if logger_name.startswith("overworld") and level not in ("WARN", "WARNING", "ERROR", "CRITICAL"):
+                    level = "OVERWORLD"
                 content = msg.get("message")
                 self.log_viewer.add_log(level, content)
             elif cmd == "show":
