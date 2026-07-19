@@ -8,7 +8,8 @@ import shutil
 import logging
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
-from utils import is_same_drive
+from utils import is_same_drive, safe_unlink
+from wctime import setctime_blocking
 
 
 class FileMoveWorker(QObject):
@@ -28,6 +29,17 @@ class FileMoveWorker(QObject):
         except Exception:
             self.stat = None
 
+    def _restore_timestamps(self):
+        """Restores source timestamps on the destination as part of the move operation."""
+        try:
+            os.utime(
+                self.dst,
+                (self.stat.st_atime, self.stat.st_mtime)
+            )
+            setctime_blocking(str(self.dst), getattr(self.stat, "st_birthtime", self.stat.st_ctime))
+        except Exception as e:
+            logging.warning(f"Could not restore timestamps on moved file: {e}")
+
     def run(self):
         """Executes the copy operation."""
         try:
@@ -41,15 +53,7 @@ class FileMoveWorker(QObject):
                 # Same-drive move is atomic, fast and extremely safe.
                 shutil.move(str(self.src), str(self.dst))
 
-                # Restore timestamps - wrap in try-except so a failing utime doesn't destroy the file
-                try:
-                    os.utime(
-                        self.dst,
-                        (self.stat.st_atime, self.stat.st_mtime)
-                    )
-                except Exception as e:
-                    logging.warning(f"Could not restore timestamps on same-drive move: {e}")
-
+                self._restore_timestamps()
                 self.progress.emit(100)
                 self.finished.emit(True, self.dst, "ok")
             else:
@@ -71,14 +75,10 @@ class FileMoveWorker(QObject):
                         fdst.flush()
                         os.fsync(fdst.fileno())  # Ensure data is written to disk
 
-                    # Restore timestamps
-                    try:
-                        os.utime(
-                            self.dst,
-                            (self.stat.st_atime, self.stat.st_mtime)
-                        )
-                    except Exception as e:
-                        logging.warning(f"Could not restore timestamps on cross-drive copy: {e}")
+                    self._restore_timestamps()
+
+                    if not safe_unlink(self.src):
+                        raise PermissionError(f"Could not delete source after copy: {self.src}")
 
                     self.finished.emit(True, self.dst, "ok")
                 except Exception as copy_err:
