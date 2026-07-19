@@ -62,6 +62,23 @@ class StateManager:
             # We check _q and _active_file. _pending might contain files being moved in background.
             return not self._q.empty() or self._active_file is not None
 
+    def _safe_maintenance_and_flatten(self):
+        """Runs flatten_downloads_root and _run_maintenance_scan safely in a daemon thread."""
+        try:
+            flatten_downloads_root()
+        except (FileNotFoundError, PermissionError, OSError) as e:
+            logging.warning(f"OS/IO error during flatten_downloads_root: {e}")
+        except Exception:
+            logging.exception("Flatten downloads failed")
+
+        with self._lock:
+            scanning = self._is_scanning
+        if not scanning:
+            try:
+                self._run_maintenance_scan()
+            except Exception:
+                logging.exception("Maintenance scan failed")
+
     def _set_state(self, s: State):
         with self._lock:
             logging.info(f"State transition: {self._state} -> {s}")
@@ -73,15 +90,7 @@ class StateManager:
         # 🔽 NUEVO: cuando el sistema queda libre, aplanar descargas
         if s == State.IDLE:
             try:
-                def run_maintenance_and_flatten():
-                    try:
-                        flatten_downloads_root()
-                    except Exception:
-                        logging.exception("Flatten downloads failed")
-                    if not self._is_scanning:
-                        self._run_maintenance_scan()
-
-                threading.Thread(target=run_maintenance_and_flatten, daemon=True).start()
+                threading.Thread(target=self._safe_maintenance_and_flatten, daemon=True).start()
             except Exception:
                 logging.exception("Failed to start maintenance thread")
 
@@ -261,7 +270,9 @@ class StateManager:
 
         self.handover_active_file()
 
-        if not self._pending and self.notifier:
+        with self._lock:
+            is_empty = len(self._pending) == 0
+        if is_empty and self.notifier:
             self.notifier.queue_empty.emit()
 
     def undo_last_move(self) -> bool:
@@ -449,10 +460,11 @@ class StateManager:
 
         # ✅ quitar de pendientes
         if p:
-            self._pending.discard(p)
-            if p in self._queue_list:
-                self._queue_list.remove(p)
-            self._emit_queue_update()
+            with self._lock:
+                self._pending.discard(p)
+                if p in self._queue_list:
+                    self._queue_list.remove(p)
+                self._emit_queue_update()
 
         # finalizar
         self._active_file = None
@@ -488,7 +500,8 @@ class StateManager:
             if src and src.exists():
                 safe_move_to_conflicts(src)
 
-        self._pending.discard(src)
+        with self._lock:
+            self._pending.discard(src)
         self._active_file = None
         self._set_state(State.RESUME_WATCHER)
         self._set_state(State.IDLE)
@@ -573,8 +586,10 @@ class StateManager:
         finally:
             # Log esencial para saber que la función terminó su ciclo de vida y está limpiando variables
             logging.info(f"finalize_bg_move: {i_steps} - Ejecutando bloque finally"); i_steps += 1
-            self._pending.discard(src)
-            if not self._pending and self.notifier:
+            with self._lock:
+                self._pending.discard(src)
+                is_empty = len(self._pending) == 0
+            if is_empty and self.notifier:
                 self.notifier.queue_empty.emit()
 
     def maintenance_tick(self):
@@ -592,15 +607,7 @@ class StateManager:
             if self.current_state() != State.IDLE:
                 return
 
-            def run_maintenance_tick_background():
-                try:
-                    flatten_downloads_root()
-                except Exception:
-                    logging.exception("Flatten downloads failed during tick")
-                if not self._is_scanning:
-                    self._run_maintenance_scan()
-
-            threading.Thread(target=run_maintenance_tick_background, daemon=True).start()
+            threading.Thread(target=self._safe_maintenance_and_flatten, daemon=True).start()
 
         except Exception:
             logging.exception("Maintenance tick failed")
@@ -634,7 +641,10 @@ class StateManager:
         self._set_state(State.RESUME_WATCHER)
         self._set_state(State.IDLE)
         self._enqueue_allowed.set()
-        if not self._pending and self.notifier:
+
+        with self._lock:
+            is_empty = len(self._pending) == 0
+        if is_empty and self.notifier:
             self.notifier.queue_empty.emit()
 
     def discard_missing_active_file(self, reason: str = "") -> bool:

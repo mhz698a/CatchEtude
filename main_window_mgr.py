@@ -393,6 +393,7 @@ class MainWindow(QWidget):
 
     def _on_exit_clicked(self):
         if self._active_workers:
+            logging.warning("Exit blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
                 self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
@@ -410,6 +411,7 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event):
         if self._active_workers:
+            logging.warning("Close event blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
                 self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
@@ -601,6 +603,7 @@ class MainWindow(QWidget):
 
     def _restart_service(self):
         if self._active_workers:
+            logging.warning("Restart service blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
                 self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
@@ -834,6 +837,9 @@ class MainWindow(QWidget):
             }
             keep_name = sanitize_windows_filename(decision.get('new_name', self.filepath.stem))
             dest = resolve_duplicate(config.CONFLICTS / (keep_name + self.filepath.suffix))
+
+            # Delegate copy task asynchronously using _start_move_task to avoid blocking the main UI thread.
+            logging.info(f"Delegating Keep decision to async background worker for destination: {dest}")
             self._start_move_task(decision, dest)
             return
             
