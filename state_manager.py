@@ -32,24 +32,22 @@ class StateManager:
         self._history = HistoryManager()
         self._q = queue.Queue()
         self._active_file: Optional[Path] = None
-        self._lock = threading.Lock()
-        # notifier for UI (Qt signal) will be set externally by AppController
-        self.notifier: Optional['AppSignals'] = None
-        # thread to process queue
-        self._thread = threading.Thread(target=self._process_queue, daemon=True)
-        self._thread.start()
-        # new 1
-        self._last_requeue_log = None
-        # new 2
+        self._lock = threading.RLock()
         self._state_event = threading.Event()
         self._state_event.set()  # inicialmente libre
-        # new 3
         self._enqueue_allowed = threading.Event()
         self._enqueue_allowed.set()
 
         self._pending: set[Path] = set()
         self._queue_list: list[Path] = []
+        self._background_moves: set[Path] = set()
         self._is_scanning = False
+        self._last_requeue_log = None
+        # notifier for UI (Qt signal) will be set externally by AppController
+        self.notifier: Optional['AppSignals'] = None
+        # thread to process queue. Start it after every synchronization primitive exists.
+        self._thread = threading.Thread(target=self._process_queue, daemon=True)
+        self._thread.start()
 
 
     def current_state(self) -> State:
@@ -59,8 +57,7 @@ class StateManager:
     def has_pending_work(self) -> bool:
         """Returns True if there are files in the queue or being processed."""
         with self._lock:
-            # We check _q and _active_file. _pending might contain files being moved in background.
-            return not self._q.empty() or self._active_file is not None
+            return bool(self._pending or self._background_moves or self._active_file is not None or not self._q.empty())
 
     def _safe_maintenance_and_flatten(self):
         """Runs flatten_downloads_root and _run_maintenance_scan safely in a daemon thread."""
@@ -131,7 +128,7 @@ class StateManager:
 
                 self._emit_queue_update()
 
-                if not self._pending and self._active_file is None and self.notifier:
+                if not self._pending and not self._background_moves and self._active_file is None and self.notifier:
                     self.notifier.queue_empty.emit()
 
         return removed
@@ -144,7 +141,7 @@ class StateManager:
             return
 
         with self._lock:
-            if p in self._pending:
+            if p in self._pending or p in self._background_moves:
                 logging.debug(f"Already pending: {p}")
                 return
 
@@ -163,7 +160,7 @@ class StateManager:
                 if not p.exists():
                     logging.debug(f"Skipping missing file before enqueue: {p}")
                     continue
-                if p in self._pending:
+                if p in self._pending or p in self._background_moves:
                     logging.debug(f"Already pending: {p}")
                     continue
 
@@ -191,7 +188,7 @@ class StateManager:
                         if p in self._queue_list:
                             self._queue_list.remove(p)
                         self._emit_queue_update()
-                        if not self._pending and self._active_file is None and self.notifier:
+                        if not self._pending and not self._background_moves and self._active_file is None and self.notifier:
                             self.notifier.queue_empty.emit()
                     continue
 
@@ -255,6 +252,59 @@ class StateManager:
         self._set_state(State.IDLE)
         self._enqueue_allowed.set()
 
+
+    def start_background_move(self, src: Path) -> bool:
+        """
+        Hands the active file to a background move worker and returns to IDLE.
+
+        The file remains in _pending/_background_moves until the worker reports
+        success or failure, so queue_empty and idle checks cannot hide the UI
+        while disk I/O is still in flight.
+        """
+        if self.current_state() != State.USER_DECIDING:
+            logging.warning(f"start_background_move called in state {self.current_state()}")
+            return False
+
+        with self._lock:
+            if self._active_file != src:
+                logging.warning(f"start_background_move source mismatch: active={self._active_file}, src={src}")
+                return False
+
+            self._background_moves.add(src)
+            if src in self._queue_list:
+                self._queue_list.remove(src)
+            self._active_file = None
+            self._emit_queue_update()
+
+        self._set_state(State.IDLE)
+        self._enqueue_allowed.set()
+        return True
+
+    def fail_background_move(self, src: Path) -> None:
+        """Requeues a failed background move without dropping the next active file."""
+        with self._lock:
+            self._background_moves.discard(src)
+            if src.exists():
+                if src not in self._pending:
+                    self._pending.add(src)
+                if src in self._queue_list:
+                    self._queue_list.remove(src)
+                self._queue_list.insert(0, src)
+                with self._q.mutex:
+                    self._q.queue.appendleft(src)
+                logging.info(f"Requeued failed background move at queue front: {src}")
+            else:
+                self._pending.discard(src)
+                if src in self._queue_list:
+                    self._queue_list.remove(src)
+                logging.warning(f"Background move failed but source is missing, discarded: {src}")
+            self._emit_queue_update()
+            is_empty = len(self._pending) == 0 and len(self._background_moves) == 0 and self._active_file is None
+
+        self._state_event.set()
+        if is_empty and self.notifier:
+            self.notifier.queue_empty.emit()
+
     def discard_active_file(self):
         """
         Used when a file is deleted or explicitly removed without a move task.
@@ -268,10 +318,11 @@ class StateManager:
                     self._queue_list.remove(src)
             logging.info(f"Discarded active file: {src.name}")
 
-        self.handover_active_file()
+        if self._active_file is not None:
+            self.handover_active_file()
 
         with self._lock:
-            is_empty = len(self._pending) == 0
+            is_empty = len(self._pending) == 0 and len(self._background_moves) == 0
         if is_empty and self.notifier:
             self.notifier.queue_empty.emit()
 
@@ -467,7 +518,8 @@ class StateManager:
                 self._emit_queue_update()
 
         # finalizar
-        self._active_file = None
+        with self._lock:
+            self._active_file = None
         self._set_state(State.RESUME_WATCHER)
         self._set_state(State.IDLE)
         self._enqueue_allowed.set()
@@ -502,7 +554,10 @@ class StateManager:
 
         with self._lock:
             self._pending.discard(src)
-        self._active_file = None
+            if src in self._queue_list:
+                self._queue_list.remove(src)
+            self._active_file = None
+            self._emit_queue_update()
         self._set_state(State.RESUME_WATCHER)
         self._set_state(State.IDLE)
         return True
@@ -587,8 +642,9 @@ class StateManager:
             # Log esencial para saber que la función terminó su ciclo de vida y está limpiando variables
             logging.info(f"finalize_bg_move: {i_steps} - Ejecutando bloque finally"); i_steps += 1
             with self._lock:
+                self._background_moves.discard(src)
                 self._pending.discard(src)
-                is_empty = len(self._pending) == 0
+                is_empty = len(self._pending) == 0 and len(self._background_moves) == 0
             if is_empty and self.notifier:
                 self.notifier.queue_empty.emit()
 
@@ -643,7 +699,7 @@ class StateManager:
         self._enqueue_allowed.set()
 
         with self._lock:
-            is_empty = len(self._pending) == 0
+            is_empty = len(self._pending) == 0 and len(self._background_moves) == 0
         if is_empty and self.notifier:
             self.notifier.queue_empty.emit()
 
