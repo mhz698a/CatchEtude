@@ -86,6 +86,7 @@ STRINGS = {
         "status_post_action_none": "No se ejecutarán acciones posteriores.",
         "status_post_action_consumed": "La acción posterior fue consumida y volvió automáticamente a 'No hacer nada después'.",
         "status_bulk_open_file_disabled": "'Abrir archivo tras la acción' no está disponible para 'Mover todo a esta carpeta'. Se utilizará 'No hacer nada después'.",
+        # Safe close warning strings / Cadenas de advertencia para cierre seguro
         "msg_cannot_close_moving_title": "Operación en progreso",
         "msg_cannot_close_moving": "No se puede cerrar la aplicación mientras se realiza un movimiento de archivos. Por favor, espere a que termine.",
     },

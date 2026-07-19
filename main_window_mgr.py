@@ -837,6 +837,9 @@ class MainWindow(QWidget):
             }
             keep_name = sanitize_windows_filename(decision.get('new_name', self.filepath.stem))
             dest = resolve_duplicate(config.CONFLICTS / (keep_name + self.filepath.suffix))
+
+            # Delegate copy task asynchronously using _start_move_task to avoid blocking the main UI thread.
+            logging.info(f"Delegating Keep decision to async background worker for destination: {dest}")
             self._start_move_task(decision, dest)
             return
             
