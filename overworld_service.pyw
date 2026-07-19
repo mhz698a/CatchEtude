@@ -291,13 +291,17 @@ def main():
 
 
 if __name__ == "__main__":
-    logger = logging.getLogger("overworld.service")
-    logger.setLevel(logging.DEBUG)
+    # Configure the parent "overworld" logger for all overworld sub-components
+    overworld_logger = logging.getLogger("overworld")
+    overworld_logger.setLevel(logging.INFO)
 
     watchdog_handler = WatchdogHandler()
-    watchdog_handler.setFormatter(logging.Formatter("%(message)s"))
+    watchdog_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
+    overworld_logger.addHandler(watchdog_handler)
 
-    logger.addHandler(watchdog_handler)
+    # Define the global logger for this module's functions and classes
+    logger = logging.getLogger("overworld.service")
+
     main()
     
     
