@@ -57,7 +57,7 @@ class MainWindow(QWidget):
         self.signals = signals
         self.loc = LocalizationManager()
         
-        self.background_move_mgr = BackgroundMoveManager(self)
+        self.background_move_mgr = BackgroundMoveManager(self.state_manager, self)
         self.background_move_mgr.move_started.connect(self._on_background_move_started)
         self.background_move_mgr.move_progress.connect(self._on_background_move_progress)
         self.background_move_mgr.move_finished.connect(self._on_background_move_finished)
@@ -228,7 +228,7 @@ class MainWindow(QWidget):
         self.resize(self.base_width + self.queue_panel.width(), self.base_height)
 
     def _update_undo_button_tooltip(self):
-        last_move = self.state_manager._history.get_last_move()
+        last_move = self.background_move_mgr._history.get_last_move()
         if last_move:
             dest_path = Path(last_move["dst"])
             tooltip_text = f"{self.loc.get('btn_undo')}: {dest_path.name}"
@@ -401,7 +401,7 @@ class MainWindow(QWidget):
     def _on_undo_clicked(self):
         send_character_service_command("pause")
         try:
-            if not self.state_manager.undo_last_move():
+            if not self.background_move_mgr.undo_last_move():
                 QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
             else:
                 self._build_tray()
@@ -473,7 +473,7 @@ class MainWindow(QWidget):
         self.tray_menu.addAction(run_pendings_action)
         
         open_last_action = QAction(self.loc.get("tray_open_last"), self)        
-        last_move = self.state_manager._history.get_last_move()
+        last_move = self.background_move_mgr._history.get_last_move()
         open_last_action.setEnabled(bool(last_move))
         open_last_action.triggered.connect(self._open_last_chosen)
         self.tray_menu.addAction(open_last_action)
@@ -511,7 +511,7 @@ class MainWindow(QWidget):
         self.tray.show()
 
     def _open_last_chosen(self):
-        last_move = self.state_manager._history.get_last_move()
+        last_move = self.background_move_mgr._history.get_last_move()
         if not last_move:
             return
         dest_dir = Path(last_move["dst"]).parent
@@ -519,7 +519,7 @@ class MainWindow(QWidget):
             os.startfile(dest_dir)
             
     def _open_recent_file(self):
-        last_move = self.state_manager._history.get_last_move()
+        last_move = self.background_move_mgr._history.get_last_move()
         if not last_move:
             return
         recent_file = Path(last_move["dst"])
@@ -970,7 +970,7 @@ class MainWindow(QWidget):
 
         if ok:
             threading.Thread(
-                target=self.state_manager.finalize_background_move,
+                target=self.background_move_mgr.finalize_move,
                 args=(src, dst, src_meta, decision.get("post_action", "none")),
                 daemon=True
             ).start()

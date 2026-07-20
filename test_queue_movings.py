@@ -34,7 +34,7 @@ except ImportError:
     })
 
 try:
-    from PyQt6 import QtCore, QtWidgets, QtGui
+    from PyQt6 import QtCore, QtWidgets, QtGui, QtNetwork
     from PyQt6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QLabel, QProgressBar
     from PyQt6.QtCore import Qt
     HAS_PYQT = True
@@ -179,14 +179,28 @@ except ImportError:
             class ScrollMode:
                 ScrollPerPixel = 1
 
+    class MockQLocalSocket:
+        def __init__(self, parent=None): pass
+        def connectToServer(self, name): pass
+        def waitForConnected(self, ms): return False
+        def write(self, data): pass
+        def waitForBytesWritten(self, ms): pass
+        def disconnectFromServer(self): pass
+
     sys.modules['PyQt6'] = type('MockPyQt6', (), {
         'QtCore': MockQtCore,
         'QtWidgets': MockQtWidgets,
         'QtGui': type('MockQtGui', (), {}),
+        'QtNetwork': type('MockQtNetwork', (), {
+            'QLocalSocket': MockQLocalSocket
+        }),
     })
     sys.modules['PyQt6.QtCore'] = MockQtCore
     sys.modules['PyQt6.QtWidgets'] = MockQtWidgets
     sys.modules['PyQt6.QtGui'] = type('MockQtGui', (), {})
+    sys.modules['PyQt6.QtNetwork'] = type('MockQtNetwork', (), {
+        'QLocalSocket': MockQLocalSocket
+    })
 
     # Enable our imports to succeed
     QtCore = MockQtCore
@@ -283,7 +297,12 @@ class TestQueueMovings(unittest.TestCase):
 
     def test_background_move_mgr_prioritization(self):
         """Test enqueuing and prioritization in BackgroundMoveManager."""
-        mgr = BackgroundMoveManager()
+        # Create a mock StateManager for initialisation
+        class MockStateManager:
+            def __init__(self):
+                self._lock = ctypes.windll.kernel32
+
+        mgr = BackgroundMoveManager(MockStateManager())
 
         # Create temp files of different sizes
         p_light = Path("light_file.txt")
