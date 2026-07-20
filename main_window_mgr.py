@@ -495,6 +495,10 @@ class MainWindow(QWidget):
         logs_action.triggered.connect(self._show_logs)
         self.tray_menu.addAction(logs_action)
         
+        appdta_folder_action = QAction("Open Appdata Folder", self)
+        appdta_folder_action.triggered.connect(self._open_appdta_folder)
+        self.tray_menu.addAction(appdta_folder_action)
+        
         settings_action = QAction(self.loc.get("tray_settings"), self)
         settings_action.triggered.connect(self._open_settings_dialog)
         self.tray_menu.addAction(settings_action)
@@ -517,7 +521,10 @@ class MainWindow(QWidget):
         dest_dir = Path(last_move["dst"]).parent
         if dest_dir.exists():
             os.startfile(dest_dir)
-            
+    
+    def _open_appdta_folder(self):
+        os.startfile(config.APPDATA_DIR)
+    
     def _open_recent_file(self):
         last_move = self.background_move_mgr._history.get_last_move()
         if not last_move:
