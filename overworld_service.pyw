@@ -21,9 +21,13 @@ SERVICE_MUTEX_NAME = "CatchEtudeOverworldServiceMutex"
 WATCHDOG_SERVER_NAME = "CatchEtudeLogServer"
 ERROR_ALREADY_EXISTS = 183
 
+_last_thread_log = {}
+
 class WatchdogHandler(logging.Handler):
     def emit(self, record):
         try:
+            t_name = record.threadName
+            _last_thread_log[t_name] = self.format(record)
             socket = QtNetwork.QLocalSocket()
             socket.connectToServer(WATCHDOG_SERVER_NAME)
 
@@ -98,6 +102,11 @@ class OverworldService(QtCore.QObject):
         self._monitor_timer = QtCore.QTimer(self)
         self._monitor_timer.timeout.connect(self._check_main_process)
         self._monitor_timer.start(2000)
+
+        self.threads_timer = QtCore.QTimer(self)
+        self.threads_timer.setInterval(2000)
+        self.threads_timer.timeout.connect(self._send_threads_info)
+        self.threads_timer.start()
 
         app = QtCore.QCoreApplication.instance()
         if app is not None:
@@ -195,6 +204,41 @@ class OverworldService(QtCore.QObject):
         
         logger.info("Scanner started generation=%s", generation,)
         
+
+    def _send_threads_info(self):
+        import threading
+        threads_info = []
+        try:
+            size_bytes = threading.stack_size()
+            if size_bytes == 0:
+                size_bytes = 1024 * 1024
+            size_mb = size_bytes / (1024 * 1024)
+
+            for t in threading.enumerate():
+                t_name = t.name
+                last_log = _last_thread_log.get(t_name, "No logs yet")
+                threads_info.append({
+                    "process": "Overworld Service",
+                    "ident": t.ident or 0,
+                    "name": t_name,
+                    "memory": f"{size_mb:.2f} MB",
+                    "last_log": last_log
+                })
+        except Exception as e:
+            logger.debug(f"Error enumerating threads in Overworld Service: {e}")
+            return
+
+        socket = QtNetwork.QLocalSocket()
+        socket.connectToServer(WATCHDOG_SERVER_NAME)
+        if socket.waitForConnected(150):
+            payload = json.dumps({
+                "cmd": "threads",
+                "process": "Overworld Service",
+                "threads": threads_info
+            })
+            socket.write(payload.encode('utf-8'))
+            socket.waitForBytesWritten(150)
+            socket.disconnectFromServer()
 
     def _send_update(self, generation: int, name: str, line2: str, line3: str):
         if self._closing or generation != self._active_generation:

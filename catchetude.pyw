@@ -99,6 +99,10 @@ def main():
 
         # Create Main Window
         win = MainWindow(state_manager, signals)
+
+        # Start Thread Reporter for Main App
+        from log_mgr import start_thread_reporter
+        start_thread_reporter("Main App", win)
         
         # Maintenance timers
         maintenance_timer = QtCore.QTimer()
