@@ -995,7 +995,7 @@ class MainWindow(QWidget):
 
         if config.FORCE_GC:
             import gc
-            gc.collect()
+            QtCore.QTimer.singleShot(0, gc.collect)
 
         self._hide_if_idle()
 
