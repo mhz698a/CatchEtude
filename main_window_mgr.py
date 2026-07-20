@@ -767,6 +767,10 @@ class MainWindow(QWidget):
         logging.info("FD 16")
         if self._bulk_subfolder_name:
             self._move_to_subfolder(self._bulk_subfolder_name)
+        else:
+            # Prevent rapid clicks: disable inputs for configured delay time
+            self._set_ui_enabled_for_move(False)
+            QtCore.QTimer.singleShot(config.TIMER_GC, self, lambda: self._set_ui_enabled_for_move(True))
 
         logging.info("FD END")
 
@@ -979,6 +983,10 @@ class MainWindow(QWidget):
             if msg == "FILE_LOCKED":
                 self.show_status(self.loc.get("msg_file_locked"), 5000)
             self.state_manager.fail_background_move(src)
+
+        if config.FORCE_GC:
+            import gc
+            gc.collect()
 
         self._hide_if_idle()
 

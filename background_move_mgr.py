@@ -12,6 +12,7 @@ from file_worker_mgr import FileMoveWorker
 from history_mgr import HistoryManager
 from utils import resolve_duplicate
 from wctime import setctime_blocking
+import config
 
 class BackgroundMoveManager(QtCore.QObject):
     """
@@ -168,6 +169,10 @@ class BackgroundMoveManager(QtCore.QObject):
                     t.quit()
                     w.deleteLater()
                     t.deleteLater()
+
+                    if config.FORCE_GC:
+                        import gc
+                        gc.collect()
 
                     # Emit result signal
                     self.move_finished.emit(s, d, ok, msg, meta, dec)
