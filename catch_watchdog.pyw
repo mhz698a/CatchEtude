@@ -161,11 +161,10 @@ class WatchdogService(QtCore.QObject):
 
         try:
             # No cambiar a py sin permisos del autor
-            restart_script = str(Path(__file__).resolve().parent / "restart_app.pyw")
             main_script = str(Path(__file__).resolve().parent / "catchetude.pyw")
 
             subprocess.Popen(
-                [self._pythonw_executable(), restart_script, str(os.getpid()), main_script],
+                [self._pythonw_executable(), config.RESTART_APP_DIR, str(os.getpid()), main_script],
                 creationflags=0x00000010,
             )
             print("Restart helper launched.")

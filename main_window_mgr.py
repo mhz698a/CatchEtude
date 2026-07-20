@@ -631,14 +631,13 @@ class MainWindow(QWidget):
 
         pid = os.getpid()
         script_path = str(Path(sys.argv[0]).resolve())
-        restart_script = str(Path(__file__).resolve().parent / "restart_app.py")
         flags = 0x00000010 | 0x08000000
         try:
-            subprocess.Popen([sys.executable, restart_script, str(pid), script_path], creationflags=flags)
+            subprocess.Popen([sys.executable, config.RESTART_APP_DIR, str(pid), script_path], creationflags=flags)
         except OSError as e:
             logging.warning(f"Failed to restart with flags, trying without: {e}")
             try:
-                subprocess.Popen([sys.executable, restart_script, str(pid), script_path])
+                subprocess.Popen([sys.executable, config.RESTART_APP_DIR, str(pid), script_path])
             except Exception as e2:
                 logging.error(f"Failed to restart service even without flags: {e2}")
         except Exception as e:
@@ -971,7 +970,7 @@ class MainWindow(QWidget):
     def _on_background_move_finished(self, src: Path, dst: Path, ok: bool, msg: str, src_meta: dict, decision: dict):
         send_character_service_command("resume")
         self.queue_panel.queue_movings_widget.remove_movement(src)
-
+        
         if ok:
             threading.Thread(
                 target=self.background_move_mgr.finalize_move,
