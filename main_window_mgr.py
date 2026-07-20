@@ -770,7 +770,7 @@ class MainWindow(QWidget):
         else:
             # Prevent rapid clicks: disable inputs for configured delay time
             self._set_ui_enabled_for_move(False)
-            QtCore.QTimer.singleShot(config.TIMER_GC, self, lambda: self._set_ui_enabled_for_move(True))
+            QtCore.QTimer.singleShot(config.TIMER_GC, lambda: self._set_ui_enabled_for_move(True))
 
         logging.info("FD END")
 
