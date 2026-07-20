@@ -1,15 +1,14 @@
-import os, sys, time, shutil, logging, threading, queue
+import sys, time, logging, threading, queue
 from enum import Enum, auto
 from typing import Optional
 from pathlib import Path
 from collections import deque
 
-from utils import is_file_locked, is_temporary, resolve_duplicate, sanitize_windows_filename, flatten_downloads_root, setctime_blocking
+from utils import is_file_locked, is_temporary, flatten_downloads_root
 from fallback_utils import safe_move_to_conflicts
-from history_mgr import HistoryManager
+from log_mgr import safe_thread_logger
 
 import config
-from fallback_utils import compute_destination
 from app_signals_mgr import AppSignals
 
 
@@ -29,7 +28,6 @@ class State(Enum):
 class StateManager:
     def __init__(self):
         self._state = State.IDLE
-        self._history = HistoryManager()
         self._q = queue.Queue()
         self._active_file: Optional[Path] = None
         self._lock = threading.RLock()
@@ -59,6 +57,7 @@ class StateManager:
         with self._lock:
             return bool(self._pending or self._background_moves or self._active_file is not None or not self._q.empty())
 
+    @safe_thread_logger("StateManagerMaintenance")
     def _safe_maintenance_and_flatten(self):
         """Runs flatten_downloads_root and _run_maintenance_scan safely in a daemon thread."""
         try:
@@ -172,6 +171,7 @@ class StateManager:
             if added:
                 self._emit_queue_update()
 
+    @safe_thread_logger("StateManagerQueueProcessor")
     def _process_queue(self):
         while True:
             try:
@@ -316,290 +316,47 @@ class StateManager:
         if is_empty and self.notifier:
             self.notifier.queue_empty.emit()
 
-    def undo_last_move(self) -> bool:
+    def complete_background_move(self, src: Path) -> None:
         """
-        Undoes the last move operation.
+        Logical bookkeeping only. Removes a completed background move from the queue tracking.
         """
-        entry = self._history.pop_last()
-        if not entry:
-            return False
-
-        src = Path(entry["src"])
-        dst = Path(entry["dst"])
-        meta = entry["meta"]
-
-        if not dst.exists():
-            logging.error(f"Cannot undo: destination file missing: {dst}")
-            return False
-
-        try:
-            # Re-resolve duplicate if someone else took the name in Downloads (unlikely)
-            target = resolve_duplicate(src)
-            shutil.move(str(dst), str(target))
-
-            # Restore timestamps
-            os.utime(target, (meta["atime"], meta["mtime"]))
-            setctime_blocking(str(target), meta["ctime"])
-
-            logging.info(f"Undo successful: {dst} -> {target}")
-
-            # HOT-SWAP logic for Undo:
-            if self.current_state() == State.USER_DECIDING and self._active_file:
-                # Put current active file back to queue
-                current = self._active_file
-                logging.info(f"Undo Hot-Swap: putting {current.name} back to queue, showing {target.name}")
-                with self._lock:
-                    self._q.put(current)
-                    if current in self._queue_list:
-                        self._queue_list.remove(current)
-                    self._queue_list.insert(0, target)
-                    self._queue_list.insert(1, current)
-
-                    # Show restored file immediately
-                    self._active_file = target
-                    self._pending.add(target)
-                    self._emit_queue_update()
-
-                self._set_state(State.FILE_DETECTED)
-                if self.notifier:
-                    self.notifier.file_detected.emit(str(target))
-                return True
-
-            # Normal re-enqueue
-            self.enqueue_file(target)
-            return True
-        except Exception:
-            logging.exception(f"Undo failed for {dst}")
-            return False
-
-    def apply_decision(self, decision: dict):
-        """
-        Aplica la decisión del usuario sobre el archivo activo.
-
-        decision: dict con claves:
-            action: 'move' o 'keep'
-            movement_type: int (1..7)
-            year: int o None
-            sub: str o None
-            new_name: str (sin extensión)
-        """
-
-        if self.current_state() != State.USER_DECIDING:
-            logging.error("apply_decision llamado fuera de USER_DECIDING")
-            return False
-
-
-        p: Path = self._active_file
-
-        if p is None:
-            logging.warning("No hay archivo activo para decidir")
-            self._skip_missing_active_file("No hay archivo activo para decidir; se omite.")
-            return True
-
-        if not p.exists():
-            logging.warning(f"Archivo faltante omitido: {p}")
-            self._skip_missing_active_file(f"Archivo faltante omitido: {p.name}")
-            self.notifier.warning_message.emit(
-                f"Archivo no encontrado, omitido: {p.name}"
-            )
-            return True
-
-        self._set_state(State.APPLY_DECISION)
-        try:
-            # Obtener timestamp de creación según plataforma
-            stat = p.stat()
-            if sys.platform == "win32":
-                ctime = stat.st_ctime
-            elif hasattr(stat, "st_birthtime"):
-                ctime = stat.st_birthtime
-            else:
-                ctime = stat.st_ctime # Linux: no hay creación confiable, usar st_ctime (cambio metadatos)
-
-            if decision['action'] == 'keep':
-                # mover a conflictos
-                keep_name = sanitize_windows_filename(decision.get('new_name', p.stem))
-                dest = resolve_duplicate(config.CONFLICTS / (keep_name + p.suffix))
-                shutil.copy2(p, dest)  # preserva atime y mtime
-                setctime_blocking(str(dest), ctime)  # preservar ctime/birthtime
-
-                p.unlink(missing_ok=True)
-                logging.info(f"Archivo 'keep' movido a conflictos: {dest}")
-                self._history.record_move(
-                    p,
-                    dest,
-                    {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime}
-                )
-
-                post_action = decision.get("post_action", "none")
-                if post_action in ("open_file", "open_folder") and self.notifier:
-                    self.notifier.post_action_ready.emit(str(dest), post_action)
-
-            elif decision['action'] == 'move':
-                # calcular destino final
-                dest = compute_destination(decision, p)
-                dest = resolve_duplicate(dest)
-                shutil.copy2(p, dest)
-                setctime_blocking(str(dest), ctime)
-
-                if dest.exists():
-                    p.unlink(missing_ok=True)
-                    logging.info(f"Archivo movido a: {dest}")
-                    self._history.record_move(
-                        p,
-                        dest,
-                        {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime}
-                    )
-
-                    post_action = decision.get("post_action", "none")
-                    if post_action in ("open_file", "open_folder") and self.notifier:
-                        self.notifier.post_action_ready.emit(str(dest), post_action)
-                else:
-                    logging.error("Integridad fallida al mover; enviando a conflictos")
-                    dest.unlink(missing_ok=True)
-                    conflict = resolve_duplicate(config.CONFLICTS / p.name)
-                    shutil.copy2(p, conflict)
-                    setctime_blocking(str(conflict), ctime)
-
-            elif decision['action'] == 'move_custom':
-                dest_dir = Path(decision['custom_dir'])
-                dest_dir.mkdir(parents=True, exist_ok=True)
-
-                newname = sanitize_windows_filename(decision.get('new_name', p.stem))
-                dest = resolve_duplicate(dest_dir / (newname + p.suffix))
-
-                shutil.copy2(p, dest)
-                setctime_blocking(str(dest), ctime)
-
-                if dest.exists():
-                    p.unlink(missing_ok=True)
-                    logging.info(f"Archivo movido (custom) a: {dest}")
-                    self._history.record_move(
-                        p,
-                        dest,
-                        {"atime": stat.st_atime, "mtime": stat.st_mtime, "ctime": ctime}
-                    )
-
-                    post_action = decision.get("post_action", "none")
-                    if post_action in ("open_file", "open_folder") and self.notifier:
-                        self.notifier.post_action_ready.emit(str(dest), post_action)
-                else:
-                    logging.error("Integridad fallida en move_custom")
-                    dest.unlink(missing_ok=True)
-                    raise RuntimeError("Integrity check failed")
-
-            else:
-                logging.error(f"Acción desconocida en decisión: {decision['action']}")
-
-        except Exception:
-            logging.exception("Error durante apply_decision; intentando mover a conflictos")
-            try:
-                conflict = resolve_duplicate(config.CONFLICTS / p.name)
-                shutil.copy2(p, conflict)
-                setctime_blocking(str(conflict), ctime)
-            except Exception:
-                logging.exception("Fallo al mover archivo a conflictos como fallback")
-
-        # ✅ quitar de pendientes
-        if p:
-            with self._lock:
-                self._pending.discard(p)
-                if p in self._queue_list:
-                    self._queue_list.remove(p)
-                self._emit_queue_update()
-
-        # finalizar
         with self._lock:
-            self._active_file = None
-        self._set_state(State.RESUME_WATCHER)
-        self._set_state(State.IDLE)
-        self._enqueue_allowed.set()
-        return True
-
-    def finalize_copied_file(self, decision: dict, copied_path: Path, src_meta: dict):
-        if self.current_state() != State.USER_DECIDING:
-            logging.error("finalize_copied_file fuera de USER_DECIDING")
-            return False
-
-        self._set_state(State.APPLY_DECISION)
-        src = self._active_file
-
-        try:
-            # restaurar timestamps primero
-            os.utime(
-                copied_path,
-                (src_meta["atime"], src_meta["mtime"])
-            )
-            setctime_blocking(str(copied_path), src_meta["ctime"])
-
-            # borrar origen si aún existe
-            if src and src.exists():
-                src.unlink(missing_ok=True)
-
-            logging.info(f"Archivo movido definitivamente a {copied_path}")
-
-        except Exception:
-            logging.exception("Fallo en finalize_copied_file")
-            if src and src.exists():
-                safe_move_to_conflicts(src)
-
-        with self._lock:
+            self._background_moves.discard(src)
             self._pending.discard(src)
             if src in self._queue_list:
                 self._queue_list.remove(src)
-            self._active_file = None
             self._emit_queue_update()
-        self._set_state(State.RESUME_WATCHER)
-        self._set_state(State.IDLE)
-        return True
+            is_empty = (
+                len(self._pending) == 0
+                and len(self._background_moves) == 0
+                and self._active_file is None
+            )
+        if is_empty and self.notifier:
+            self.notifier.queue_empty.emit()
 
-    def finalize_background_move(self, src: Path, dst: Path, src_meta: dict, post_action: str = "none"):
+    def register_undone_file(self, target: Path) -> None:
         """
-        Finalizes StateManager bookkeeping after FileMoveWorker completes the move.
-
-        FileMoveWorker is the only component that mutates the filesystem for the
-        move itself; StateManager only records history, updates queue state and
-        triggers post-actions after the source has already been removed.
+        Logical bookkeeping only. Handles queue updating (including hot-swap) for an undone file.
         """
-        cleanup_pending = True
-        try:
-            if not dst.exists():
-                logging.error(f"Move worker reported success but destination is missing: {dst}")
-                cleanup_pending = False
-                self.fail_background_move(src)
-                return
+        if self.current_state() == State.USER_DECIDING and self._active_file:
+            current = self._active_file
+            logging.info(f"Undo Hot-Swap: putting {current.name} back to queue, showing {target.name}")
+            with self._lock:
+                self._q.put(current)
+                if current in self._queue_list:
+                    self._queue_list.remove(current)
+                self._queue_list.insert(0, target)
+                self._queue_list.insert(1, current)
 
-            from utils import update_folder_mtime
+                self._active_file = target
+                self._pending.add(target)
+                self._emit_queue_update()
 
-            update_folder_mtime(dst.parent)
-            try:
-                update_folder_mtime(src.parent)
-            except Exception as e:
-                logging.warning(f"Could not update mtime for origin folder: {e}")
-
-            logging.info(f"Background move completed by worker: {src} -> {dst}")
-            self._history.record_move(src, dst, src_meta)
-
-            if post_action in ("open_file", "open_folder") and self.notifier:
-                self.notifier.post_action_ready.emit(str(dst), post_action)
-
-        except Exception:
-            logging.exception("Error in finalize_background_move")
-
-        finally:
-            if cleanup_pending:
-                with self._lock:
-                    self._background_moves.discard(src)
-                    self._pending.discard(src)
-                    if src in self._queue_list:
-                        self._queue_list.remove(src)
-                    self._emit_queue_update()
-                    is_empty = (
-                        len(self._pending) == 0
-                        and len(self._background_moves) == 0
-                        and self._active_file is None
-                    )
-                if is_empty and self.notifier:
-                    self.notifier.queue_empty.emit()
+            self._set_state(State.FILE_DETECTED)
+            if self.notifier:
+                self.notifier.file_detected.emit(str(target))
+        else:
+            self.enqueue_file(target)
 
     def maintenance_tick(self):
         """
@@ -644,7 +401,6 @@ class StateManager:
                 self._emit_queue_update()
 
         if self.notifier and reason:
-            # después de agregar la señal warning_message
             self.notifier.warning_message.emit(reason)
 
         self._set_state(State.RESUME_WATCHER)

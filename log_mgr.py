@@ -65,6 +65,24 @@ def log_char(message: str):
     """Convenience function to log character-related activities."""
     logging.log(CHARS_LEVEL, message)
     
+import functools
+
+def safe_thread_logger(process_name: str):
+    """
+    Decorator for threads/functions to catch exceptions and log detailed tracebacks safely.
+    Ensures background exceptions are sent to the central log server.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                tb = traceback.format_exc()
+                logging.error(f"[{process_name}] Critical error in background thread/task: {e}\n{tb}")
+        return wrapper
+    return decorator
+
 def log_overworld(message: str):
     logging.log(OVERWORLD_LEVEL, message)
 

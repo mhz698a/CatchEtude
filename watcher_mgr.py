@@ -12,6 +12,7 @@ from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedE
 
 import config
 from utils import is_temporary, is_file_locked
+from log_mgr import safe_thread_logger
 
 
 class WatcherHandler(FileSystemEventHandler):
@@ -19,7 +20,7 @@ class WatcherHandler(FileSystemEventHandler):
     Event handler for watchdog that filters and processes file system events.
     Manejador de eventos para watchdog que filtra y procesa eventos del sistema de archivos.
     """
-    def __init__(self, enqueue_callback): 
+    def __init__(self, enqueue_callback):
         super().__init__()
         self.enqueue = enqueue_callback
         self._monitoring = set()
@@ -44,10 +45,10 @@ class WatcherHandler(FileSystemEventHandler):
             # Check if it's in the monitored folder
             if p.parent != config.DOWNLOADS:
                 return
-            
+
             # Filter temporary files
             if is_temporary(p):
-                logging.debug(f"Ignored temporary file: {p.name}")
+                logging.debug(f"[Watcher] Ignored temporary file: {p.name}")
                 return
 
             with self._lock:
@@ -59,45 +60,46 @@ class WatcherHandler(FileSystemEventHandler):
             threading.Thread(target=self._monitor_file, args=(p,), daemon=True).start()
 
         except Exception:
-            logging.exception("Error in WatcherHandler._handle")
+            logging.exception("[Watcher] Error in WatcherHandler._handle")
 
+    @safe_thread_logger("WatcherMonitor")
     def _monitor_file(self, p: Path):
         """Monitors a file until its size and mtime are stable and it's no longer locked."""
         try:
-            logging.debug(f"Starting monitoring for: {p.name}")
-            
+            logging.info(f"[Watcher] Detected candidate file: {p.name}. Monitoring stability...")
+
             while True:
                 if not p.exists():
-                    logging.debug(f"File disappeared during monitoring: {p.name}")
+                    logging.info(f"[Watcher] File disappeared during monitoring: {p.name}")
                     break
 
                 try:
                     stat1 = p.stat()
                     size1 = stat1.st_size
                     mtime1 = stat1.st_mtime
-                    
+
                     time.sleep(1) # Wait 1 second
-                    
+
                     if not p.exists(): break
                     stat2 = p.stat()
                     size2 = stat2.st_size
                     mtime2 = stat2.st_mtime
-                    
+
                     if size1 == size2 and mtime1 == mtime2:
                         # File is stable, now check if locked
                         if not is_file_locked(p):
-                            logging.info(f"File detected and stable: {p.name}")
+                            logging.info(f"[Watcher] File is stable and unlocked: '{p.name}' (Size: {size1} bytes)")
                             self.enqueue(p)
                             break
                         else:
-                            logging.debug(f"File stable but locked, retrying: {p.name}")
+                            logging.info(f"[Watcher] File is stable but currently locked by another process, retrying: {p.name}")
                     else:
-                        logging.debug(f"File still changing: {p.name} (size: {size1}->{size2}, mtime: {mtime1}->{mtime2})")
-                except (FileNotFoundError, PermissionError):
-                    logging.debug(f"Access error during monitoring (vanishing?): {p.name}")
+                        logging.info(f"[Watcher] File is still writing: {p.name} (size: {size1}->{size2}, mtime: {mtime1}->{mtime2})")
+                except (FileNotFoundError, PermissionError) as e:
+                    logging.warning(f"[Watcher] Access error during monitoring (vanishing?): {p.name} - {e}")
                     break
         except Exception:
-            logging.exception(f"Error monitoring file: {p}")
+            logging.exception(f"[Watcher] Error monitoring file: {p}")
         finally:
             with self._lock:
                 self._monitoring.discard(p)
@@ -113,27 +115,28 @@ class WatcherThread(threading.Thread):
         self.enqueue_callback = enqueue_callback
         self.observer = Observer()
 
+    @safe_thread_logger("WatcherObserver")
     def run(self):
         """Starts the observer and waits."""
         try:
             handler = WatcherHandler(self.enqueue_callback)
             self.observer.schedule(handler, str(config.DOWNLOADS), recursive=False)
             self.observer.start()
-            logging.info(f"Watcher started on: {config.DOWNLOADS}")
-            
+            logging.info(f"[Watcher] Observer thread successfully started on: {config.DOWNLOADS}")
+
             # Keep the thread alive
             while self.observer.is_alive():
                 self.observer.join(1)
         except Exception:
-            logging.exception("Error in WatcherThread.run")
+            logging.exception("[Watcher] Error in WatcherThread.run")
         finally:
             self.stop()
-    
+
     def stop(self):
         """Stops the observer safely."""
         try:
             self.observer.stop()
             self.observer.join()
-            logging.info("Watcher stopped")
+            logging.info("[Watcher] Observer thread stopped safely")
         except Exception as e:
-            print("Error to stop the observer")
+            print("[Watcher] Error to stop the observer")

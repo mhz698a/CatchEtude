@@ -43,6 +43,7 @@ from queue_panel_mgr import QueuePanel
 from service_mgr import send_character_service_command
 from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
+from background_move_mgr import BackgroundMoveManager
 
 
 class MainWindow(QWidget):
@@ -56,7 +57,10 @@ class MainWindow(QWidget):
         self.signals = signals
         self.loc = LocalizationManager()
         
-        self._active_workers = set()
+        self.background_move_mgr = BackgroundMoveManager(self.state_manager, self)
+        self.background_move_mgr.move_started.connect(self._on_background_move_started)
+        self.background_move_mgr.move_progress.connect(self._on_background_move_progress)
+        self.background_move_mgr.move_finished.connect(self._on_background_move_finished)
         
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
@@ -215,12 +219,24 @@ class MainWindow(QWidget):
         """)
         
         self.retranslate_ui()
+        self._update_undo_button_tooltip()
         
         self._pending_scheduler = PendingScheduler(self._run_pendings, self)
         self._apply_pending_schedule_state()
         
         # Initial size adjustment
         self.resize(self.base_width + self.queue_panel.width(), self.base_height)
+
+    def _update_undo_button_tooltip(self):
+        last_move = self.background_move_mgr._history.get_last_move()
+        if last_move:
+            dest_path = Path(last_move["dst"])
+            tooltip_text = f"{self.loc.get('btn_undo')}: {dest_path.name}"
+            self.btn_undo.setToolTip(tooltip_text)
+            self.btn_undo.setEnabled(True)
+        else:
+            self.btn_undo.setToolTip("")
+            self.btn_undo.setEnabled(False)
 
     def show_status(self, text: str, ms: int = 5000):
         self.status_bar.showMessage(text, ms)
@@ -352,6 +368,7 @@ class MainWindow(QWidget):
         self.queue_panel.retranslate_ui()
         if hasattr(self, '_pending_dialog'):
             self._pending_dialog.retranslate_ui()
+        self._update_undo_button_tooltip()
 
     def _on_lang_toggle(self):
         self.loc.toggle_lang()
@@ -384,15 +401,16 @@ class MainWindow(QWidget):
     def _on_undo_clicked(self):
         send_character_service_command("pause")
         try:
-            if not self.state_manager.undo_last_move():
+            if not self.background_move_mgr.undo_last_move():
                 QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
             else:
                 self._build_tray()
+                self._update_undo_button_tooltip()
         finally:
             send_character_service_command("resume")
 
     def _on_exit_clicked(self):
-        if self._active_workers:
+        if not self.background_move_mgr.is_idle():
             logging.warning("Exit blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
@@ -410,7 +428,7 @@ class MainWindow(QWidget):
             QApplication.quit()
 
     def closeEvent(self, event):
-        if self._active_workers:
+        if not self.background_move_mgr.is_idle():
             logging.warning("Close event blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
@@ -455,7 +473,7 @@ class MainWindow(QWidget):
         self.tray_menu.addAction(run_pendings_action)
         
         open_last_action = QAction(self.loc.get("tray_open_last"), self)        
-        last_move = self.state_manager._history.get_last_move()
+        last_move = self.background_move_mgr._history.get_last_move()
         open_last_action.setEnabled(bool(last_move))
         open_last_action.triggered.connect(self._open_last_chosen)
         self.tray_menu.addAction(open_last_action)
@@ -493,7 +511,7 @@ class MainWindow(QWidget):
         self.tray.show()
 
     def _open_last_chosen(self):
-        last_move = self.state_manager._history.get_last_move()
+        last_move = self.background_move_mgr._history.get_last_move()
         if not last_move:
             return
         dest_dir = Path(last_move["dst"]).parent
@@ -501,7 +519,7 @@ class MainWindow(QWidget):
             os.startfile(dest_dir)
             
     def _open_recent_file(self):
-        last_move = self.state_manager._history.get_last_move()
+        last_move = self.background_move_mgr._history.get_last_move()
         if not last_move:
             return
         recent_file = Path(last_move["dst"])
@@ -602,7 +620,7 @@ class MainWindow(QWidget):
         self.activateWindow()
 
     def _restart_service(self):
-        if self._active_workers:
+        if not self.background_move_mgr.is_idle():
             logging.warning("Restart service blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
@@ -681,7 +699,10 @@ class MainWindow(QWidget):
         self.action_panel.btn_custom.setEnabled(enabled)
         self.action_panel.btn_move.setEnabled(enabled)
         self.btn_delete_header.setEnabled(enabled)
-        self.btn_undo.setEnabled(enabled)
+        if not enabled:
+            self.btn_undo.setEnabled(False)
+        else:
+            self._update_undo_button_tooltip()
         self.selection_panel.set_subfolders_enabled(enabled)
 
     @QtCore.pyqtSlot(str)
@@ -709,7 +730,7 @@ class MainWindow(QWidget):
         self.btn_delete_header.setEnabled(True)
 
         logging.info("FD 6")
-        self.btn_undo.setEnabled(True)
+        self._update_undo_button_tooltip()
 
         logging.info("FD 7")
         self.filepath = p
@@ -746,6 +767,10 @@ class MainWindow(QWidget):
         logging.info("FD 16")
         if self._bulk_subfolder_name:
             self._move_to_subfolder(self._bulk_subfolder_name)
+        else:
+            # Prevent rapid clicks: disable inputs for configured delay time
+            self._set_ui_enabled_for_move(False)
+            QtCore.QTimer.singleShot(config.TIMER_GC, lambda: self._set_ui_enabled_for_move(True))
 
         logging.info("FD END")
 
@@ -797,6 +822,7 @@ class MainWindow(QWidget):
     @QtCore.pyqtSlot(list, str)
     def _on_queue_updated(self, queue_list: list[Path], active_path_str: str):
         self.queue_panel.update_queue(queue_list, active_path_str)
+        self._update_undo_button_tooltip()
 
     def _update_character_buttons(self):
         t = self.selection_panel.get_selection()['type']
@@ -934,17 +960,43 @@ class MainWindow(QWidget):
             return
         
 
+    def _on_background_move_started(self, src: Path, dst: Path):
+        self.queue_panel.queue_movings_widget.add_movement(src, dst)
+
+    def _on_background_move_progress(self, src: Path, val: int):
+        self.queue_panel.queue_movings_widget.update_progress(src, val)
+        if self.filepath == src:
+            self.action_panel.set_progress(val)
+
+    def _on_background_move_finished(self, src: Path, dst: Path, ok: bool, msg: str, src_meta: dict, decision: dict):
+        send_character_service_command("resume")
+        self.queue_panel.queue_movings_widget.remove_movement(src)
+
+        if ok:
+            threading.Thread(
+                target=self.background_move_mgr.finalize_move,
+                args=(src, dst, src_meta, decision.get("post_action", "none")),
+                daemon=True
+            ).start()
+            self._build_tray()
+        else:
+            if msg == "FILE_LOCKED":
+                self.show_status(self.loc.get("msg_file_locked"), 5000)
+            self.state_manager.fail_background_move(src)
+
+        if config.FORCE_GC:
+            import gc
+            gc.collect()
+
+        self._hide_if_idle()
+
     def _start_move_task(self, decision: dict, final_dest: Path):
-        self._set_ui_enabled_for_move(False)
-        
         src = self.filepath
         if not src: 
-            self._set_ui_enabled_for_move(True)
             return
         
         if is_file_locked(src):
             self.show_status(self.loc.get("msg_file_locked"), 5000)
-            self._set_ui_enabled_for_move(True)
             return
         
         send_character_service_command("pause")
@@ -960,57 +1012,26 @@ class MainWindow(QWidget):
         except Exception:
             logging.exception(f"Error in _start_move_task for {src}")
             send_character_service_command("resume")
-            self._set_ui_enabled_for_move(True)
             self.state_manager.discard_active_file()
-            self.action_panel.set_progress(0)
+            self.action_panel.clear()
             return
-        
-        worker_thread = QtCore.QThread(self)
-        worker = FileMoveWorker(src, final_dest)
-        worker.moveToThread(worker_thread)
-        self._active_workers.add((worker, worker_thread))
-        worker_thread.started.connect(worker.run)
-        worker.progress.connect(lambda val: self.action_panel.set_progress(val) if self.filepath == src else None)
 
-        def on_finished(ok: bool, copied_path: Path, msg: str):
-            send_character_service_command("resume")
-            if ok:
-                threading.Thread(
-                    target=self.state_manager.finalize_background_move,
-                    args=(src, copied_path, src_meta, decision.get("post_action", "none")),
-                    daemon=True
-                ).start()
-                self._build_tray()
-            else:
-                if msg == "FILE_LOCKED":
-                    self.show_status(self.loc.get("msg_file_locked"), 5000)
-                self.state_manager.fail_background_move(src)
-                if self.filepath == src:
-                    self._set_ui_enabled_for_move(True)
-                
-            worker_thread.quit()
-
-        worker.finished.connect(on_finished)
-        worker.finished.connect(worker.deleteLater)
-        worker_thread.finished.connect(worker_thread.deleteLater)
-        worker_thread.finished.connect(lambda: (self._active_workers.discard((worker, worker_thread)), self._hide_if_idle()))
+        # Enqueue the move task inside our new BackgroundMoveManager
+        self.background_move_mgr.enqueue_move(src, final_dest, decision, src_meta)
 
         if not self.state_manager.start_background_move(src):
-            self._active_workers.discard((worker, worker_thread))
-            worker.deleteLater()
-            worker_thread.deleteLater()
-            self._set_ui_enabled_for_move(True)
+            logging.warning(f"StateManager failed to start background move for {src}")
             return
 
-        worker_thread.start()
-        self.action_panel.set_progress(0)
+        self.filepath = None
+        self.action_panel.clear()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.action_panel.load_preview()
 
     def _hide_if_idle(self):
-        if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work():
+        if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work() and self.background_move_mgr.is_idle():
             self._flush_post_actions()
             self._bulk_subfolder_name = None
             self.action_panel.clear()

@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt
 from localization import LocalizationManager
 from ui_utils_mgr import QueueDelegate
 from character_mgr import CharacterListModel
+from queue_movings_widget import QueueMovingsWidget
 
 class QueuePanel(QWidget):
     """
@@ -41,6 +42,15 @@ class QueuePanel(QWidget):
         self.queue_list_widget.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
         layout.addWidget(self.queue_list_widget)
 
+        # Pending Movements
+        self.lbl_movings = QLabel()
+        self.lbl_movings.setText(self.loc.get("lbl_queue_movings"))
+        layout.addWidget(self.lbl_movings)
+
+        self.queue_movings_widget = QueueMovingsWidget(self)
+        self.queue_movings_widget.setMaximumHeight(200)
+        layout.addWidget(self.queue_movings_widget)
+
         # Character Model
         self.char_model = CharacterListModel()
         self.char_model.modelReset.connect(self.characters_updated.emit)
@@ -48,6 +58,8 @@ class QueuePanel(QWidget):
 
     def retranslate_ui(self):
         self._refresh_queue_label()
+        if hasattr(self, 'lbl_movings'):
+            self.lbl_movings.setText(self.loc.get("lbl_queue_movings"))
 
     def set_hide_secure(self, enabled: bool):
         self._hide_secure = enabled
