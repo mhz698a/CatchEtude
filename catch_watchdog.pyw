@@ -16,8 +16,14 @@ import subprocess
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtNetwork
 from PyQt6.QtGui import QIcon
-from log_viewer import LogViewerWindow
+from log_viewer import LogViewerWindow, _watchdog_thread_logs
 import config
+
+def log_watchdog(message: str):
+    import threading
+    t_name = threading.current_thread().name
+    _watchdog_thread_logs[t_name] = message
+    print(message)
 
 WATCHDOG_NAME = "CatchEtudeWatchdog"
 LOG_SERVER_NAME = "CatchEtudeLogServer"
@@ -34,7 +40,7 @@ class WatchdogService(QtCore.QObject):
         self.server.newConnection.connect(self._on_new_connection)
         QtNetwork.QLocalServer.removeServer(LOG_SERVER_NAME)
         if not self.server.listen(LOG_SERVER_NAME):
-            print(f"Server could not start: {self.server.errorString()}")
+            log_watchdog(f"Server could not start: {self.server.errorString()}")
         
         self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
         self.monitor_thread.start()
@@ -61,12 +67,16 @@ class WatchdogService(QtCore.QObject):
                     level = "OVERWORLD"
                 content = msg.get("message")
                 self.log_viewer.add_log(level, content)
+            elif cmd == "threads":
+                process_name = msg.get("process")
+                threads_list = msg.get("threads", [])
+                self.log_viewer.update_process_threads(process_name, threads_list)
             elif cmd == "show":
                 self.log_viewer.show()
                 self.log_viewer.raise_()
                 self.log_viewer.activateWindow()
             elif cmd == "quit":
-                print("Watchdog Service: Quit request received. Sending OK response.")
+                log_watchdog("Watchdog Service: Quit request received. Sending OK response.")
                 # 1. Responder al cliente que todo está listo antes de apagar
                 socket.write(json.dumps({"status": "ok"}).encode('utf-8'))
                 socket.flush()
@@ -79,11 +89,11 @@ class WatchdogService(QtCore.QObject):
                 # Deprecated but kept for compatibility during transition
                 pass
         except Exception as e:
-            print(f"Error reading socket: {e}")
+            log_watchdog(f"Error reading socket: {e}")
         socket.disconnectFromServer()
 
     def _monitor_process(self):
-        print(f"Monitoring main app via Mutex: {config.APP_NAME}")
+        log_watchdog(f"Monitoring main app via Mutex: {config.APP_NAME}")
         
         while True:
             try:
@@ -103,7 +113,7 @@ class WatchdogService(QtCore.QObject):
                 break
             
         # Exit Service
-        print("Main process terminated (Mutex signal).")
+        log_watchdog("Main process terminated (Mutex signal).")
         self._handle_termination()
         self._launch_restart()
             

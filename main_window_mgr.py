@@ -703,7 +703,10 @@ class MainWindow(QWidget):
 
     def _set_ui_enabled_for_move(self, enabled: bool):
         self.action_panel.btn_custom.setEnabled(enabled)
-        self.action_panel.btn_move.setEnabled(enabled)
+        if enabled:
+            self._sync_apply_button()
+        else:
+            self.action_panel.btn_move.setEnabled(False)
         self.btn_delete_header.setEnabled(enabled)
         if not enabled:
             self.btn_undo.setEnabled(False)
@@ -800,7 +803,7 @@ class MainWindow(QWidget):
     def _sync_apply_button(self):
         t = self.selection_panel.get_selection()["type"]
         keep = self.action_panel.is_keep_downloads()
-        self.action_panel.set_apply_enabled(keep or t not in (2, 3, 4, 6, 8))
+        self.action_panel.set_apply_enabled(keep or t == 7)
 
     def _on_keep_changed(self, checked: bool):
         self.selection_panel.set_keep_mode(checked)
@@ -992,7 +995,7 @@ class MainWindow(QWidget):
 
         if config.FORCE_GC:
             import gc
-            gc.collect()
+            QtCore.QTimer.singleShot(0, gc.collect)
 
         self._hide_if_idle()
 

@@ -172,7 +172,7 @@ class BackgroundMoveManager(QtCore.QObject):
 
                     if config.FORCE_GC:
                         import gc
-                        gc.collect()
+                        QtCore.QTimer.singleShot(0, gc.collect)
 
                     # Emit result signal
                     self.move_finished.emit(s, d, ok, msg, meta, dec)

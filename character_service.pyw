@@ -24,6 +24,8 @@ from character_cache_mgr import CharacterCacheManager
 
 SERVICE_MUTEX_NAME = "CatchEtudeCharacterServiceMutex"
 SERVER_NAME = "CatchEtudeCharacterServer"
+
+_last_thread_log = {}
 WATCHDOG_SERVER_NAME = "CatchEtudeLogServer"
 ERROR_ALREADY_EXISTS = 183
 
@@ -50,6 +52,11 @@ class CharacterService(QtCore.QObject):
         self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
         self.monitor_thread.start()
 
+        self.threads_timer = QtCore.QTimer(self)
+        self.threads_timer.setInterval(2000)
+        self.threads_timer.timeout.connect(self._send_threads_info)
+        self.threads_timer.start()
+
         self._closing = False
         app = QtCore.QCoreApplication.instance()
         if app is not None:
@@ -67,6 +74,8 @@ class CharacterService(QtCore.QObject):
             self._settings_watcher.addPath(str(config.SETTINGS_PATH))
 
     def _log_to_watchdog(self, level, message):
+        t_name = threading.current_thread().name
+        _last_thread_log[t_name] = message
         socket = QtNetwork.QLocalSocket()
         socket.connectToServer(WATCHDOG_SERVER_NAME)
         if socket.waitForConnected(100):
@@ -77,6 +86,40 @@ class CharacterService(QtCore.QObject):
         socket.disconnectFromServer()
         socket.disconnected.connect(socket.deleteLater)
         
+    def _send_threads_info(self):
+        threads_info = []
+        try:
+            size_bytes = threading.stack_size()
+            if size_bytes == 0:
+                size_bytes = 1024 * 1024
+            size_mb = size_bytes / (1024 * 1024)
+
+            for t in threading.enumerate():
+                t_name = t.name
+                last_log = _last_thread_log.get(t_name, "No logs yet")
+                threads_info.append({
+                    "process": "Character Service",
+                    "ident": t.ident or 0,
+                    "name": t_name,
+                    "memory": f"{size_mb:.2f} MB",
+                    "last_log": last_log
+                })
+        except Exception as e:
+            self._log_error(f"Error enumerating threads in Character Service: {e}")
+            return
+
+        socket = QtNetwork.QLocalSocket()
+        socket.connectToServer(WATCHDOG_SERVER_NAME)
+        if socket.waitForConnected(150):
+            payload = json.dumps({
+                "cmd": "threads",
+                "process": "Character Service",
+                "threads": threads_info
+            })
+            socket.write(payload.encode('utf-8'))
+            socket.waitForBytesWritten(150)
+            socket.disconnectFromServer()
+
     def _send_update(self, msg_dict):
         """Sends an update back to the main app via a new connection."""
         # Main app's CharacterListModel will listen on a specific name or we can reuse a name.

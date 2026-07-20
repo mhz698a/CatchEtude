@@ -7,6 +7,7 @@ Módulo Log Manager: captura registros y emite señales para el Visor de Registr
 import logging
 import traceback
 import json
+import threading
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtNetwork import QLocalSocket
 
@@ -22,6 +23,7 @@ class LogSignals(QObject):
     new_log = pyqtSignal(str, str) # level, message
 
 _log_history = []
+_last_thread_log = {}
 
 class QtLogHandler(logging.Handler):
     """Custom logging handler that emits Qt signals and sends to watchdog."""
@@ -52,6 +54,7 @@ class QtLogHandler(logging.Handler):
         elif record.name.startswith("overworld") or record.levelno == OVERWORLD_LEVEL:
             level = "OVERWORLD"
         
+        _last_thread_log[record.threadName] = msg
         _log_history.append((level, msg))
         self.signals.new_log.emit(level, msg)
         self._send_to_watchdog(level, msg)
@@ -105,3 +108,52 @@ def setup_logging(log_path):
     sh = logging.StreamHandler()
     sh.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
     logger.addHandler(sh)
+
+
+_thread_reporter_timer = None
+
+def start_thread_reporter(process_name: str, parent_obj=None):
+    global _thread_reporter_timer
+    from PyQt6.QtCore import QTimer
+    from PyQt6.QtNetwork import QLocalSocket
+
+    def send_threads():
+        threads_info = []
+        try:
+            size_bytes = threading.stack_size()
+            if size_bytes == 0:
+                size_bytes = 1024 * 1024  # 1MB default
+            size_mb = size_bytes / (1024 * 1024)
+
+            for t in threading.enumerate():
+                t_name = t.name
+                last_log = _last_thread_log.get(t_name, "No logs yet")
+                threads_info.append({
+                    "process": process_name,
+                    "ident": t.ident or 0,
+                    "name": t_name,
+                    "memory": f"{size_mb:.2f} MB",
+                    "last_log": last_log
+                })
+        except Exception as e:
+            logging.debug(f"Error enumerating threads in reporter: {e}")
+            return
+
+        # Send via QLocalSocket
+        socket = QLocalSocket()
+        socket.connectToServer("CatchEtudeLogServer")
+        if socket.waitForConnected(150):
+            payload = {
+                "cmd": "threads",
+                "process": process_name,
+                "threads": threads_info
+            }
+            socket.write(json.dumps(payload).encode('utf-8'))
+            socket.waitForBytesWritten(150)
+            socket.disconnectFromServer()
+
+    # Use a QTimer to run periodically in the main event loop
+    _thread_reporter_timer = QTimer(parent_obj)
+    _thread_reporter_timer.setInterval(2000) # Every 2 seconds
+    _thread_reporter_timer.timeout.connect(send_threads)
+    _thread_reporter_timer.start()
