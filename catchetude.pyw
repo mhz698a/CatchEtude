@@ -9,19 +9,18 @@ Inicializa la aplicación, los servicios y la ventana principal de la interfaz.
 import sys
 import faulthandler
 import logging
-import threading
 from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
-from utils import flatten_downloads_root
+from utils import flatten_downloads_root, run_in_threadpool
 from state_manager import StateManager, scan_existing_downloads
 from watcher_mgr import WatcherThread
 from app_signals_mgr import AppSignals
 from log_mgr import setup_logging
-from service_mgr import ( 
-    ensure_single_instance, add_to_startup, crash_handler, start_watchdog, 
+from service_mgr import (
+    ensure_single_instance, add_to_startup, crash_handler, start_watchdog,
     start_character_service, start_overworld_service, stop_parallel_services
 )
 import config
@@ -33,7 +32,7 @@ DEBUGER = False
 
 def qt_handler(mode, context, message):
     logging.error("QT: %s", message)
-    
+
 if DEBUGER:
     faulthandler.enable(all_threads=True)
 
@@ -45,37 +44,37 @@ if DEBUGER:
 def main():
     # Set exception hook for crash reporting
     sys.excepthook = crash_handler
-    
+
     # Initialize Application
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(config.ICON_PATH))
     app.setQuitOnLastWindowClosed(False)
-    
+
     try:
         stop_parallel_services(timeout=10.0)
     except TimeoutError:
         logging.warning("Previous services cleanup timed out, proceeding anyway")
     except Exception as e:
         logging.warning(f"Previous services cleanup failed ({type(e).__name__}): {e}, proceeding with startup")
-    
+
     # Ensure single instance
     mutex = ensure_single_instance()
-    
+
     # Setup logging
     setup_logging(config.LOG_PATH)
-    
+
     try:
         # Start background services
         start_watchdog()
         start_character_service()
         start_overworld_service()
-        
+
         # Initialize State and Signals
         state_manager = StateManager()
         signals = AppSignals()
         state_manager.notifier = signals
-        
-        # # Start Watcher        
+
+        # # Start Watcher
         watcher = WatcherThread(state_manager.enqueue_file)
         watcher.start()
 
@@ -90,12 +89,9 @@ def main():
                 logging.exception("Failed to stop watcher")
 
         app.aboutToQuit.connect(_cleanup_services)
-        
+
         # Initial scan and flattening
-        threading.Thread(
-            target=lambda: (flatten_downloads_root(), scan_existing_downloads(state_manager)), 
-            daemon=True
-        ).start()
+        run_in_threadpool(lambda: (flatten_downloads_root(), scan_existing_downloads(state_manager)))
 
         # Create Main Window
         win = MainWindow(state_manager, signals)
@@ -103,26 +99,25 @@ def main():
         # Start Thread Reporter for Main App
         from log_mgr import start_thread_reporter
         start_thread_reporter("Main App", win)
-        
+
         # Maintenance timers
         maintenance_timer = QtCore.QTimer()
         maintenance_timer.setInterval(3000)
         maintenance_timer.timeout.connect(state_manager.maintenance_tick)
         maintenance_timer.start()
-        
+
         rescan_timer = QtCore.QTimer()
         rescan_timer.setInterval(30 * 60 * 1000)
-        rescan_timer.timeout.connect(lambda: threading.Thread(
-            target=scan_existing_downloads, args=(state_manager,), daemon=True).start())
+        rescan_timer.timeout.connect(lambda: run_in_threadpool(scan_existing_downloads, state_manager))
         rescan_timer.start()
-        
+
         # Startup registration
         mypath = str(Path(sys.argv[0]).resolve())
         try:
             add_to_startup(config.APP_NAME, mypath, True)
         except Exception:
             logging.exception("add_to_startup failed")
-            
+
         try:
             if config.CRASH_REPORT_PATH.exists():
                 config.CRASH_REPORT_PATH.unlink()
@@ -134,7 +129,7 @@ def main():
             logging.warning(f"Failed to delete crash report: {e}")
 
         sys.exit(app.exec())
-        
+
     except Exception:
         logging.exception("Unhandled exception in main")
         crash_handler(*sys.exc_info())

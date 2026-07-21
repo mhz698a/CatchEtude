@@ -92,6 +92,8 @@ def save_settings(settings):
                 if isinstance(value, str):
                     # Usamos comillas simples triples para rutas de Windows (evita conflictos de barras)
                     f.write(f"{key} = '''{value}'''\n")
+                elif isinstance(value, bool):
+                    f.write(f"{key} = {'true' if value else 'false'}\n")
                 else:
                     f.write(f'{key} = {value}\n')
     except Exception as e:

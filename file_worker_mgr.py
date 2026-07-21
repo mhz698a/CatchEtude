@@ -7,28 +7,41 @@ import os
 import shutil
 import logging
 from pathlib import Path
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QRunnable, QObject, pyqtSignal
 from utils import is_same_drive, safe_unlink
 from wctime import setctime_blocking
 from log_mgr import safe_thread_logger
 
 
-class FileMoveWorker(QObject):
+class FileMoveSignals(QObject):
     """
-    Worker that performs a file copy with progress reporting.
-    Trabajador que realiza una copia de archivo con reporte de progreso.
+    Dedicated QObject subclass to hold signals for FileMoveWorker.
     """
     progress = pyqtSignal(int)
     finished = pyqtSignal(bool, Path, str)
 
+
+class FileMoveWorker(QRunnable):
+    """
+    Worker that performs a file copy with progress reporting, subclassing QRunnable.
+    """
     def __init__(self, src: Path, dst: Path):
         super().__init__()
         self.src = src
         self.dst = dst
+        self.signals = FileMoveSignals()
         try:
             self.stat = self.src.stat()
         except Exception:
             self.stat = None
+
+    @property
+    def progress(self):
+        return self.signals.progress
+
+    @property
+    def finished(self):
+        return self.signals.finished
 
     def _restore_timestamps(self):
         """Restores source timestamps on the destination as part of the move operation."""

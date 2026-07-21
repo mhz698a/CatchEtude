@@ -3,8 +3,9 @@ from enum import Enum, auto
 from typing import Optional
 from pathlib import Path
 from collections import deque
+from PyQt6 import QtCore
 
-from utils import is_file_locked, is_temporary, flatten_downloads_root
+from utils import is_file_locked, is_temporary, flatten_downloads_root, run_in_threadpool
 from fallback_utils import safe_move_to_conflicts
 from log_mgr import safe_thread_logger
 
@@ -21,6 +22,14 @@ class State(Enum):
     USER_DECIDING = auto()
     APPLY_DECISION = auto()
     RESUME_WATCHER = auto()
+
+class QueueProcessorThread(QtCore.QThread):
+    def __init__(self, state_manager):
+        super().__init__()
+        self.state_manager = state_manager
+
+    def run(self):
+        self.state_manager._process_queue()
 
 # -----------------------
 # StateManager - authoritative control over state and queue
@@ -44,7 +53,7 @@ class StateManager:
         # notifier for UI (Qt signal) will be set externally by AppController
         self.notifier: Optional['AppSignals'] = None
         # thread to process queue. Start it after every synchronization primitive exists.
-        self._thread = threading.Thread(target=self._process_queue, daemon=True)
+        self._thread = QueueProcessorThread(self)
         self._thread.start()
 
 
@@ -86,9 +95,9 @@ class StateManager:
         # 🔽 NUEVO: cuando el sistema queda libre, aplanar descargas
         if s == State.IDLE:
             try:
-                threading.Thread(target=self._safe_maintenance_and_flatten, daemon=True).start()
+                run_in_threadpool(self._safe_maintenance_and_flatten)
             except Exception:
-                logging.exception("Failed to start maintenance thread")
+                logging.exception("Failed to start maintenance task in threadpool")
 
     def can_enqueue(self) -> bool:
         """Watcher reads this: only allow enqueue when NOT in USER_DECIDING."""
@@ -373,7 +382,7 @@ class StateManager:
             if self.current_state() != State.IDLE:
                 return
 
-            threading.Thread(target=self._safe_maintenance_and_flatten, daemon=True).start()
+            run_in_threadpool(self._safe_maintenance_and_flatten)
 
         except Exception:
             logging.exception("Maintenance tick failed")

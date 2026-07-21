@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import threading
-from typing import Callable
-
 from PyQt6 import QtCore
+from utils import run_in_threadpool
+from typing import Callable
 
 
 class PendingScheduler(QtCore.QObject):
@@ -44,4 +43,4 @@ class PendingScheduler(QtCore.QObject):
             and now.minute() == self._scheduled_time.minute()
         ):
             self._last_fired_date = today
-            threading.Thread(target=self._trigger, daemon=True).start()
+            run_in_threadpool(self._trigger)

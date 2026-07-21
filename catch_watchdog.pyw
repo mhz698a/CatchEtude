@@ -8,7 +8,6 @@ import sys
 import os
 import json
 import time
-import threading
 import win32event
 import win32api
 import ctypes
@@ -29,6 +28,16 @@ WATCHDOG_NAME = "CatchEtudeWatchdog"
 LOG_SERVER_NAME = "CatchEtudeLogServer"
 ERROR_ALREADY_EXISTS = 183
 
+
+class ProcessMonitorThread(QtCore.QThread):
+    def __init__(self, service):
+        super().__init__()
+        self.service = service
+
+    def run(self):
+        self.service._monitor_process()
+
+
 class WatchdogService(QtCore.QObject):
     def __init__(self):
         super().__init__()
@@ -42,7 +51,7 @@ class WatchdogService(QtCore.QObject):
         if not self.server.listen(LOG_SERVER_NAME):
             log_watchdog(f"Server could not start: {self.server.errorString()}")
         
-        self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
+        self.monitor_thread = ProcessMonitorThread(self)
         self.monitor_thread.start()
 
         self._closing = False
