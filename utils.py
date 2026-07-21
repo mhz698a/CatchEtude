@@ -4,7 +4,6 @@ import time
 import win32file, win32con, pywintypes
 
 from send2trash import send2trash
-from ctypes import wintypes
 from pathlib import Path
 import config
 from wctime import setctime_blocking
@@ -30,32 +29,8 @@ def run_in_threadpool(func, *args, **kwargs):
     QtCore.QThreadPool.globalInstance().start(runnable)
 
 
-# Cargar DWMAPI y Shell32
+# Cargar DWMAPI
 dwmapi = ctypes.WinDLL('dwmapi')
-shell32 = ctypes.WinDLL('shell32')
-
-# SHFileOperation constants
-FO_MOVE = 0x0001
-FO_DELETE = 0x0003
-FOF_ALLOWUNDO = 0x0040
-FOF_NOCONFIRMATION = 0x0010
-FOF_SILENT = 0x0004
-FOF_NOERRORUI = 0x0400
-
-class SHFILEOPSTRUCTW(ctypes.Structure):
-    _fields_ = [
-        ("hwnd", wintypes.HWND),
-        ("wFunc", wintypes.UINT),
-        ("pFrom", wintypes.LPCWSTR),
-        ("pTo", wintypes.LPCWSTR),
-        ("fFlags", ctypes.c_ushort),
-        ("fAnyOperationsAborted", wintypes.BOOL),
-        ("hNameMappings", wintypes.LPVOID),
-        ("lpszProgressTitle", wintypes.LPCWSTR),
-    ]
-
-shell32.SHFileOperationW.argtypes = [ctypes.POINTER(SHFILEOPSTRUCTW)]
-shell32.SHFileOperationW.restype = ctypes.c_int
 
 
 # -----------------------
@@ -126,32 +101,6 @@ def is_same_drive(p1: Path, p2: Path) -> bool:
         abs2 = str(Path(p2).absolute()).lower()
         return os.path.splitdrive(abs1)[0] == os.path.splitdrive(abs2)[0]
     except Exception:
-        return False
-
-def move_file_shfileop(src: Path, dst: Path, show_progress: bool = True) -> bool:
-    """Moves a file using SHFileOperationW (Windows native move)."""
-    try:
-        # Paths must be double-null terminated
-        from_path = str(src.absolute()).replace('/', '\\') + '\0\0'
-        to_path = str(dst.absolute()).replace('/', '\\') + '\0\0'
-
-        flags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION
-        if not show_progress:
-            flags |= FOF_SILENT | FOF_NOERRORUI
-
-        fileop = SHFILEOPSTRUCTW()
-        fileop.hwnd = 0
-        fileop.wFunc = FO_MOVE
-        fileop.pFrom = from_path
-        fileop.pTo = to_path
-        fileop.fFlags = flags
-
-        result = shell32.SHFileOperationW(ctypes.byref(fileop))
-        return result == 0 and not fileop.fAnyOperationsAborted
-    except PermissionError:
-        return False
-    except Exception:
-        logging.exception(f"SHFileOperation move failed from {src} to {dst}")
         return False
 
 def delete_to_recycle_bin(path: Path) -> bool:

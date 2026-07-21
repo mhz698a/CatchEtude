@@ -6,6 +6,7 @@ Módulo File Worker: gestiona las operaciones de archivos en segundo plano.
 import os
 import shutil
 import logging
+import time
 from pathlib import Path
 from PyQt6.QtCore import QRunnable, QObject, pyqtSignal
 from utils import is_same_drive, safe_unlink
@@ -45,14 +46,24 @@ class FileMoveWorker(QRunnable):
 
     def _restore_timestamps(self):
         """Restores source timestamps on the destination as part of the move operation."""
-        try:
-            os.utime(
-                self.dst,
-                (self.stat.st_atime, self.stat.st_mtime)
-            )
-            setctime_blocking(str(self.dst), getattr(self.stat, "st_birthtime", self.stat.st_ctime))
-        except Exception as e:
-            logging.warning(f"Could not restore timestamps on moved file: {e}")
+        os.utime(
+            self.dst,
+            (self.stat.st_atime, self.stat.st_mtime)
+        )
+        setctime_blocking(str(self.dst), getattr(self.stat, "st_birthtime", self.stat.st_ctime))
+
+    def _emit_progress(self, pct: int, state: dict) -> None:
+        """Throttles progress signals to avoid flooding Qt's event queue."""
+        pct = max(0, min(100, int(pct)))
+        now = time.monotonic()
+        if (
+            pct == 100
+            or pct >= state["last_pct"] + 1
+            or now - state["last_emit"] >= 0.1
+        ):
+            state["last_pct"] = pct
+            state["last_emit"] = now
+            self.progress.emit(pct)
 
     @safe_thread_logger("FileMoveWorker")
     def run(self):
@@ -69,7 +80,13 @@ class FileMoveWorker(QRunnable):
                 logging.info(f"[FileMoveWorker] Same-drive detected: performing fast atomic move for '{self.src.name}'")
                 shutil.move(str(self.src), str(self.dst))
 
-                self._restore_timestamps()
+                try:
+                    self._restore_timestamps()
+                except Exception as ts_err:
+                    logging.exception(f"[FileMoveWorker] Timestamp restore failed for '{self.dst}': {ts_err}")
+                    self.finished.emit(False, self.dst, "TIMESTAMP_RESTORE_FAILED")
+                    return
+
                 self.progress.emit(100)
                 logging.info(f"[FileMoveWorker] Same-drive move completed successfully for '{self.src.name}'")
                 self.finished.emit(True, self.dst, "ok")
@@ -78,6 +95,7 @@ class FileMoveWorker(QRunnable):
                 logging.info(f"[FileMoveWorker] Cross-drive detected: performing chunked copy for '{self.src.name}' (Size: {total} bytes)")
                 copied = 0
                 last_logged_pct = -10
+                progress_state = {"last_pct": -1, "last_emit": 0.0}
 
                 try:
                     with open(self.src, 'rb') as fsrc, open(self.dst, 'wb') as fdst:
@@ -90,7 +108,7 @@ class FileMoveWorker(QRunnable):
 
                             if total > 0:
                                 pct = int(copied * 100 / total)
-                                self.progress.emit(pct)
+                                self._emit_progress(pct, progress_state)
                                 # Log progress in 10% steps to avoid spamming while giving robust visibility
                                 if pct - last_logged_pct >= 10:
                                     logging.info(f"[FileMoveWorker] '{self.src.name}' progress: {pct}% ({copied}/{total} bytes)")
@@ -99,7 +117,12 @@ class FileMoveWorker(QRunnable):
                         fdst.flush()
                         os.fsync(fdst.fileno())  # Ensure data is written to disk
 
-                    self._restore_timestamps()
+                    try:
+                        self._restore_timestamps()
+                    except Exception as ts_err:
+                        logging.exception(f"[FileMoveWorker] Timestamp restore failed for '{self.dst}': {ts_err}")
+                        self.finished.emit(False, self.dst, "TIMESTAMP_RESTORE_FAILED")
+                        return
 
                     logging.info(f"[FileMoveWorker] Copy finished. Liberating source file: '{self.src.name}'")
                     if not safe_unlink(self.src):

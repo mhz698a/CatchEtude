@@ -74,8 +74,9 @@ class QueueDelegate(QtWidgets.QStyledItemDelegate):
             if path_str not in self._thumb_cache:
                 try:
                     ext = p.suffix.lower()
-
-                    if should_use_shell_thumbnail(ext):
+                    if not p.exists() or not os.access(p, os.R_OK):
+                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+                    elif should_use_shell_thumbnail(ext):
                         shell_pixmap = get_shell_thumbnail_pixmap(path_str, 40)
                         if shell_pixmap and not shell_pixmap.isNull():
                             if self._hide_secure:
