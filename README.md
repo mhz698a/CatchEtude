@@ -21,7 +21,7 @@ config.py                rutas, settings, carga/propagación de settings
 + muchos módulos manager: main_window_mgr.py, watcher_mgr.py, log_mgr.py, character_mgr.py, etc.
 ```
 
-Cómo encaja: al arrancar catchetude.pyw se inicializan logging y servicios (service_mgr.start_*), se crea StateManager y AppSignals, se lanza WatcherThread que usa watchdog.observers para detectar nuevos ficheros en Downloads. Las utilidades de utils.py realizan flattening y movimientos (uso de SHFileOperation/ctypes). service_mgr gestiona IPC por QLocalSocket y mutex Win32 para coordinar servicios auxiliares.
+Cómo encaja: al arrancar catchetude.pyw se inicializan logging y servicios (service_mgr.start_*), se crea StateManager y AppSignals, se lanza WatcherThread que usa watchdog.observers para detectar nuevos ficheros en Downloads. Las utilidades de utils.py realizan flattening, comprobación de locks y configuración DWM; los movimientos de archivos se ejecutan con workers de fondo. service_mgr gestiona IPC por QLocalSocket y mutex Win32 para coordinar servicios auxiliares.
 
 ## Cómo ejecutarlo (mínimo)
 Requiere python 3.12+

@@ -28,15 +28,20 @@ class BackgroundMoveManager(QtCore.QObject):
     def __init__(self, state_manager, parent=None):
         super().__init__(parent)
         self.state_manager = state_manager
-        self._max_concurrent = 4
+        self._max_concurrent = max(1, int(getattr(config, "MAX_CONCURRENT_MOVES", 1)))
         self._pending_tasks = []      # List of dicts: {"src": Path, "dst": Path, "decision": dict, "src_meta": dict, "size": int}
         self._active_workers = {}     # Maps src Path to worker
+        self._active_signals = {}     # Keeps FileMoveSignals alive while queued Qt events drain.
+        self._accepting_tasks = True
         self._history = HistoryManager()
         self._thread_pool = QtCore.QThreadPool(self)
-        self._thread_pool.setMaxThreadCount(4)
+        self._thread_pool.setMaxThreadCount(self._max_concurrent)
 
     def enqueue_move(self, src: Path, dst: Path, decision: dict, src_meta: dict):
         """Enqueues a new file move task."""
+        if not self._accepting_tasks:
+            logging.warning(f"Move rejected during shutdown: {src} -> {dst}")
+            return
         # Get file size for prioritization (default to 0 if error)
         try:
             size = src.stat().st_size
@@ -72,6 +77,15 @@ class BackgroundMoveManager(QtCore.QObject):
     def is_idle(self) -> bool:
         """Returns True if there are no running or pending moves."""
         return len(self._active_workers) == 0 and len(self._pending_tasks) == 0
+
+    def stop_accepting_new_moves(self) -> None:
+        """Prevents new work from being queued while the UI is shutting down."""
+        self._accepting_tasks = False
+
+    def wait_for_done(self, msecs: int = 30000) -> bool:
+        """Waits for active workers to finish before QObject receivers are destroyed."""
+        self.stop_accepting_new_moves()
+        return self._thread_pool.waitForDone(msecs)
 
     def undo_last_move(self) -> bool:
         """
@@ -153,6 +167,7 @@ class BackgroundMoveManager(QtCore.QObject):
 
             worker = FileMoveWorker(src, dst)
             self._active_workers[src] = worker
+            self._active_signals[src] = worker.signals
 
             # Connect signals
             worker.progress.connect(lambda val, s=src: self.move_progress.emit(s, val))
@@ -164,6 +179,7 @@ class BackgroundMoveManager(QtCore.QObject):
 
                     # Clean up worker reference
                     self._active_workers.pop(s, None)
+                    self._active_signals.pop(s, None)
 
                     # Emit result signal
                     self.move_finished.emit(s, d, ok, msg, meta, dec)

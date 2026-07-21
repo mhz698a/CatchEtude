@@ -61,6 +61,7 @@ class MainWindow(QWidget):
         self.background_move_mgr.move_started.connect(self._on_background_move_started)
         self.background_move_mgr.move_progress.connect(self._on_background_move_progress)
         self.background_move_mgr.move_finished.connect(self._on_background_move_finished)
+        self._closing = False
         
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
@@ -437,6 +438,12 @@ class MainWindow(QWidget):
             )
             event.ignore()
         else:
+            self._closing = True
+            self.background_move_mgr.stop_accepting_new_moves()
+            self.background_move_mgr.wait_for_done(30000)
+            self.background_move_mgr.move_started.disconnect(self._on_background_move_started)
+            self.background_move_mgr.move_progress.disconnect(self._on_background_move_progress)
+            self.background_move_mgr.move_finished.disconnect(self._on_background_move_finished)
             event.accept()
 
     def _manual_hide(self):
@@ -970,27 +977,54 @@ class MainWindow(QWidget):
         
 
     def _on_background_move_started(self, src: Path, dst: Path):
+        if self._closing:
+            return
         self.queue_panel.queue_movings_widget.add_movement(src, dst)
 
+    @QtCore.pyqtSlot(Path, int)
     def _on_background_move_progress(self, src: Path, val: int):
+        if self._closing:
+            return
         self.queue_panel.queue_movings_widget.update_progress(src, val)
         if self.filepath == src:
             self.action_panel.set_progress(val)
 
+    @QtCore.pyqtSlot(Path, Path, bool, str, dict, dict)
     def _on_background_move_finished(self, src: Path, dst: Path, ok: bool, msg: str, src_meta: dict, decision: dict):
+        if self._closing:
+            return
         send_character_service_command("resume")
         self.queue_panel.queue_movings_widget.remove_movement(src)
         
         if ok:
-            run_in_threadpool(
-                self.background_move_mgr.finalize_move,
-                src, dst, src_meta, decision.get("post_action", "none")
-            )
+            self.background_move_mgr.finalize_move(src, dst, src_meta, decision.get("post_action", "none"))
             self._build_tray()
         else:
-            if msg == "FILE_LOCKED":
+            if msg == "TIMESTAMP_RESTORE_FAILED":
+                retry = QtWidgets.QMessageBox.question(
+                    self,
+                    "Restaurar fecha",
+                    "El archivo ya fue transferido, pero no se pudo restaurar su fecha de creación. ¿Deseas reintentar la restauración de fecha?",
+                    QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                    QtWidgets.QMessageBox.StandardButton.Yes
+                )
+                if retry == QtWidgets.QMessageBox.StandardButton.Yes:
+                    try:
+                        from wctime import setctime_blocking
+                        os.utime(dst, (src_meta["atime"], src_meta["mtime"]))
+                        setctime_blocking(str(dst), src_meta["ctime"])
+                        logging.info(f"Timestamp retry succeeded for moved file: {dst}")
+                    except Exception:
+                        logging.exception(f"Timestamp retry failed for moved file: {dst}")
+                        self.show_status("No se pudo restaurar la fecha; se conservará el archivo movido.", 5000)
+
+                self.background_move_mgr.finalize_move(src, dst, src_meta, decision.get("post_action", "none"))
+                self._build_tray()
+            elif msg == "FILE_LOCKED":
                 self.show_status(self.loc.get("msg_file_locked"), 5000)
-            self.state_manager.fail_background_move(src)
+                self.state_manager.fail_background_move(src)
+            else:
+                self.state_manager.fail_background_move(src)
 
         self._hide_if_idle()
 
