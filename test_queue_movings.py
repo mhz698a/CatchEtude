@@ -78,8 +78,29 @@ except ImportError:
             def __init__(self, w, h): pass
         class QRect:
             def __init__(self, x, y, w, h): pass
+        class QRunnable:
+            def __init__(self, parent=None): pass
+        class QMutex:
+            def lock(self): pass
+            def unlock(self): pass
+        class QMutexLocker:
+            def __init__(self, mutex): pass
+        class QThreadPool:
+            def __init__(self, parent=None): pass
+            def setMaxThreadCount(self, n): pass
+            def start(self, runnable): pass
+            @staticmethod
+            def globalInstance():
+                return MockQtCore._global_instance
+        class QWaitCondition:
+            def wait(self, mutex, time=None): pass
+            def wakeAll(self): pass
+        def pyqtSlot(*args, **kwargs):
+            return lambda func: func
         def pyqtSignal(*args, **kwargs):
             return MockSignal()
+
+    MockQtCore._global_instance = MockQtCore.QThreadPool()
 
     class MockQWidget:
         def __init__(self, parent=None):

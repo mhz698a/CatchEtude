@@ -4,14 +4,14 @@ Módulo Watcher: monitorea la carpeta de Descargas en busca de nuevos archivos.
 """
 
 import logging
-import threading
 import time
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
+from PyQt6 import QtCore
 
 import config
-from utils import is_temporary, is_file_locked
+from utils import is_temporary, is_file_locked, run_in_threadpool
 from log_mgr import safe_thread_logger
 
 
@@ -24,7 +24,7 @@ class WatcherHandler(FileSystemEventHandler):
         super().__init__()
         self.enqueue = enqueue_callback
         self._monitoring = set()
-        self._lock = threading.Lock()
+        self._lock = QtCore.QMutex() # PyQt thread-safe mutex or standard threading.Lock is fine, QMutex is great. Let's use QMutex.
 
     def on_created(self, event):
         """Called when a file or directory is created."""
@@ -39,7 +39,7 @@ class WatcherHandler(FileSystemEventHandler):
     def _handle(self, p: Path):
         """
         Validates the file and enqueues it if it meets the criteria.
-        Spawns a background thread to monitor stability.
+        Schedules monitoring task on the global thread pool to wait for stability.
         """
         try:
             # Check if it's in the monitored folder
@@ -51,13 +51,16 @@ class WatcherHandler(FileSystemEventHandler):
                 logging.debug(f"[Watcher] Ignored temporary file: {p.name}")
                 return
 
-            with self._lock:
-                if p in self._monitoring:
-                    return
-                self._monitoring.add(p)
+            # Lock monitoring set
+            locker = QtCore.QMutexLocker(self._lock)
+            if p in self._monitoring:
+                return
+            self._monitoring.add(p)
+            # Release lock
+            del locker
 
-            # Spawn a thread to wait for stability
-            threading.Thread(target=self._monitor_file, args=(p,), daemon=True).start()
+            # Schedule stability monitor task in global thread pool
+            run_in_threadpool(self._monitor_file, p)
 
         except Exception:
             logging.exception("[Watcher] Error in WatcherHandler._handle")
@@ -101,17 +104,17 @@ class WatcherHandler(FileSystemEventHandler):
         except Exception:
             logging.exception(f"[Watcher] Error monitoring file: {p}")
         finally:
-            with self._lock:
-                self._monitoring.discard(p)
+            locker = QtCore.QMutexLocker(self._lock)
+            self._monitoring.discard(p)
 
 
-class WatcherThread(threading.Thread):
+class WatcherThread(QtCore.QThread):
     """
-    Background thread that runs the watchdog observer.
+    Background QThread that runs the watchdog observer.
     Hilo en segundo plano que ejecuta el observador de watchdog.
     """
-    def __init__(self, enqueue_callback):
-        super().__init__(daemon=True)
+    def __init__(self, enqueue_callback, parent=None):
+        super().__init__(parent)
         self.enqueue_callback = enqueue_callback
         self.observer = Observer()
 
@@ -126,7 +129,7 @@ class WatcherThread(threading.Thread):
 
             # Keep the thread alive
             while self.observer.is_alive():
-                self.observer.join(1)
+                self.msleep(1000)
         except Exception:
             logging.exception("[Watcher] Error in WatcherThread.run")
         finally:

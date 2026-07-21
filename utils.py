@@ -9,6 +9,25 @@ from pathlib import Path
 import config
 from wctime import setctime_blocking
 from typing import Optional
+from PyQt6 import QtCore
+
+class GenericRunnable(QtCore.QRunnable):
+    def __init__(self, func, *args, **kwargs):
+        super().__init__()
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        try:
+            self.func(*self.args, **self.kwargs)
+        except Exception as e:
+            import logging
+            logging.exception(f"Exception in run_in_threadpool: {e}")
+
+def run_in_threadpool(func, *args, **kwargs):
+    runnable = GenericRunnable(func, *args, **kwargs)
+    QtCore.QThreadPool.globalInstance().start(runnable)
 
 
 # Cargar DWMAPI y Shell32
@@ -45,12 +64,12 @@ shell32.SHFileOperationW.restype = ctypes.c_int
 
 def is_temporary(p: Path) -> bool:
     return p.suffix.lower() in config.EXCLUDE_EXT
-    
+
 def is_file_locked(p: Path) -> bool:
     """Verifica si el archivo está bloqueado sin interferir con otros procesos."""
-    try: 
+    try:
         # 'r+b' pide verificar lectura/escritura, lo que detecta descargas y conversiones activas
-        with open(p, 'r+b'): 
+        with open(p, 'r+b'):
             return False
     except (OSError, PermissionError):
         return True
@@ -67,16 +86,16 @@ def safe_unlink(path: Path, retries=20, delay=0.25):
     return False
 
 def resolve_duplicate(dest: Path) -> Path:
-    if not dest.exists(): 
+    if not dest.exists():
         return dest
-        
-    orig = dest.stem 
+
+    orig = dest.stem
     ext = dest.suffix
     parent = dest.parent
     i = 1
     while True:
         cand = parent / f"{orig}_{i}{ext}"
-        if not cand.exists(): 
+        if not cand.exists():
             return cand
         i += 1
 
@@ -126,7 +145,7 @@ def move_file_shfileop(src: Path, dst: Path, show_progress: bool = True) -> bool
         fileop.pFrom = from_path
         fileop.pTo = to_path
         fileop.fFlags = flags
-        
+
         result = shell32.SHFileOperationW(ctypes.byref(fileop))
         return result == 0 and not fileop.fAnyOperationsAborted
     except PermissionError:

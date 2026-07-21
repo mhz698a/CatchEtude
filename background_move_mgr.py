@@ -30,8 +30,10 @@ class BackgroundMoveManager(QtCore.QObject):
         self.state_manager = state_manager
         self._max_concurrent = 4
         self._pending_tasks = []      # List of dicts: {"src": Path, "dst": Path, "decision": dict, "src_meta": dict, "size": int}
-        self._active_workers = {}     # Maps src Path to (worker, thread)
+        self._active_workers = {}     # Maps src Path to worker
         self._history = HistoryManager()
+        self._thread_pool = QtCore.QThreadPool(self)
+        self._thread_pool.setMaxThreadCount(4)
 
     def enqueue_move(self, src: Path, dst: Path, decision: dict, src_meta: dict):
         """Enqueues a new file move task."""
@@ -149,30 +151,19 @@ class BackgroundMoveManager(QtCore.QObject):
 
             logging.info(f"Starting prioritized background move: {src} -> {dst}")
 
-            thread = QtCore.QThread(self)
             worker = FileMoveWorker(src, dst)
-            worker.moveToThread(thread)
-
-            self._active_workers[src] = (worker, thread)
+            self._active_workers[src] = worker
 
             # Connect signals
-            thread.started.connect(worker.run)
             worker.progress.connect(lambda val, s=src: self.move_progress.emit(s, val))
 
             # Helper closure to capture variables cleanly
-            def make_on_finished(s=src, d=dst, meta=src_meta, dec=decision, w=worker, t=thread):
+            def make_on_finished(s=src, d=dst, meta=src_meta, dec=decision, w=worker):
                 def on_finished(ok: bool, copied_path: Path, msg: str):
                     logging.info(f"Finished background move {s}: ok={ok}, msg={msg}")
 
-                    # Clean up worker and thread
+                    # Clean up worker reference
                     self._active_workers.pop(s, None)
-                    t.quit()
-                    w.deleteLater()
-                    t.deleteLater()
-
-                    if config.FORCE_GC:
-                        import gc
-                        QtCore.QTimer.singleShot(0, gc.collect)
 
                     # Emit result signal
                     self.move_finished.emit(s, d, ok, msg, meta, dec)
@@ -186,5 +177,5 @@ class BackgroundMoveManager(QtCore.QObject):
             # Emit started signal so UI can show the item immediately
             self.move_started.emit(src, dst)
 
-            # Start thread
-            thread.start()
+            # Start worker on our thread pool
+            self._thread_pool.start(worker)

@@ -29,7 +29,7 @@ from utils import (
     resolve_duplicate, 
     configure_dwm_thumbnail_behavior, is_internal_available,
     sanitize_windows_filename, is_temporary,
-    is_file_locked, delete_to_recycle_bin
+    is_file_locked, delete_to_recycle_bin, run_in_threadpool
 )
 from state_manager import StateManager, State, scan_existing_downloads
 from fallback_utils import compute_destination
@@ -652,7 +652,7 @@ class MainWindow(QWidget):
         QApplication.quit()
 
     def _rescan_downloads(self):
-        threading.Thread(target=lambda: scan_existing_downloads(self.state_manager), daemon=True).start()
+        run_in_threadpool(scan_existing_downloads, self.state_manager)
 
     def _on_order_pending_clicked(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Process", str(config.DOWNLOADS))
@@ -699,7 +699,7 @@ class MainWindow(QWidget):
                     logging.info(f"No files to enqueue from folder: {folder}")
             except Exception:
                 logging.exception("Failed to process pending folder")
-        threading.Thread(target=worker, daemon=True).start()
+        run_in_threadpool(worker)
 
     def _set_ui_enabled_for_move(self, enabled: bool):
         self.action_panel.btn_custom.setEnabled(enabled)
@@ -982,20 +982,15 @@ class MainWindow(QWidget):
         self.queue_panel.queue_movings_widget.remove_movement(src)
         
         if ok:
-            threading.Thread(
-                target=self.background_move_mgr.finalize_move,
-                args=(src, dst, src_meta, decision.get("post_action", "none")),
-                daemon=True
-            ).start()
+            run_in_threadpool(
+                self.background_move_mgr.finalize_move,
+                src, dst, src_meta, decision.get("post_action", "none")
+            )
             self._build_tray()
         else:
             if msg == "FILE_LOCKED":
                 self.show_status(self.loc.get("msg_file_locked"), 5000)
             self.state_manager.fail_background_move(src)
-
-        if config.FORCE_GC:
-            import gc
-            QtCore.QTimer.singleShot(0, gc.collect)
 
         self._hide_if_idle()
 

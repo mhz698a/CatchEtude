@@ -9,7 +9,6 @@ import sys
 import os
 import json
 import time
-import threading
 import queue
 import traceback
 import win32event
@@ -32,15 +31,36 @@ ERROR_ALREADY_EXISTS = 183
 # Custom logging level for character list activities (copied from log_mgr)
 CHARS_LEVEL_NAME = "CHARS"
 
+
+class QueueWorkerThread(QtCore.QThread):
+    def __init__(self, service):
+        super().__init__()
+        self.service = service
+
+    def run(self):
+        self.service._queue_worker()
+
+
+class ProcessMonitorThread(QtCore.QThread):
+    def __init__(self, service):
+        super().__init__()
+        self.service = service
+
+    def run(self):
+        self.service._monitor_process()
+
+
 class CharacterService(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self.active_generation = 0
         self.active_year = None
-        self.pause_event = threading.Event()
-        self.pause_event.set() # Set means NOT paused (allowed to run)
+        self.pause_event = QtCore.QWaitCondition() # Wait condition is cleaner than threading.Event
+        self._paused = False
+        self._pause_mutex = QtCore.QMutex()
         self.task_queue = queue.Queue()
-        self.worker_thread = threading.Thread(target=self._queue_worker, daemon=True)
+
+        self.worker_thread = QueueWorkerThread(self)
         self.worker_thread.start()
         
         self.server = QtNetwork.QLocalServer(self)
@@ -49,7 +69,7 @@ class CharacterService(QtCore.QObject):
         if not self.server.listen(SERVER_NAME):
             self._log_error(f"Character Server could not start: {self.server.errorString()}")
         
-        self.monitor_thread = threading.Thread(target=self._monitor_process, daemon=True)
+        self.monitor_thread = ProcessMonitorThread(self)
         self.monitor_thread.start()
 
         self.threads_timer = QtCore.QTimer(self)
@@ -73,7 +93,16 @@ class CharacterService(QtCore.QObject):
         if str(config.SETTINGS_PATH) not in self._settings_watcher.files():
             self._settings_watcher.addPath(str(config.SETTINGS_PATH))
 
+    def _wait_if_paused(self):
+        self._pause_mutex.lock()
+        try:
+            while self._paused:
+                self.pause_event.wait(self._pause_mutex)
+        finally:
+            self._pause_mutex.unlock()
+
     def _log_to_watchdog(self, level, message):
+        import threading
         t_name = threading.current_thread().name
         _last_thread_log[t_name] = message
         socket = QtNetwork.QLocalSocket()
@@ -87,6 +116,7 @@ class CharacterService(QtCore.QObject):
         socket.disconnected.connect(socket.deleteLater)
         
     def _send_threads_info(self):
+        import threading
         threads_info = []
         try:
             size_bytes = threading.stack_size()
@@ -122,8 +152,6 @@ class CharacterService(QtCore.QObject):
 
     def _send_update(self, msg_dict):
         """Sends an update back to the main app via a new connection."""
-        # Main app's CharacterListModel will listen on a specific name or we can reuse a name.
-        # Better: Main app listens on "CatchEtudeCharacterClient"
         socket = QtNetwork.QLocalSocket()
         socket.connectToServer("CatchEtudeCharacterClient")
         if socket.waitForConnected(500):
@@ -152,10 +180,15 @@ class CharacterService(QtCore.QObject):
                 gen = msg.get("generation")
                 self._handle_load_request(year, gen, socket)
             elif cmd == "pause":
-                self.pause_event.clear()
+                self._pause_mutex.lock()
+                self._paused = True
+                self._pause_mutex.unlock()
                 self._log_info("Character Service: Scanning paused")
             elif cmd == "resume":
-                self.pause_event.set()
+                self._pause_mutex.lock()
+                self._paused = False
+                self.pause_event.wakeAll()
+                self._pause_mutex.unlock()
                 self._log_info("Character Service: Scanning resumed")
             elif cmd == "quit":
                 self._log_info("Character Service: Quit request received. Sending OK response.")
@@ -257,7 +290,7 @@ class CharacterService(QtCore.QObject):
                 if generation != self.active_generation:
                     return
                 
-                self.pause_event.wait()
+                self._wait_if_paused()
                 
                 try:
                     st = os.stat(abs_p)
@@ -319,7 +352,7 @@ class CharacterService(QtCore.QObject):
                 parts = [p.strip() for p in meta.split(';')]
                 if len(parts) >= 1 and parts[0] != "_" and parts[0].isdigit(): num = int(parts[0])
                 if len(parts) >= 2 and parts[1] != "_": alter = parts[1]
-                if len(parts) >= 3 and parts[2] != "_": name = parts[2]
+                if len(parts) >= 3 and parts[2] != "_": name = sys.intern(parts[2]) if hasattr(sys, 'intern') else parts[2]
                 if len(parts) >= 4 and parts[3] not in ("_", None, ""):
                     try: 
                         datetime.fromisoformat(parts[3]); birthday_iso = parts[3]
@@ -361,7 +394,7 @@ class CharacterService(QtCore.QObject):
                             return None, None
 
                         # Pausa cooperativa
-                        self.pause_event.wait()
+                        self._wait_if_paused()
                         
                     try:
                         if entry.is_file(follow_symlinks=False):

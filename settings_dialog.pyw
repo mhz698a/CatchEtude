@@ -58,7 +58,9 @@ class SettingsDialog(QDialog):
                 try:
                     value = int(value)
                 except ValueError:
-                    logging.debug(f"Int Value is not int value")
+                    logging.debug("Int Value is not int value")
+            elif isinstance(config.DEFAULT_SETTINGS[key], bool):
+                value = (value.strip().lower() == "true")
             new_settings[key] = value
             
         config.save_settings(new_settings)
