@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
@@ -189,14 +190,18 @@ class COMApartment:
     def __enter__(self) -> "COMApartment":
         if not sys.platform.startswith("win"):
             return self
+        logging.info("[ShellThumbnail][native-boundary] CoInitializeEx start")
         hr = int(ole32.CoInitializeEx(None, self._coinit_flag))
         _check_hresult(hr, "CoInitializeEx")
+        logging.info("[ShellThumbnail][native-boundary] CoInitializeEx done")
         self._initialized = True
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         if self._initialized:
+            logging.info("[ShellThumbnail][native-boundary] CoUninitialize start")
             ole32.CoUninitialize()
+            logging.info("[ShellThumbnail][native-boundary] CoUninitialize done")
             self._initialized = False
 
 
@@ -215,15 +220,19 @@ def _hbitmap_to_qimage(hbitmap: HBITMAP) -> QImage:
     if not hbitmap:
         raise ValueError("HBITMAP inválido")
 
+    logging.info("[ShellThumbnail][native-boundary] CreateCompatibleDC start")
     hdc = gdi32.CreateCompatibleDC(None)
     if not hdc:
         raise OSError("CreateCompatibleDC failed")
+    logging.info("[ShellThumbnail][native-boundary] CreateCompatibleDC done")
 
     try:
         bm = BITMAP()
+        logging.info("[ShellThumbnail][native-boundary] GetObjectW start")
         got = gdi32.GetObjectW(hbitmap, sizeof(BITMAP), byref(bm))
         if got == 0:
             raise OSError("GetObjectW failed")
+        logging.info("[ShellThumbnail][native-boundary] GetObjectW done")
 
         width = int(bm.bmWidth)
         height = abs(int(bm.bmHeight))
@@ -239,14 +248,18 @@ def _hbitmap_to_qimage(hbitmap: HBITMAP) -> QImage:
         bmi.bmiHeader.biCompression = BI_RGB
         bmi.bmiHeader.biSizeImage = width * height * 4
 
+        logging.info("[ShellThumbnail][native-boundary] GetDIBits probe start")
         probe = gdi32.GetDIBits(hdc, hbitmap, 0, height, None, byref(bmi), DIB_RGB_COLORS)
         if probe == 0:
             raise OSError("GetDIBits (probe) failed")
+        logging.info("[ShellThumbnail][native-boundary] GetDIBits probe done")
 
         raw = ctypes.create_string_buffer(width * height * 4)
+        logging.info("[ShellThumbnail][native-boundary] GetDIBits copy start")
         scan = gdi32.GetDIBits(hdc, hbitmap, 0, height, raw, byref(bmi), DIB_RGB_COLORS)
         if scan == 0:
             raise OSError("GetDIBits (copy) failed")
+        logging.info("[ShellThumbnail][native-boundary] GetDIBits copy done")
 
         image = QImage(bytes(raw), width, height, width * 4, QImage.Format.Format_ARGB32).copy()
         if image.isNull():
@@ -254,11 +267,14 @@ def _hbitmap_to_qimage(hbitmap: HBITMAP) -> QImage:
 
         return image
     finally:
+        logging.info("[ShellThumbnail][native-boundary] DeleteDC start")
         gdi32.DeleteDC(hdc)
+        logging.info("[ShellThumbnail][native-boundary] DeleteDC done")
 
 
 def _shell_item_image_factory_for_path(path: str):
     item_ptr = c_void_p()
+    logging.info(f"[ShellThumbnail][native-boundary] SHCreateItemFromParsingName start: '{path}'")
     hr = int(
         shell32.SHCreateItemFromParsingName(
             path,
@@ -268,6 +284,7 @@ def _shell_item_image_factory_for_path(path: str):
         )
     )
     _check_hresult(hr, "SHCreateItemFromParsingName")
+    logging.info(f"[ShellThumbnail][native-boundary] SHCreateItemFromParsingName done: '{path}'")
 
     if not item_ptr:
         raise OSError("SHCreateItemFromParsingName returned null pointer")
@@ -297,6 +314,7 @@ def get_shell_thumbnail_image(path: str, size: int = 256) -> Optional[QImage]:
 
             for flags in flags_candidates:
                 hbitmap = HBITMAP()
+                logging.info(f"[ShellThumbnail][native-boundary] GetImage start: '{path}' flags={flags}")
                 hr = int(
                     factory.contents.lpVtbl.contents.GetImage(
                         factory,
@@ -305,15 +323,20 @@ def get_shell_thumbnail_image(path: str, size: int = 256) -> Optional[QImage]:
                         byref(hbitmap),
                     )
                 )
+                logging.info(f"[ShellThumbnail][native-boundary] GetImage done: '{path}' flags={flags} hr=0x{hr & 0xFFFFFFFF:08X} hbitmap={bool(hbitmap)}")
                 if not _hr_failed(hr) and hbitmap:
                     return _hbitmap_to_qimage(hbitmap)
 
         return None
     finally:
         if hbitmap:
+            logging.info("[ShellThumbnail][native-boundary] DeleteObject start")
             gdi32.DeleteObject(hbitmap)
+            logging.info("[ShellThumbnail][native-boundary] DeleteObject done")
         if factory:
+            logging.info("[ShellThumbnail][native-boundary] Release start")
             factory.contents.lpVtbl.contents.Release(factory)
+            logging.info("[ShellThumbnail][native-boundary] Release done")
 
 
 def get_shell_thumbnail_pixmap(path: str, size: int = 256) -> Optional[QPixmap]:

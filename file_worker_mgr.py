@@ -57,11 +57,14 @@ class FileMoveWorker(QRunnable):
 
         def target():
             try:
+                logging.info(f"[FileMoveWorker][native-boundary] setctime_blocking start: '{self.dst}'")
                 setctime_blocking(
                     str(self.dst),
                     getattr(self.stat, "st_birthtime", self.stat.st_ctime),
                 )
+                logging.info(f"[FileMoveWorker][native-boundary] setctime_blocking done: '{self.dst}'")
             except Exception as exc:
+                logging.exception(f"[FileMoveWorker][native-boundary] setctime_blocking failed: '{self.dst}'")
                 result["error"] = exc
 
         thread = threading.Thread(
@@ -77,10 +80,12 @@ class FileMoveWorker(QRunnable):
 
     def _restore_timestamps(self):
         """Restores source timestamps on the destination as part of the move operation."""
+        logging.info(f"[FileMoveWorker][native-boundary] os.utime start: '{self.dst}'")
         os.utime(
             self.dst,
             (self.stat.st_atime, self.stat.st_mtime)
         )
+        logging.info(f"[FileMoveWorker][native-boundary] os.utime done: '{self.dst}'")
         self._restore_creation_time_in_helper_thread()
 
     def _emit_progress(self, pct: int, state: dict) -> None:
@@ -109,7 +114,9 @@ class FileMoveWorker(QRunnable):
 
             if is_same_drive(self.src, self.dst):
                 logging.info(f"[FileMoveWorker] Same-drive detected: performing fast atomic move for '{self.src.name}'")
+                logging.info(f"[FileMoveWorker][native-boundary] shutil.move start: '{self.src}' -> '{self.dst}'")
                 shutil.move(str(self.src), str(self.dst))
+                logging.info(f"[FileMoveWorker][native-boundary] shutil.move done: '{self.src}' -> '{self.dst}'")
 
                 try:
                     self._restore_timestamps()
@@ -129,7 +136,9 @@ class FileMoveWorker(QRunnable):
                 progress_state = {"last_pct": -1, "last_emit": 0.0}
 
                 try:
+                    logging.info(f"[FileMoveWorker][native-boundary] cross-drive open start: '{self.src}' -> '{self.dst}'")
                     with open(self.src, 'rb') as fsrc, open(self.dst, 'wb') as fdst:
+                        logging.info(f"[FileMoveWorker][native-boundary] cross-drive open done: '{self.src}' -> '{self.dst}'")
                         while True:
                             chunk = fsrc.read(1024 * 1024) # 1MB chunks
                             if not chunk:
@@ -145,8 +154,10 @@ class FileMoveWorker(QRunnable):
                                     logging.info(f"[FileMoveWorker] '{self.src.name}' progress: {pct}% ({copied}/{total} bytes)")
                                     last_logged_pct = pct
 
+                        logging.info(f"[FileMoveWorker][native-boundary] flush/fsync start: '{self.dst}'")
                         fdst.flush()
                         os.fsync(fdst.fileno())  # Ensure data is written to disk
+                        logging.info(f"[FileMoveWorker][native-boundary] flush/fsync done: '{self.dst}'")
 
                     try:
                         self._restore_timestamps()
@@ -156,8 +167,11 @@ class FileMoveWorker(QRunnable):
                         return
 
                     logging.info(f"[FileMoveWorker] Copy finished. Liberating source file: '{self.src.name}'")
+                    logging.info(f"[FileMoveWorker][native-boundary] safe_unlink start: '{self.src}'")
                     if not safe_unlink(self.src):
+                        logging.error(f"[FileMoveWorker][native-boundary] safe_unlink failed: '{self.src}'")
                         raise PermissionError(f"Could not delete source after copy: {self.src}")
+                    logging.info(f"[FileMoveWorker][native-boundary] safe_unlink done: '{self.src}'")
 
                     logging.info(f"[FileMoveWorker] Cross-drive move completed successfully for '{self.dst.name}'")
                     self.finished.emit(True, self.dst, "ok")

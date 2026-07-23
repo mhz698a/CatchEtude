@@ -17,6 +17,26 @@ from app_signals_mgr import AppSignals
 # State model
 # -----------------------
 class State(Enum):
+    """Lifecycle states for the download decision pipeline.
+
+    IDLE:
+        No file is currently being shown to the user. The queue processor may
+        dequeue the next pending file, maintenance can run, and the watcher may
+        enqueue new files.
+    FILE_DETECTED:
+        A file has been selected from the queue and emitted to the UI, but the
+        UI has not yet acknowledged that the user-decision panel is ready.
+    USER_DECIDING:
+        The active file is visible in the UI and waiting for the user's action;
+        automatic queue advancement is paused so the active file is stable.
+    APPLY_DECISION:
+        Reserved transition state for applying a user decision. The current
+        implementation hands moves directly to background workers, but the enum
+        value is kept for compatibility with existing state checks.
+    RESUME_WATCHER:
+        Short-lived state used after discard/delete style actions to resume
+        normal watcher/queue processing before returning to IDLE.
+    """
     IDLE = auto()
     FILE_DETECTED = auto()
     USER_DECIDING = auto()

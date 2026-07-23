@@ -993,11 +993,18 @@ class MainWindow(QWidget):
     def _on_background_move_finished(self, src: Path, dst: Path, ok: bool, msg: str, src_meta: dict, decision: dict):
         if self._closing:
             return
+        logging.info(f"[MainWindow][finish-boundary] background finish received: {src} -> {dst} ok={ok} msg={msg}")
+        logging.info("[MainWindow][finish-boundary] resume character service start")
         send_character_service_command("resume")
+        logging.info("[MainWindow][finish-boundary] resume character service done")
+        logging.info(f"[MainWindow][finish-boundary] remove moving UI item start: {src}")
         self.queue_panel.queue_movings_widget.remove_movement(src)
+        logging.info(f"[MainWindow][finish-boundary] remove moving UI item done: {src}")
         
         if ok:
+            logging.info(f"[MainWindow][finish-boundary] finalize ok move start: {src}")
             self.background_move_mgr.finalize_move(src, dst, src_meta, decision.get("post_action", "none"))
+            logging.info(f"[MainWindow][finish-boundary] finalize ok move done: {src}")
             self._build_tray()
         else:
             if msg == "TIMESTAMP_RESTORE_FAILED":
@@ -1018,7 +1025,9 @@ class MainWindow(QWidget):
                         logging.exception(f"Timestamp retry failed for moved file: {dst}")
                         self.show_status("No se pudo restaurar la fecha; se conservará el archivo movido.", 5000)
 
+                logging.info(f"[MainWindow][finish-boundary] finalize timestamp-failed move start: {src}")
                 self.background_move_mgr.finalize_move(src, dst, src_meta, decision.get("post_action", "none"))
+                logging.info(f"[MainWindow][finish-boundary] finalize timestamp-failed move done: {src}")
                 self._build_tray()
             elif msg == "FILE_LOCKED":
                 self.show_status(self.loc.get("msg_file_locked"), 5000)

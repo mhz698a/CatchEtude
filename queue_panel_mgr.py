@@ -13,6 +13,8 @@ from ui_utils_mgr import QueueDelegate
 from character_mgr import CharacterListModel
 from queue_movings_widget import QueueMovingsWidget
 
+MAX_VISIBLE_DOWNLOAD_QUEUE_ITEMS = 200
+
 class QueuePanel(QWidget):
     """
     Panel for showing the download queue and managing character data.
@@ -26,6 +28,7 @@ class QueuePanel(QWidget):
         self._hide_secure = False
         self._queue_pending = 0
         self._queue_total = 0
+        self._queue_non_shown = 0
         self._build_ui()
 
     def _build_ui(self):
@@ -71,9 +74,11 @@ class QueuePanel(QWidget):
         self.queue_list_widget.clear()
         total = len(queue_list)
         pending = sum(1 for p in queue_list if str(p) != active_path_str)
-        self._refresh_queue_label(pending, total)
+        visible_queue = queue_list[:MAX_VISIBLE_DOWNLOAD_QUEUE_ITEMS]
+        non_shown = max(0, total - len(visible_queue))
+        self._refresh_queue_label(pending, total, non_shown)
         
-        for p in queue_list:
+        for p in visible_queue:
             item = QtWidgets.QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, str(p))
             item.setData(Qt.ItemDataRole.UserRole + 1, str(p) == active_path_str)
@@ -86,13 +91,21 @@ class QueuePanel(QWidget):
     def get_characters(self):
         return self.char_model.items
 
-    def _refresh_queue_label(self, pending: int | None = None, total: int | None = None):
+    def _refresh_queue_label(
+        self,
+        pending: int | None = None,
+        total: int | None = None,
+        non_shown: int | None = None,
+    ):
         if pending is not None:
             self._queue_pending = pending
         if total is not None:
             self._queue_total = total
+        if non_shown is not None:
+            self._queue_non_shown = non_shown
 
         # {self._queue_pending:02d}/
         self.lbl_queue.setText(
-            f"{self.loc.get('lbl_queue')} - Left: {self._queue_total:02d}"
+            f"{self.loc.get('lbl_queue')} - Left: {self._queue_total:02d} "
+            f"- Non show: {self._queue_non_shown:02d}"
         )
