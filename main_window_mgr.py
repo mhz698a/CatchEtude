@@ -1037,6 +1037,7 @@ class MainWindow(QWidget):
             self.show_status(self.loc.get("msg_file_locked"), 5000)
             return
         
+        self.action_panel.suspend_preview_loading(src)
         send_character_service_command("pause")
 
         try:

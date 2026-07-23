@@ -7,6 +7,7 @@ import os
 import shutil
 import logging
 import time
+import threading
 from pathlib import Path
 from PyQt6.QtCore import QRunnable, QObject, pyqtSignal
 from utils import is_same_drive, safe_unlink
@@ -44,13 +45,43 @@ class FileMoveWorker(QRunnable):
     def finished(self):
         return self.signals.finished
 
+    def _restore_creation_time_in_helper_thread(self):
+        """Restores creation time in a dedicated helper thread.
+
+        The move worker already runs outside the UI thread, but creation-time changes
+        call Win32 through ctypes. Keeping that call in a short-lived helper thread
+        prevents the QRunnable from directly owning the native call stack and gives
+        the worker a bounded wait path for recoverable Win32 errors.
+        """
+        result = {"error": None}
+
+        def target():
+            try:
+                setctime_blocking(
+                    str(self.dst),
+                    getattr(self.stat, "st_birthtime", self.stat.st_ctime),
+                )
+            except Exception as exc:
+                result["error"] = exc
+
+        thread = threading.Thread(
+            target=target,
+            name=f"ctime-restore-{self.dst.name[:32]}",
+            daemon=True,
+        )
+        thread.start()
+        thread.join()
+
+        if result["error"] is not None:
+            raise result["error"]
+
     def _restore_timestamps(self):
         """Restores source timestamps on the destination as part of the move operation."""
         os.utime(
             self.dst,
             (self.stat.st_atime, self.stat.st_mtime)
         )
-        setctime_blocking(str(self.dst), getattr(self.stat, "st_birthtime", self.stat.st_ctime))
+        self._restore_creation_time_in_helper_thread()
 
     def _emit_progress(self, pct: int, state: dict) -> None:
         """Throttles progress signals to avoid flooding Qt's event queue."""

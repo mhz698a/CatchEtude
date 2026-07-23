@@ -154,6 +154,18 @@ class BackgroundMoveManager(QtCore.QObject):
             # Logical StateManager cleanup
             self.state_manager.complete_background_move(src)
 
+    def _handle_worker_finished(self, src: Path, dst: Path, ok: bool, msg: str, src_meta: dict, decision: dict):
+        """Handles worker completion on the manager/UI event loop."""
+        if src not in self._active_workers and src not in self._active_signals:
+            logging.warning(f"Ignoring duplicate background move finish event: {src}")
+            return
+
+        logging.info(f"Finished background move {src}: ok={ok}, msg={msg}")
+        self._active_workers.pop(src, None)
+        self._active_signals.pop(src, None)
+        self.move_finished.emit(src, dst, ok, msg, src_meta, decision)
+        self._process_queue()
+
     def _process_queue(self):
         """Starts enqueued tasks if concurrency limit permits."""
         while len(self._active_workers) < self._max_concurrent and self._pending_tasks:
@@ -172,23 +184,21 @@ class BackgroundMoveManager(QtCore.QObject):
             # Connect signals
             worker.progress.connect(lambda val, s=src: self.move_progress.emit(s, val))
 
-            # Helper closure to capture variables cleanly
-            def make_on_finished(s=src, d=dst, meta=src_meta, dec=decision, w=worker):
+            # Helper closure to capture variables cleanly. Use a queued connection so
+            # finished handling, signal fan-out, and the next queue start run on the
+            # manager/UI event loop instead of the QRunnable stack.
+            def make_on_finished(s=src, d=dst, meta=src_meta, dec=decision):
                 def on_finished(ok: bool, copied_path: Path, msg: str):
-                    logging.info(f"Finished background move {s}: ok={ok}, msg={msg}")
-
-                    # Clean up worker reference
-                    self._active_workers.pop(s, None)
-                    self._active_signals.pop(s, None)
-
-                    # Emit result signal
-                    self.move_finished.emit(s, d, ok, msg, meta, dec)
-
-                    # Trigger next queue item
-                    self._process_queue()
+                    QtCore.QTimer.singleShot(
+                        0,
+                        lambda: self._handle_worker_finished(s, d, ok, msg, meta, dec),
+                    )
                 return on_finished
 
-            worker.finished.connect(make_on_finished())
+            worker.finished.connect(
+                make_on_finished(),
+                type=QtCore.Qt.ConnectionType.QueuedConnection,
+            )
 
             # Emit started signal so UI can show the item immediately
             self.move_started.emit(src, dst)

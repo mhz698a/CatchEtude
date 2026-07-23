@@ -37,6 +37,8 @@ class ActionPanel(QWidget):
         self.filepath = None
         self.preview_hidden = False
         self._hide_secure = False
+        self._preview_generation = 0
+        self._preview_loading_suspended = False
         self._build_ui()
 
     def _build_ui(self):
@@ -187,6 +189,8 @@ class ActionPanel(QWidget):
         )
 
     def set_file(self, p: Path, hide_secure: bool):
+        self._preview_generation += 1
+        self._preview_loading_suspended = False
         self.filepath = p
         self._hide_secure = hide_secure
         self.hide_secure_cb.setChecked(hide_secure)
@@ -268,21 +272,44 @@ class ActionPanel(QWidget):
             ])
         )
 
+    def suspend_preview_loading(self, p: Path | None = None):
+        """Stops any pending preview result from being applied to the UI."""
+        if p is None or p == self.filepath:
+            self._preview_generation += 1
+            self._preview_loading_suspended = True
+            self.preview_label.clear()
+
+    def _preview_request_is_current(self, p: Path, generation: int) -> bool:
+        return (
+            not self._preview_loading_suspended
+            and generation == self._preview_generation
+            and self.filepath == p
+            and p.exists()
+        )
+
     def load_preview(self):
-        if not self.filepath: return
+        if not self.filepath or self._preview_loading_suspended:
+            return
         p = self.filepath
+        generation = self._preview_generation
         try:
-            
+            if not p.exists():
+                return
+
             ext = p.suffix.lower()
             target = self.preview_label.size()
 
             if should_use_shell_thumbnail(ext):
                 shell_pixmap = get_shell_thumbnail_pixmap(str(p), max(target.width(), target.height()))
+                if not self._preview_request_is_current(p, generation):
+                    return
                 if shell_pixmap and not shell_pixmap.isNull():
                     if self._hide_secure:
                         img = apply_secure_blur(shell_pixmap.toImage())
                         shell_pixmap = QtGui.QPixmap.fromImage(img)
 
+                    if not self._preview_request_is_current(p, generation):
+                        return
                     self.preview_label.setPixmap(
                         shell_pixmap.scaled(
                             target,
@@ -299,19 +326,26 @@ class ActionPanel(QWidget):
                 if img_size.isValid():
                     reader.setScaledSize(img_size.scaled(target, Qt.AspectRatioMode.KeepAspectRatio))
                 img = reader.read()
+                if not self._preview_request_is_current(p, generation):
+                    return
                 if not img.isNull():
                     if self._hide_secure:
                         img = apply_secure_blur(img)
+                    if not self._preview_request_is_current(p, generation):
+                        return
                     self.preview_label.setPixmap(QtGui.QPixmap.fromImage(img))
                     return
 
+            if not self._preview_request_is_current(p, generation):
+                return
             provider = QFileIconProvider()
             pixmap = provider.icon(QtCore.QFileInfo(str(p))).pixmap(64, 64)
             if self._hide_secure:
                 img = pixmap.toImage()
                 img = apply_secure_blur(img)
                 pixmap = QtGui.QPixmap.fromImage(img)
-            self.preview_label.setPixmap(pixmap)
+            if self._preview_request_is_current(p, generation):
+                self.preview_label.setPixmap(pixmap)
             
         except Exception:
             logging.exception("Error loading preview")
@@ -364,6 +398,8 @@ class ActionPanel(QWidget):
         self.btn_move.setEnabled(enabled)
         
     def clear(self):
+        self._preview_generation += 1
+        self._preview_loading_suspended = True
         self.filepath = None
         self.preview_label.clear()
         self.rename_input.setText("")
