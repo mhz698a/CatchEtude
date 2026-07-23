@@ -1,155 +1,176 @@
-# Diagnóstico: posibles puntos de violación de acceso 0xc0000005 al mover archivos
+# Diagnóstico actualizado: posibles puntos de `0xc0000005` al mover archivos
 
-Este diagnóstico identifica los puntos del flujo de movimiento donde una caída nativa de Windows
-(`0xc0000005`, access violation) puede ocurrir aunque el código Python esté dentro de `try/except`.
-La razón principal es que `0xc0000005` suele originarse en código nativo llamado desde Python
-(Win32, COM, GDI, extensiones de PyQt o shell extensions); esas fallas pueden terminar el proceso
-sin convertirse en una excepción Python recuperable.
+Este diagnóstico se limita al momento de mover archivos. El escenario de cierre, reinicio o destrucción de
+widgets se deja fuera de este documento para analizarlo por separado.
 
-## Flujo principal de movimiento
+`0xc0000005` es una violación de acceso nativa. En este proyecto, si aparece durante un movimiento, lo más
+probable es que no venga de una excepción Python pura, sino de una llamada a código nativo activada por el
+flujo de movimiento: Win32 vía `ctypes`, COM/GDI del Shell de Windows, Qt/PyQt o componentes externos como
+OneDrive, antivirus, codecs, drivers o shell extensions.
 
-1. `MainWindow._on_move`, `_move_to_subfolder` y `_on_apply_custom` calculan el destino final y llaman a
-   `MainWindow._start_move_task`.
-2. `_start_move_task` valida bloqueo, captura metadatos y encola el movimiento en `BackgroundMoveManager`.
-3. `BackgroundMoveManager._process_queue` crea un `FileMoveWorker` y lo ejecuta en un `QThreadPool`.
-4. `FileMoveWorker.run` mueve el archivo con `shutil.move` si está en la misma unidad, o copia por chunks
-   y elimina el origen si está en otra unidad.
-5. Después de transferir, `_restore_timestamps` usa `os.utime` y `setctime_blocking` para restaurar marcas
-   de tiempo; `setctime_blocking` llama a APIs Win32 mediante `ctypes`.
-6. Al finalizar, las señales Qt actualizan la cola visual y `BackgroundMoveManager.finalize_move` registra
-   historial, actualiza carpetas y opcionalmente dispara una acción posterior.
+## Flujo real al mover
 
-## Zonas de mayor riesgo de 0xc0000005
+1. La UI calcula el destino en `MainWindow._on_move`, `_move_to_subfolder` o `_on_apply_custom`.
+2. `MainWindow._start_move_task` toma el archivo activo, valida si parece bloqueado, suspende la vista previa
+   del archivo actual y encola el movimiento.
+3. `BackgroundMoveManager._process_queue` crea un `FileMoveWorker`, conserva referencias vivas al worker y a
+   sus señales, conecta progreso/finalización y lo arranca en su `QThreadPool`.
+4. `FileMoveWorker.run` hace una de dos rutas:
+   - misma unidad: `shutil.move`;
+   - distinta unidad: copia por bloques, `flush`, `fsync` y luego elimina el origen con `safe_unlink`.
+5. Tras transferir, `_restore_timestamps` restaura `atime`/`mtime` con `os.utime` y restaura `ctime` llamando
+   a `setctime_blocking` dentro de un hilo auxiliar dedicado.
+6. Al terminar, `finished` se procesa con conexión encolada y salto de evento de Qt antes de limpiar workers,
+   emitir `move_finished` y arrancar el siguiente movimiento.
 
-### 1. Restauración de fecha de creación con Win32 vía `ctypes`
+## Puntos donde todavía puede ocurrir `0xc0000005`
 
-**Archivos implicados:** `file_worker_mgr.py`, `wctime.py`.
+### 1. Restauración de `ctime` mediante Win32/`ctypes`
 
-`FileMoveWorker._restore_timestamps` llama a `setctime_blocking` después de mover/copiar el archivo. Esa
-función abre un handle con `CreateFileW`, llama a `SetFileTime` y cierra el handle con `CloseHandle`.
-Aunque las firmas están declaradas, este es el punto más directo donde el flujo de movimiento entra en
-código nativo Win32 mediante `ctypes`.
+**Riesgo:** alto.
 
-**Por qué puede producir 0xc0000005:**
+La restauración de fecha de creación sigue siendo el punto nativo más directo del movimiento. Ahora se ejecuta
+en un hilo auxiliar dedicado, lo cual reduce el acoplamiento con el `QRunnable`, pero no convierte una access
+violation nativa en una excepción Python recuperable si el fallo ocurre dentro de `kernel32` o de una capa del
+sistema de archivos.
 
-- Si una firma `ctypes` no coincide exactamente con la ABI esperada o un handle inválido se usa en una API
-  nativa, el proceso puede caer con access violation.
-- Si el archivo está en OneDrive, red, antivirus o shell extension y el handle cambia de estado durante la
-  operación, puede aparecer comportamiento nativo no recuperable.
-- El movimiento en misma unidad usa `shutil.move` y después toca timestamps; en unidad distinta, la copia
-  termina, se hace `fsync`, y también se toca creation time. Por tanto, el riesgo aplica a ambos caminos.
+**Ruta implicada:**
 
-**Indicadores en logs antes de la caída:**
+- `FileMoveWorker._restore_timestamps` → `_restore_creation_time_in_helper_thread` → `setctime_blocking`.
+- `setctime_blocking` → `CreateFileW` → `SetFileTime` → `CloseHandle`.
 
-- `[FileMoveWorker] Same-drive detected...`
-- `[FileMoveWorker] Cross-drive detected...`
-- mensajes inmediatamente antes/después de `Timestamp restore failed` o ausencia de log posterior al move.
+**Cuándo sospechar de este punto:**
 
-**Mitigación sugerida:** aislar temporalmente `setctime_blocking` detrás de un flag de configuración o mover
-la restauración de creation time a un proceso auxiliar para que una caída nativa no cierre la UI principal.
+- El archivo ya fue copiado o movido, pero la app cae justo después de la transferencia.
+- El último log visible está cerca de `Same-drive move`, `Cross-drive move`, `Copy finished` o restauración de
+  timestamps.
+- El problema ocurre más con rutas sincronizadas, unidades externas, red, OneDrive o archivos vigilados por
+  antivirus.
 
-### 2. Señales Qt emitidas desde workers del `QThreadPool`
+**Qué probar para confirmarlo:**
 
-**Archivos implicados:** `file_worker_mgr.py`, `background_move_mgr.py`, `main_window_mgr.py`,
-`queue_movings_widget.py`.
+1. Desactivar temporalmente solo la restauración de `ctime` y dejar `os.utime` activo.
+2. Comparar movimientos en carpeta local simple contra OneDrive/red/unidad externa.
+3. Registrar un log inmediatamente antes y después de `_restore_creation_time_in_helper_thread`.
 
-`FileMoveWorker` emite `progress` y `finished` desde un `QRunnable`. `BackgroundMoveManager` conserva
-referencias a `worker` y `worker.signals`, conecta lambdas, emite señales hacia la UI y limpia referencias
-cuando finaliza.
+### 2. Thumbnails del Shell que siguen ejecutándose cuando el usuario inicia el movimiento
 
-**Por qué puede producir 0xc0000005:**
+**Riesgo:** medio-alto si el archivo es video o formato manejado por extensiones del Shell.
 
-- PyQt es una capa nativa sobre Qt/C++; si un `QObject` receptor se destruye mientras todavía hay eventos
-  encolados desde un worker, puede producirse una caída nativa.
-- El cierre de la aplicación intenta esperar al `QThreadPool`, pero si hay eventos Qt pendientes o señales
-  emitidas durante cierre, el riesgo existe.
-- La cola visual se modifica en `_on_background_move_started`, `_on_background_move_progress` y
-  `_on_background_move_finished`; si el widget ya fue destruido o está en proceso de cierre, la caída puede
-  no aparecer como excepción Python.
+La vista previa se genera al cargar el archivo. Ahora existe una generación de preview y una suspensión cuando
+inicia el movimiento, por lo que un resultado obsoleto ya no debería aplicarse a la UI si el archivo desaparece,
+cambia la selección o empieza a moverse. Sin embargo, si el Shell/thumbnail provider ya entró en código nativo
+antes de la suspensión, una caída dentro del provider puede tumbar el proceso.
 
-**Indicadores en logs antes de la caída:**
+**Ruta implicada:**
 
-- `Starting prioritized background move...`
-- `Finished background move...`
-- la caída ocurre al cerrar/reiniciar mientras hay movimientos activos o justo al terminar uno.
+- `ActionPanel.load_preview` → `get_shell_thumbnail_pixmap` → `get_shell_thumbnail_image`.
+- `get_shell_thumbnail_image` usa `SHCreateItemFromParsingName`, `IShellItemImageFactory.GetImage`, `GetDIBits`,
+  `DeleteObject`, `Release` y COM/GDI.
 
-**Mitigación sugerida:** mantener la barrera de cierre estricta, desconectar señales solo después de drenar
-la cola de eventos, y considerar que `finished` haga `QTimer.singleShot(0, ...)` hacia el hilo principal antes
-de limpiar referencias o arrancar el siguiente movimiento.
+**Cuándo sospechar de este punto:**
 
-### 3. Generación de thumbnails del Shell mientras el archivo se mueve
+- La caída ocurre al mover videos o archivos con preview del Shell.
+- El usuario mueve el archivo inmediatamente después de que aparece en la UI, mientras la miniatura puede seguir
+  generándose.
+- Desactivar thumbnails del Shell reduce o elimina el fallo.
 
-**Archivos implicados:** `shell_video_thumbnail_pyqt6.py`, `action_panel_mgr.py`.
+**Qué probar para confirmarlo:**
 
-La vista previa puede pedir thumbnails de video al Shell de Windows. Este módulo usa COM/GDI mediante
-`ctypes`: `SHCreateItemFromParsingName`, `IShellItemImageFactory.GetImage`, `GetObjectW`, `GetDIBits`,
-`DeleteObject`, `Release` y `CoUninitialize`.
+1. Forzar que `should_use_shell_thumbnail` devuelva `False` para videos y repetir el movimiento.
+2. Probar los mismos archivos con vista previa ya cargada y esperando unos segundos antes de mover.
+3. Probar en una carpeta local sin OneDrive y sin codecs/shell extensions de terceros si es posible.
 
-**Por qué puede producir 0xc0000005:**
+### 3. Operación física de movimiento/copia y hooks del sistema de archivos
 
-- Los thumbnail providers son shell extensions nativas de terceros o del sistema; una caída dentro de ese
-  proveedor puede cerrar el proceso Python.
-- El archivo puede desaparecer o cambiar de ubicación mientras se genera la vista previa.
-- Hay punteros COM y `HBITMAP` administrados manualmente; si el proveedor devuelve un objeto inconsistente,
-  el fallo puede ser nativo.
+**Riesgo:** medio.
 
-**Indicadores en logs antes de la caída:**
+`shutil.move`, lectura/escritura por bloques, `fsync` y `unlink` deberían producir excepciones Python como
+`OSError` o `PermissionError`. Si aparece `0xc0000005` exactamente durante esa etapa, lo más probable es que
+la caída venga de código nativo externo que intercepta operaciones de archivo.
 
-- La caída ocurre al cargar preview de video, al seleccionar rápidamente otro archivo, o inmediatamente antes
-  de mover un video.
+**Posibles actores externos:**
 
-**Mitigación sugerida:** desactivar thumbnails del Shell durante movimientos activos, o generar thumbnails en
-un proceso separado. Si al desactivar thumbnails desaparece el 0xc0000005, esta zona queda confirmada.
+- OneDrive o proveedores de sincronización.
+- Antivirus/EDR.
+- Drivers de unidades externas o red.
+- Shell extensions que inspeccionan el archivo al crearse o moverse.
+- Codecs/handlers que reaccionan a metadatos o thumbnails.
 
-### 4. Movimiento físico con `shutil.move` sobre rutas sincronizadas o con extensiones de shell
+**Cuándo sospechar de este punto:**
 
-**Archivos implicados:** `file_worker_mgr.py`, `utils.py`.
+- El último log visible es `Transfer started`, `Same-drive detected`, `Cross-drive detected` o progreso parcial.
+- El fallo depende del destino o de la unidad, no del tipo de archivo.
+- El archivo de destino queda parcial o el origen queda sin borrar en movimientos entre unidades.
 
-`shutil.move` delega en operaciones del sistema de archivos. En unidad distinta, el código hace lectura y
-escritura manual, luego borra el origen con `safe_unlink`.
+**Qué probar para confirmarlo:**
 
-**Por qué puede producir 0xc0000005:**
+1. Mover el mismo archivo entre dos carpetas locales del mismo disco.
+2. Repetir hacia OneDrive/red/unidad externa.
+3. Pausar antivirus/OneDrive solo para la prueba controlada.
+4. Registrar logs antes/después de `shutil.move`, apertura de origen/destino, `fsync` y `safe_unlink`.
 
-- El código Python debería lanzar `OSError` o `PermissionError`, no access violation. Si aparece 0xc0000005
-  durante esta etapa, normalmente apunta a drivers, antivirus, OneDrive, codecs/handlers o extensiones nativas
-  que interceptan operaciones de archivo.
-- `is_file_locked` solo prueba apertura `r+b`; no garantiza que otro proceso no bloquee el archivo entre la
-  validación y el movimiento.
+### 4. Señales de progreso y `finished` durante la finalización del movimiento
 
-**Indicadores en logs antes de la caída:**
+**Riesgo:** medio-bajo tras la mitigación, pero todavía relevante.
 
-- El último log es `Transfer started`, `Same-drive detected`, `Cross-drive detected`, o progreso parcial.
+La finalización ya se reforzó: `finished` usa conexión encolada y luego `QTimer.singleShot(0, ...)` para que la
+limpieza y emisión de `move_finished` ocurran en el event loop del manager/UI. Esto reduce el riesgo de tocar
+estado compartido desde el stack del `QRunnable`.
 
-**Mitigación sugerida:** registrar tamaño, unidad, destino y timestamps antes/después de cada llamada crítica;
-probar con antivirus/OneDrive pausados; y comparar movimientos en carpetas locales simples.
+Aun así, el flujo sigue entrando en Qt/PyQt nativo: se emiten señales, se actualiza la cola visual y se llama a
+`finalize_move`. Si una señal llega en un momento inesperado o hay un bug nativo en la capa Qt/PyQt, la caída
+puede manifestarse como `0xc0000005`.
 
-### 5. Acciones posteriores al movimiento y servicios auxiliares
+**Cuándo sospechar de este punto:**
 
-**Archivos implicados:** `main_window_mgr.py`, `background_move_mgr.py`, `send_command.py`.
+- La transferencia termina correctamente, pero la caída ocurre justo al retirar el elemento de la cola visual o
+  al comenzar el siguiente movimiento.
+- Con un solo movimiento funciona, pero falla con varios movimientos concurrentes o encadenados.
+- El último log visible es `Finished background move`.
 
-Antes de mover se pausa el servicio de personajes y al terminar se reanuda. Además, `finalize_move` puede
-emitir una acción posterior para abrir archivo o carpeta.
+**Qué probar para confirmarlo:**
 
-**Por qué puede producir 0xc0000005:**
+1. Forzar `MAX_CONCURRENT_MOVES = 1` y repetir.
+2. Repetir con varios archivos grandes para aumentar eventos de progreso.
+3. Agregar logs al inicio y fin de `_handle_worker_finished`, `_on_background_move_finished` y `finalize_move`.
 
-- Abrir un archivo recién movido puede activar shell, codecs, reproductores o handlers nativos.
-- La emisión de señales hacia objetos Qt durante cierre o mientras se procesan servicios auxiliares también
-  puede generar fallos nativos.
+### 5. Acciones posteriores al movimiento (`post_action`)
 
-**Mitigación sugerida:** reproducir con `post_action = none`; si desaparece, investigar apertura posterior y
-servicios auxiliares antes que el movimiento físico.
+**Riesgo:** medio si se abre archivo/carpeta automáticamente.
 
-## Orden recomendado para aislar la causa
+Si `post_action` es `open_file` u `open_folder`, el sistema puede invocar Explorer, handlers del Shell,
+reproductores, codecs o extensiones nativas inmediatamente después del movimiento. Eso ya no es la copia en sí,
+pero sí ocurre dentro de la ventana temporal del movimiento/finalización.
 
-1. Reproducir con thumbnails del Shell desactivados para videos.
-2. Reproducir con restauración de creation time desactivada o diferida.
-3. Reproducir con `post_action = none`.
-4. Reproducir moviendo entre carpetas locales no sincronizadas por OneDrive y sin antivirus escaneando.
-5. Si solo falla en cierre/reinicio, enfocar la investigación en señales Qt y vida útil de widgets/receivers.
-6. Si solo falla con ciertos formatos de video, enfocar en thumbnails, codecs y shell extensions.
+**Cuándo sospechar de este punto:**
+
+- Con `post_action = none` no falla.
+- Falla solo al abrir carpetas con ciertos archivos o al abrir ciertos formatos.
+- La caída ocurre después de registrar el movimiento en historial.
+
+**Qué probar para confirmarlo:**
+
+1. Reproducir siempre con `post_action = none`.
+2. Si desaparece, probar `open_folder` y `open_file` por separado.
+3. Revisar asociaciones de archivo, codecs y extensiones de Explorer.
+
+## Prioridad de investigación recomendada
+
+1. **Desactivar `ctime` temporalmente**: es la llamada Win32 más directa del flujo de movimiento.
+2. **Desactivar thumbnails del Shell**: especialmente si falla con videos o al mover rápido tras cargar el archivo.
+3. **Probar con `post_action = none`**: separa movimiento físico de apertura posterior.
+4. **Comparar local vs OneDrive/red/unidad externa**: separa bug de la app de hooks del sistema de archivos.
+5. **Bajar concurrencia a 1**: reduce presión sobre señales/progreso/finalización.
+6. **Agregar logs de frontera** alrededor de llamadas nativas y de la finalización para ubicar el último punto
+   ejecutado antes de la caída.
 
 ## Conclusión
 
-Los puntos más sospechosos no son las llamadas Python puras de mover/copiar, sino las transiciones a código
-nativo: `setctime_blocking` en `wctime.py`, thumbnails COM/GDI en `shell_video_thumbnail_pyqt6.py`, y señales
-PyQt cruzando desde `QThreadPool` hacia widgets durante finalización o cierre.
+Después de las mitigaciones, los puntos más probables para un `0xc0000005` durante el movimiento quedan así:
+
+1. `setctime_blocking`/Win32 para restaurar `ctime`.
+2. Thumbnail provider del Shell si la generación ya estaba en curso cuando empieza el movimiento.
+3. Hooks externos del sistema de archivos durante `shutil.move`, copia por bloques, `fsync` o `unlink`.
+4. Señales Qt/PyQt de finalización/progreso, sobre todo con múltiples movimientos.
+5. Acciones posteriores que abren archivo o carpeta y activan Shell/codecs/handlers.
