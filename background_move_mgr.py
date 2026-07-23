@@ -126,33 +126,62 @@ class BackgroundMoveManager(QtCore.QObject):
         """
         Finalizes physical and folder-level state after a background move completes.
         """
+        logging.info(f"[BackgroundMoveManager][finalize-boundary] finalize_move start: {src} -> {dst} post_action={post_action}")
         try:
+            logging.info(f"[BackgroundMoveManager][finalize-boundary] destination exists check start: {dst}")
             if not dst.exists():
                 logging.error(f"Finalization skipped: destination is missing: {dst}")
                 self.state_manager.fail_background_move(src)
                 return
+            logging.info(f"[BackgroundMoveManager][finalize-boundary] destination exists check done: {dst}")
 
             from utils import update_folder_mtime
 
             # Update modification times of source and destination folders
+            logging.info(f"[BackgroundMoveManager][finalize-boundary] update dst folder mtime start: {dst.parent}")
             update_folder_mtime(dst.parent)
+            logging.info(f"[BackgroundMoveManager][finalize-boundary] update dst folder mtime done: {dst.parent}")
             try:
+                logging.info(f"[BackgroundMoveManager][finalize-boundary] update src folder mtime start: {src.parent}")
                 update_folder_mtime(src.parent)
+                logging.info(f"[BackgroundMoveManager][finalize-boundary] update src folder mtime done: {src.parent}")
             except Exception as e:
                 logging.warning(f"Could not update mtime for origin folder: {e}")
 
             logging.info(f"Background move finalized physically: {src} -> {dst}")
+            logging.info(f"[BackgroundMoveManager][finalize-boundary] history record start: {src} -> {dst}")
             self._history.record_move(src, dst, src_meta)
+            logging.info(f"[BackgroundMoveManager][finalize-boundary] history record done: {src} -> {dst}")
 
             if post_action in ("open_file", "open_folder") and self.state_manager.notifier:
+                logging.info(f"[BackgroundMoveManager][finalize-boundary] post_action emit start: {dst} mode={post_action}")
                 self.state_manager.notifier.post_action_ready.emit(str(dst), post_action)
+                logging.info(f"[BackgroundMoveManager][finalize-boundary] post_action emit done: {dst} mode={post_action}")
 
         except Exception:
             logging.exception("Error in finalize_move")
 
         finally:
             # Logical StateManager cleanup
+            logging.info(f"[BackgroundMoveManager][finalize-boundary] state cleanup start: {src}")
             self.state_manager.complete_background_move(src)
+            logging.info(f"[BackgroundMoveManager][finalize-boundary] state cleanup done: {src}")
+
+    def _handle_worker_finished(self, src: Path, dst: Path, ok: bool, msg: str, src_meta: dict, decision: dict):
+        """Handles worker completion on the manager/UI event loop."""
+        if src not in self._active_workers and src not in self._active_signals:
+            logging.warning(f"Ignoring duplicate background move finish event: {src}")
+            return
+
+        logging.info(f"[BackgroundMoveManager][finish-boundary] handle finished start: {src} ok={ok} msg={msg}")
+        self._active_workers.pop(src, None)
+        self._active_signals.pop(src, None)
+        logging.info(f"[BackgroundMoveManager][finish-boundary] move_finished emit start: {src}")
+        self.move_finished.emit(src, dst, ok, msg, src_meta, decision)
+        logging.info(f"[BackgroundMoveManager][finish-boundary] move_finished emit done: {src}")
+        logging.info(f"[BackgroundMoveManager][finish-boundary] process next queue start")
+        self._process_queue()
+        logging.info(f"[BackgroundMoveManager][finish-boundary] process next queue done")
 
     def _process_queue(self):
         """Starts enqueued tasks if concurrency limit permits."""
@@ -172,23 +201,21 @@ class BackgroundMoveManager(QtCore.QObject):
             # Connect signals
             worker.progress.connect(lambda val, s=src: self.move_progress.emit(s, val))
 
-            # Helper closure to capture variables cleanly
-            def make_on_finished(s=src, d=dst, meta=src_meta, dec=decision, w=worker):
+            # Helper closure to capture variables cleanly. Use a queued connection so
+            # finished handling, signal fan-out, and the next queue start run on the
+            # manager/UI event loop instead of the QRunnable stack.
+            def make_on_finished(s=src, d=dst, meta=src_meta, dec=decision):
                 def on_finished(ok: bool, copied_path: Path, msg: str):
-                    logging.info(f"Finished background move {s}: ok={ok}, msg={msg}")
-
-                    # Clean up worker reference
-                    self._active_workers.pop(s, None)
-                    self._active_signals.pop(s, None)
-
-                    # Emit result signal
-                    self.move_finished.emit(s, d, ok, msg, meta, dec)
-
-                    # Trigger next queue item
-                    self._process_queue()
+                    QtCore.QTimer.singleShot(
+                        0,
+                        lambda: self._handle_worker_finished(s, d, ok, msg, meta, dec),
+                    )
                 return on_finished
 
-            worker.finished.connect(make_on_finished())
+            worker.finished.connect(
+                make_on_finished(),
+                type=QtCore.Qt.ConnectionType.QueuedConnection,
+            )
 
             # Emit started signal so UI can show the item immediately
             self.move_started.emit(src, dst)
