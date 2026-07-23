@@ -56,6 +56,8 @@ class SelectionPanel(QWidget):
             lambda gen: setattr(self, "_overworld_refresh_pending", False)
         )
         self._overworld_generation = 0
+        self._last_loaded_type = None
+        self._last_loaded_year = None
         self._build_ui()
 
     def _build_ui(self):
@@ -178,10 +180,29 @@ class SelectionPanel(QWidget):
             'year': self.list_year.current_year()
         }
 
-    def refresh_classification_ui(self):           
+    def refresh_classification_ui(self, force=False):
         t = self.list_type.currentRow() + 2
+        year = self.list_year.current_year() if t in (2, 3, 4, 8) else None
+
+        if not force and t == self._last_loaded_type and year == self._last_loaded_year:
+            if t in (2, 3, 4, 8):
+                if year:
+                    self.list_year.setEnabled(True)
+                    self.list_sub.setEnabled(True)
+                else:
+                    self.list_sub.setEnabled(False)
+            elif t in (5, 6):
+                self.list_sub.setEnabled(True)
+                self.list_year.setEnabled(False)
+            else:
+                self.list_sub.setEnabled(False)
+                self.list_year.setEnabled(False)
+            return
+
+        self._last_loaded_type = t
+        self._last_loaded_year = year
+
         if t in (2, 3, 4, 8):
-            year = self.list_year.current_year()
             if year:
                 base = get_base_path_for_type_year(t, year)
                 self._populate_subfolders(base)
@@ -336,6 +357,9 @@ class SelectionPanel(QWidget):
 
     def _on_overworld_result(self, name: str, line2: str = "", line3: str = ""):
         self._overworld_refresh_pending = False
+        t = self.list_type.currentRow() + 2
+        if t != 8:
+            return
 
         if hasattr(self, "list_sub"):
             self.list_sub.update_button(name, line2, line3)
@@ -348,7 +372,7 @@ class SelectionPanel(QWidget):
             new_path = base_path / name
             try:
                 new_path.mkdir(parents=True, exist_ok=True)
-                self.refresh_classification_ui()
+                self.refresh_classification_ui(force=True)
                 self.folder_structure_changed.emit()
             except Exception:
                 logging.exception(f"Failed to create folder: {new_path}")
@@ -362,7 +386,7 @@ class SelectionPanel(QWidget):
             new_path = folder_path.parent / name
             try:
                 folder_path.rename(new_path)
-                self.refresh_classification_ui()
+                self.refresh_classification_ui(force=True)
                 self.folder_structure_changed.emit()
             except Exception:
                 logging.exception(f"Failed to rename folder: {folder_path} -> {new_path}")
@@ -375,11 +399,11 @@ class SelectionPanel(QWidget):
         if res == QtWidgets.QMessageBox.StandardButton.Yes:
             try:
                 if delete_to_recycle_bin(folder_path):
-                    self.refresh_classification_ui()
+                    self.refresh_classification_ui(force=True)
                 else:
                     # Fallback to shutil if recycle bin fails for some reason
                     shutil.rmtree(folder_path)
-                    self.refresh_classification_ui()
+                    self.refresh_classification_ui(force=True)
                 self.folder_structure_changed.emit()
             except Exception:
                 logging.exception(f"Failed to delete folder: {folder_path}")

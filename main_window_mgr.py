@@ -132,7 +132,7 @@ class MainWindow(QWidget):
 
         self.retranslate_ui()
         # Some changes might require more specific updates
-        self.selection_panel.refresh_classification_ui()
+        self.selection_panel.refresh_classification_ui(force=True)
 
     def _build_ui(self):
         main_vbox = QVBoxLayout(self)
@@ -204,6 +204,7 @@ class MainWindow(QWidget):
         self.queue_panel = QueuePanel()
         self.queue_panel.set_hide_secure(self._hide_secure)
         self.queue_panel.characters_updated.connect(self._update_character_buttons)
+        self.queue_panel.character_updated.connect(self._on_single_character_updated)
         root.addWidget(self.queue_panel)
         
         main_vbox.addLayout(root, 1)
@@ -764,7 +765,16 @@ class MainWindow(QWidget):
         sel = self.selection_panel.get_selection()
 
         logging.info("FD 12")
-        self._on_type_changed(sel["type"])
+        t = sel["type"]
+        if t in (2, 3, 4, 7, 8) and not is_internal_available():
+            if not self._internal_warned:
+                self._internal_warned = True
+                QtWidgets.QMessageBox.warning(self, "Almacenamiento no disponible", "El disco interno (E:\\_Internal) no está conectado.")
+            self.selection_panel.list_sub.clear()
+            self.selection_panel.list_sub.setEnabled(False)
+            self.selection_panel.list_year.setEnabled(False)
+        else:
+            self._sync_apply_button()
 
         logging.info("FD 13")
         self.selection_panel.set_keep_mode(
@@ -840,25 +850,31 @@ class MainWindow(QWidget):
         self.queue_panel.update_queue(queue_list, active_path_str)
         self._update_undo_button_tooltip()
 
+    def _on_single_character_updated(self, c):
+        t = self.selection_panel.get_selection()['type']
+        if t != 2: return
+
+        folder_name = Path(c.path).name
+        try:
+            birthday = datetime.fromisoformat(c.birthday_iso)
+        except Exception:
+            birthday = datetime(1970, 1, 1)
+        birthday_fix = "" if not birthday or birthday.year == 1970 else f" · {birthday.strftime('%Y-%m-%d')}"
+        num_char = f" · {c.num:02d}" if c.num != 0 else ""
+        alter_sh = f"/{c.alter}" if c.name != '_' else ""
+        line2 = f"{c.year}{num_char} · {c.name if c.name != '_' else c.alter}{alter_sh}{birthday_fix}"
+        real_age = f"{c.age_str} | " if c.age_str else ""
+        distance = "" if c.origin_age == 0 else f"d: {(c.year - 2003) - c.origin_age} | "
+        oring_age_fix = "" if c.origin_age == 0 else f"a: {c.origin_age} | "
+        line3 = f"{real_age}{distance}{oring_age_fix}Files: {c.file_count} | {c.size_mb_str}"
+        self.selection_panel.update_subfolder_button(folder_name, line2, line3)
+
     def _update_character_buttons(self):
         t = self.selection_panel.get_selection()['type']
         if t != 2: return
             
         for c in self.queue_panel.get_characters():
-            folder_name = Path(c.path).name
-            try:
-                birthday = datetime.fromisoformat(c.birthday_iso)
-            except Exception:
-                birthday = datetime(1970, 1, 1)
-            birthday_fix = "" if not birthday or birthday.year == 1970 else f" · {birthday.strftime('%Y-%m-%d')}"
-            num_char = f" · {c.num:02d}" if c.num != 0 else ""
-            alter_sh = f"/{c.alter}" if c.name != '_' else ""
-            line2 = f"{c.year}{num_char} · {c.name if c.name != '_' else c.alter}{alter_sh}{birthday_fix}"
-            real_age = f"{c.age_str} | " if c.age_str else ""
-            distance = "" if c.origin_age == 0 else f"d: {(c.year - 2003) - c.origin_age} | "
-            oring_age_fix = "" if c.origin_age == 0 else f"a: {c.origin_age} | "       
-            line3 = f"{real_age}{distance}{oring_age_fix}Files: {c.file_count} | {c.size_mb_str}"
-            self.selection_panel.update_subfolder_button(folder_name, line2, line3)
+            self._on_single_character_updated(c)
 
 
     def _on_move(self):

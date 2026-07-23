@@ -21,6 +21,7 @@ class QueuePanel(QWidget):
     Panel para mostrar la cola de descargas y gestionar los datos de personajes.
     """
     characters_updated = QtCore.pyqtSignal()
+    character_updated = QtCore.pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -57,7 +58,13 @@ class QueuePanel(QWidget):
         # Character Model
         self.char_model = CharacterListModel()
         self.char_model.modelReset.connect(self.characters_updated.emit)
-        self.char_model.dataChanged.connect(self.characters_updated.emit)
+        self.char_model.dataChanged.connect(self._on_char_data_changed)
+
+    def _on_char_data_changed(self, topLeft, bottomRight, roles=None):
+        for row in range(topLeft.row(), bottomRight.row() + 1):
+            if 0 <= row < len(self.char_model.items):
+                char_entry = self.char_model.items[row]
+                self.character_updated.emit(char_entry)
 
     def retranslate_ui(self):
         self._refresh_queue_label()

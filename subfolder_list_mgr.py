@@ -39,40 +39,41 @@ class SubfolderButton(QtWidgets.QPushButton):
         self.lbl_extra2.hide()
         self._layout.addWidget(self.lbl_extra2)
         
+        self._stable_height = 30
         self.setFixedHeight(30)
         self.setStyleSheet("QPushButton { text-align: left; }")
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.RightButton:
             self.rightClicked.emit(self.name, event.globalPosition().toPoint())
-        super().mousePressEvent(event)
+            event.accept()
+        else:
+            super().mousePressEvent(event)
 
     def set_data(self, line2=None, line3=None):
-        if line2:
+        if line2 is not None:
             self.lbl_extra1.setText(line2)
-            self.lbl_extra1.show()
-        else:
-            self.lbl_extra1.hide()
+            if line2 or self._stable_height > 30:
+                self.lbl_extra1.show()
+            else:
+                self.lbl_extra1.hide()
 
-        if line3:
+        if line3 is not None:
             self.lbl_extra2.setText(line3)
-            self.lbl_extra2.show()
-        else:
-            self.lbl_extra2.hide()
+            if line3 or self._stable_height == 60:
+                self.lbl_extra2.show()
+            else:
+                self.lbl_extra2.hide()
 
         self._apply_height(line2, line3)
 
     def _apply_height(self, line2=None, line3=None, reserve_height=None):
         if reserve_height is not None:
+            self._stable_height = reserve_height
             self.setFixedHeight(reserve_height)
             return
 
-        if line2 and line3:
-            self.setFixedHeight(60)
-        elif line2 or line3:
-            self.setFixedHeight(45)
-        else:
-            self.setFixedHeight(30)
+        self.setFixedHeight(self._stable_height)
 
     def set_loading_placeholder(self, line2="Cargando...", line3=None, reserve_height=None):
         self.lbl_extra1.setText(line2)
