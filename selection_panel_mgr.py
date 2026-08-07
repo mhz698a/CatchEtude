@@ -58,6 +58,7 @@ class SelectionPanel(QWidget):
         self._overworld_generation = 0
         self._last_loaded_type = None
         self._last_loaded_year = None
+        self._recent_subfolders = []
         self._build_ui()
 
     def _build_ui(self):
@@ -67,8 +68,15 @@ class SelectionPanel(QWidget):
         # -------------------
         # Type Column
         # -------------------
-        type_decition_bar = QVBoxLayout()
-        type_decition_bar.setContentsMargins(110, 0, 0, 0) 
+        type_decition_bar = QHBoxLayout()
+        type_decition_bar.setContentsMargins(0, 0, 0, 0)
+        type_decition_bar.setSpacing(8)
+
+        self.btn_recently = QtWidgets.QPushButton(self.loc.get("btn_recently"))
+        self.btn_recently.setFixedHeight(34)
+        self.btn_recently.setFixedWidth(100)
+        self.btn_recently.clicked.connect(self._show_recently_menu)
+        type_decition_bar.addWidget(self.btn_recently)
         
         self.list_type = QListWidget()
         self.list_type.setMaximumHeight(50)
@@ -87,6 +95,7 @@ class SelectionPanel(QWidget):
                 border: none;
                 background: transparent;
                 outline: none;
+                margin-left: 5px;
             }
             QListWidget::item {
                 border-radius: 8px;
@@ -105,7 +114,7 @@ class SelectionPanel(QWidget):
             }
         """)
         
-        type_decition_bar.addWidget(self.list_type)
+        type_decition_bar.addWidget(self.list_type, 1)
         layout.addLayout(type_decition_bar)
         
 
@@ -152,7 +161,7 @@ class SelectionPanel(QWidget):
         v_sub = QVBoxLayout()
         self.list_sub = SubfolderButtonList()
         self.list_sub.setEnabled(False)
-        self.list_sub.clicked.connect(self.subfolder_clicked.emit)
+        self.list_sub.clicked.connect(self._on_subfolder_clicked)
         self.list_sub.rightClicked.connect(self._on_subfolder_right_clicked)
         self.list_sub.emptyCreateClicked.connect(self._on_empty_create_folder_clicked)
         v_sub.addWidget(self.list_sub)
@@ -163,7 +172,60 @@ class SelectionPanel(QWidget):
 
     def retranslate_ui(self):               
         curr = self.list_type.currentRow()
+        self.btn_recently.setText(self.loc.get("btn_recently"))
         self._fill_type_list(curr)
+
+
+    def _on_subfolder_clicked(self, name: str):
+        self._remember_recent_subfolder(name)
+        self.subfolder_clicked.emit(name)
+
+    def _remember_recent_subfolder(self, name: str):
+        t = self.list_type.currentRow() + 2
+        year = self.list_year.current_year() if t in (2, 3, 4, 8) else None
+        if not name or year is None:
+            return
+
+        recent = {"type": t, "year": year, "name": name}
+        if recent in self._recent_subfolders:
+            return
+
+        self._recent_subfolders.insert(0, recent)
+        del self._recent_subfolders[12:]
+
+    def _show_recently_menu(self):
+        menu = QtWidgets.QMenu(self)
+
+        if not self._recent_subfolders:
+            empty_action = menu.addAction(self.loc.get("menu_no_recently_folders"))
+            empty_action.setEnabled(False)
+        else:
+            for recent in self._recent_subfolders:
+                label = f'{recent["name"]} ({recent["year"]})'
+                action = menu.addAction(label)
+                action.triggered.connect(
+                    lambda checked=False, item=recent: self._choose_recent_subfolder(item)
+                )
+
+        menu.exec(self.btn_recently.mapToGlobal(self.btn_recently.rect().bottomLeft()))
+
+    def _choose_recent_subfolder(self, recent: dict):
+        type_id = recent.get("type")
+        year = recent.get("year")
+        name = recent.get("name")
+        if not type_id or year is None or not name:
+            return
+
+        row = type_id - 2
+        if 0 <= row < self.list_type.count():
+            self.list_type.setCurrentRow(row)
+
+        if year in getattr(config, "NONCANON_YEARS", ()):
+            self.list_year._select_hidden_year(year)
+        else:
+            self.list_year._select_year(year)
+
+        self.subfolder_clicked.emit(name)
 
     def _on_type_changed(self, idx):
         self.type_changed.emit(idx + 2)
