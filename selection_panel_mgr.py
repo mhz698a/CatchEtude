@@ -74,6 +74,7 @@ class SelectionPanel(QWidget):
 
         self.btn_recently = QtWidgets.QPushButton(self.loc.get("btn_recently"))
         self.btn_recently.setFixedHeight(34)
+        self.btn_recently.setFixedWidth(100)
         self.btn_recently.clicked.connect(self._show_recently_menu)
         type_decition_bar.addWidget(self.btn_recently)
         
@@ -94,6 +95,7 @@ class SelectionPanel(QWidget):
                 border: none;
                 background: transparent;
                 outline: none;
+                margin-left: 5px;
             }
             QListWidget::item {
                 border-radius: 8px;
