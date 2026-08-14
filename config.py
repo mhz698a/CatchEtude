@@ -67,6 +67,7 @@ DEFAULT_SETTINGS = {
     "FORCE_GC": True,
     "TIMER_GC": 500,
     "MAX_CONCURRENT_MOVES": 1,
+    "PDF_DPI": 150,
 }
 
 # Declarar variables iniciales con sus valores por defecto
@@ -83,6 +84,7 @@ ACROBAT_FOLDER = DEFAULT_SETTINGS["ACROBAT_FOLDER"]
 FORCE_GC = DEFAULT_SETTINGS["FORCE_GC"]
 TIMER_GC = DEFAULT_SETTINGS["TIMER_GC"]
 MAX_CONCURRENT_MOVES = DEFAULT_SETTINGS["MAX_CONCURRENT_MOVES"]
+PDF_DPI = DEFAULT_SETTINGS["PDF_DPI"]
 
 
 # Functions
@@ -111,7 +113,7 @@ def load_settings():
         # 👇 LECTURA LIMPIA: tomllib lee el archivo y lo convierte a un diccionario de forma segura
         with open(SETTINGS_PATH, "rb") as f:
             settings = tomllib.load(f)
-        
+
         # Combinar con los valores por defecto por si agregas configuraciones en el futuro
         full_settings = DEFAULT_SETTINGS.copy()
         full_settings.update(settings)
@@ -125,22 +127,22 @@ def apply_settings():
     """Applies settings to the current module and propagates changes."""
     settings = load_settings()
     module = sys.modules[__name__]
-    
+
     changed_keys = []
     for key, value in settings.items():
         # Convertir a Path solo las llaves que corresponden a rutas de archivos
         if key in ["METADATA_EDIT_SCRIPT_PATH", "CONFLICTS", "BASE_INTERNAL", "ONEDRIVE_DOCS", "ONEDRIVE_DOCTOS_FAMILIA"]:
             value = Path(value)
-        
+
         old_value = getattr(module, key, None)
         if old_value != value:
             setattr(module, key, value)
             changed_keys.append(key)
-            
+
     # Garantizar que la carpeta de conflictos exista
     if "CONFLICTS" in changed_keys or not CONFLICTS.exists():
         module.CONFLICTS.mkdir(parents=True, exist_ok=True)
-        
+
     # Propagar cambios en caliente a otros módulos activos
     if changed_keys:
         for mod_name, mod in sys.modules.items():

@@ -5,6 +5,9 @@
 # GUI Framework
 PyQt6==6.6.1
 
+# PDF Processing
+pymupdf
+
 # File monitoring
 watchdog==3.0.0
 
