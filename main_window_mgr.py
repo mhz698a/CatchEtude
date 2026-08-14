@@ -44,6 +44,7 @@ from service_mgr import send_character_service_command
 from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
 from background_move_mgr import BackgroundMoveManager
+from pdf_gui_runner import run_pdf_task
 
 
 class MainWindow(QWidget):
@@ -198,6 +199,7 @@ class MainWindow(QWidget):
         self.action_panel.post_action_changed.connect(self._on_post_action_changed)
         self.action_panel.set_post_action_mode(self._post_action_mode)
         self.action_panel.hide_t_clicked.connect(self._on_hide_t_clicked)
+        self.action_panel.pdf_action_requested.connect(self._on_pdf_action_requested)
         root.addWidget(self.action_panel)
 
         # Queue / Character Panel
@@ -468,6 +470,25 @@ class MainWindow(QWidget):
         hide_action.triggered.connect(self._manual_hide)
         self.tray_menu.addAction(hide_action)
         
+        convert_menu = QMenu("Convertir Archivo", self)
+        img_to_pdf_action = QAction("IMGs a PDF", self)
+        img_to_pdf_action.triggered.connect(self._on_tray_imgs_to_pdf)
+        convert_menu.addAction(img_to_pdf_action)
+
+        pdf_to_jpeg_action = QAction("PDF a JPEG", self)
+        pdf_to_jpeg_action.triggered.connect(self._on_tray_pdf_to_jpeg)
+        convert_menu.addAction(pdf_to_jpeg_action)
+
+        extract_imgs_action = QAction("Extraer imagenes de PDF", self)
+        extract_imgs_action.triggered.connect(self._on_tray_extract_pdf_images)
+        convert_menu.addAction(extract_imgs_action)
+
+        merge_pdfs_action = QAction("Unir PDFs", self)
+        merge_pdfs_action.triggered.connect(self._on_tray_merge_pdfs)
+        convert_menu.addAction(merge_pdfs_action)
+
+        self.tray_menu.addMenu(convert_menu)
+
         rescan_action = QAction(self.loc.get("tray_rescan"), self)
         rescan_action.triggered.connect(self._rescan_downloads)
         self.tray_menu.addAction(rescan_action)
@@ -1189,3 +1210,35 @@ class MainWindow(QWidget):
             self._hide_t_banner.stop()
 
         self._bring_and_center()
+
+    def _on_tray_imgs_to_pdf(self):
+        file_filter = "Imágenes (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff)"
+        files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar imágenes", str(config.DOWNLOADS), file_filter)
+        if files:
+            paths = [Path(f) for f in files]
+            run_pdf_task(self, "imgs_to_pdf", paths, "IMGs a PDF")
+
+    def _on_tray_pdf_to_jpeg(self):
+        file_filter = "Archivos PDF (*.pdf)"
+        files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar PDFs", str(config.DOWNLOADS), file_filter)
+        if files:
+            paths = [Path(f) for f in files]
+            run_pdf_task(self, "pdf_to_jpeg", paths, "PDF a JPEG")
+
+    def _on_tray_extract_pdf_images(self):
+        file_filter = "Archivos PDF (*.pdf)"
+        files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar PDFs", str(config.DOWNLOADS), file_filter)
+        if files:
+            paths = [Path(f) for f in files]
+            run_pdf_task(self, "extract_images", paths, "Extraer imágenes de PDF")
+
+    def _on_tray_merge_pdfs(self):
+        file_filter = "Archivos PDF (*.pdf)"
+        files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar PDFs", str(config.DOWNLOADS), file_filter)
+        if files:
+            paths = [Path(f) for f in files]
+            run_pdf_task(self, "merge_pdfs", paths, "Unir PDFs")
+
+    def _on_pdf_action_requested(self, task_type: str, pdf_path: Path):
+        title = "PDF a JPEG" if task_type == "pdf_to_jpeg" else "Extraer imágenes de PDF"
+        run_pdf_task(self, task_type, [pdf_path], title)

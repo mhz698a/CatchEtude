@@ -30,6 +30,7 @@ class ActionPanel(QWidget):
     keep_changed = QtCore.pyqtSignal(bool)
     post_action_changed = QtCore.pyqtSignal(str)
     hide_t_clicked = QtCore.pyqtSignal()
+    pdf_action_requested = QtCore.pyqtSignal(str, Path)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -65,6 +66,13 @@ class ActionPanel(QWidget):
         self.btn_open.setFixedHeight(30)
         self.btn_open.setFixedWidth(100)
         open_row.addWidget(self.btn_open)
+
+        self.btn_manage_pdf = QPushButton("Gestionar PDF")
+        self.btn_manage_pdf.setFixedHeight(30)
+        self.btn_manage_pdf.setFixedWidth(110)
+        self.btn_manage_pdf.setVisible(False)
+        self.btn_manage_pdf.clicked.connect(self._show_pdf_menu)
+        open_row.addWidget(self.btn_manage_pdf)
 
         self.btn_edit_metadata = QPushButton("Edit metadata")
         self.btn_edit_metadata.clicked.connect(self._open_metadata_editor)
@@ -201,6 +209,7 @@ class ActionPanel(QWidget):
         self.btn_custom.setEnabled(True)
         self.btn_hide_t.setEnabled(True)
         self._update_metadata_button_visibility()
+        self._update_pdf_button_visibility()
         # Note: btn_move enabling depends on type, handled by MainWindow
 
     def _update_file_info_label(self):
@@ -408,6 +417,7 @@ class ActionPanel(QWidget):
         self.drag_icon.set_file(None)
         self.btn_hide_t.setEnabled(False)
         self._update_metadata_button_visibility()
+        self._update_pdf_button_visibility()
 
     def _on_keep_downloads_changed(self, checked: bool):
         self.btn_move.setText(self.loc.get("btn_keep") if checked else self.loc.get("btn_apply"))
@@ -426,3 +436,24 @@ class ActionPanel(QWidget):
             idx = self.post_action_cb.findData("none")
         if idx >= 0:
             self.post_action_cb.setCurrentIndex(idx)
+
+    def _show_pdf_menu(self):
+        if not self.filepath or self.filepath.suffix.lower() != ".pdf":
+            return
+
+        menu = QtWidgets.QMenu(self)
+
+        act_jpeg = QtGui.QAction("PDF a JPEG", self)
+        act_jpeg.triggered.connect(lambda: self.pdf_action_requested.emit("pdf_to_jpeg", self.filepath))
+        menu.addAction(act_jpeg)
+
+        act_extract = QtGui.QAction("Extraer imágenes de PDF", self)
+        act_extract.triggered.connect(lambda: self.pdf_action_requested.emit("extract_images", self.filepath))
+        menu.addAction(act_extract)
+
+        menu.exec(self.btn_manage_pdf.mapToGlobal(QtCore.QPoint(0, self.btn_manage_pdf.height())))
+
+    def _update_pdf_button_visibility(self):
+        is_pdf = bool(self.filepath) and self.filepath.suffix.lower() == ".pdf"
+        self.btn_manage_pdf.setVisible(is_pdf)
+        self.btn_manage_pdf.setEnabled(is_pdf)
