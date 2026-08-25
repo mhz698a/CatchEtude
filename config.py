@@ -16,6 +16,13 @@ ICON_PATH = f"{APP_DIR}/assets/catchetude-icon.png"
 APPDATA_DIR = Path(os.getenv("APPDATA", USER_HOME)) / APP_NAME
 APPDATA_DIR.mkdir(parents=True, exist_ok=True)
 
+PLUGINS_DIR = Path(APP_DIR) / "plugins"
+PLUGINS_DIR.mkdir(exist_ok=True)
+
+PLUGIN_STATE_PATH = APPDATA_DIR / "plugins-state.json"
+PLUGIN_CONFIG_DIR = APPDATA_DIR / "plugins-config"
+PLUGIN_CONFIG_DIR.mkdir(exist_ok=True)
+
 DOWNLOADS = USER_HOME / "Downloads"
 DOCUMENTS = USER_HOME / "Documents"
 CONFIG_PATH = APPDATA_DIR / "config.json"

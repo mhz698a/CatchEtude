@@ -72,9 +72,11 @@ class WatchdogService(QtCore.QObject):
             if cmd == "log":
                 level = msg.get("level")
                 logger_name = msg.get("logger", "")
+                content = msg.get("message", "")
                 if logger_name.startswith("overworld") and level not in ("WARN", "WARNING", "ERROR", "CRITICAL"):
                     level = "OVERWORLD"
-                content = msg.get("message")
+                elif logger_name.startswith("plugin") or level == "PLUGINS" or "[Plugin:" in content:
+                    level = "PLUGINS"
                 self.log_viewer.add_log(level, content)
             elif cmd == "threads":
                 process_name = msg.get("process")
