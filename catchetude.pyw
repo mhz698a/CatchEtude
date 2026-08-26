@@ -105,27 +105,30 @@ def main():
         plugin_mgr.publish_event("app_started", {})
 
         # Connect signals for plugins
-        def _on_file_detected(file_info):
+        def _on_file_detected(file_path):
+            p = Path(file_path) if isinstance(file_path, str) else file_path
             plugin_mgr.publish_event("file_detected", {
-                "name": file_info.name,
-                "path": str(file_info),
-            })
-
-        def _on_move_finished(data):
-            plugin_mgr.publish_event("move_finished", {
-                "src": str(data.get("src", "")),
-                "dst": str(data.get("dst", "")),
-                "category": data.get("category", ""),
+                "name": p.name,
+                "path": str(p),
             })
 
         signals.file_detected.connect(_on_file_detected)
-        signals.move_finished.connect(_on_move_finished)
 
         # Initial scan and flattening
         run_in_threadpool(lambda: (flatten_downloads_root(), scan_existing_downloads(state_manager)))
 
         # Create Main Window
         win = MainWindow(state_manager, signals)
+
+        def _on_move_finished(src, dst, ok, msg, src_meta, decision):
+            if ok:
+                plugin_mgr.publish_event("move_finished", {
+                    "src": str(src),
+                    "dst": str(dst),
+                    "category": str(decision.get("movement_type", "")),
+                })
+
+        win.background_move_mgr.move_finished.connect(_on_move_finished)
 
         # Start Thread Reporter for Main App
         from log_mgr import start_thread_reporter
