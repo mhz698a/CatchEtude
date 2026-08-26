@@ -523,7 +523,21 @@ class MainWindow(QWidget):
         logs_action = QAction(self.loc.get("tray_logs"), self)
         logs_action.triggered.connect(self._show_logs)
         self.tray_menu.addAction(logs_action)
-        
+
+        plugins_action = QAction(self.loc.get("tray_plugins"), self)
+        plugins_action.triggered.connect(self._show_plugin_manager)
+        self.tray_menu.addAction(plugins_action)
+
+        # Build declarative sub-menu for plugins with tray_action capabilities
+        plugin_actions = self._get_plugin_tray_actions()
+        if plugin_actions:
+            plugins_submenu = QMenu(self.loc.get("plugins_menu"), self)
+            for p_id, a_id, label, cmd in plugin_actions:
+                act = QAction(label, self)
+                act.triggered.connect(lambda checked, pid=p_id, command=cmd: self._on_plugin_tray_action(pid, command))
+                plugins_submenu.addAction(act)
+            self.tray_menu.addMenu(plugins_submenu)
+
         appdta_folder_action = QAction("Open Appdata Folder", self)
         appdta_folder_action.triggered.connect(self._open_appdta_folder)
         self.tray_menu.addAction(appdta_folder_action)
@@ -542,6 +556,39 @@ class MainWindow(QWidget):
         
         self.tray.setContextMenu(self.tray_menu)
         self.tray.show()
+
+    def _show_plugin_manager(self):
+        if hasattr(self, "_plugin_dialog") and self._plugin_dialog is not None and self._plugin_dialog.isVisible():
+            self._plugin_dialog.raise_()
+            self._plugin_dialog.activateWindow()
+            return
+
+        from plugin_manager_dialog import PluginManagerDialog
+        # Find global plugin_mgr if present, or create local reference
+        plugin_mgr = getattr(sys.modules["__main__"], "plugin_mgr", None)
+        if not plugin_mgr:
+            from plugin_manager import PluginManager
+            plugin_mgr = PluginManager()
+
+        self._plugin_dialog = PluginManagerDialog(plugin_mgr, self.loc, self)
+        self._plugin_dialog.show()
+
+    def _get_plugin_tray_actions(self):
+        try:
+            plugin_mgr = getattr(sys.modules["__main__"], "plugin_mgr", None)
+            if plugin_mgr:
+                return plugin_mgr.get_tray_actions()
+        except Exception:
+            logging.exception("Failed to load plugin tray actions")
+        return []
+
+    def _on_plugin_tray_action(self, plugin_id: str, command: str):
+        try:
+            plugin_mgr = getattr(sys.modules["__main__"], "plugin_mgr", None)
+            if plugin_mgr:
+                plugin_mgr.invoke_command(plugin_id, command)
+        except Exception:
+            logging.exception(f"Failed to execute plugin tray action '{command}' for '{plugin_id}'")
 
     def _open_last_chosen(self):
         last_move = self.background_move_mgr._history.get_last_move()

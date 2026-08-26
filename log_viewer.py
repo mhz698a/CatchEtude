@@ -43,7 +43,11 @@ class LogViewerWindow(QWidget):
         self.txt_chars = QPlainTextEdit()
         self.txt_chars.setReadOnly(True)
         self.txt_chars.setMaximumBlockCount(1000)
-        
+
+        self.txt_plugins = QPlainTextEdit()
+        self.txt_plugins.setReadOnly(True)
+        self.txt_plugins.setMaximumBlockCount(1000)
+
         self.txt_overworld = QPlainTextEdit()
         self.txt_overworld.setReadOnly(True)
         self.txt_overworld.setMaximumBlockCount(1000)
@@ -52,6 +56,7 @@ class LogViewerWindow(QWidget):
         self.tabs.addTab(self.txt_warn, "WARN")
         self.tabs.addTab(self.txt_error, "ERROR")
         self.tabs.addTab(self.txt_chars, "PERSONAJES")
+        self.tabs.addTab(self.txt_plugins, "PLUGINS")
         self.tabs.addTab(self.txt_overworld, "OVERWORLD")
 
         # Thread list tab
@@ -105,6 +110,8 @@ class LogViewerWindow(QWidget):
             self.txt_error.appendPlainText(message)
         elif level == "CHARS":
             self.txt_chars.appendPlainText(message)
+        elif level == "PLUGINS":
+            self.txt_plugins.appendPlainText(message)
         elif level == "OVERWORLD":
             self.txt_overworld.appendPlainText(message)
 

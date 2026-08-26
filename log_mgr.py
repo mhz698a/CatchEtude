@@ -13,8 +13,10 @@ from PyQt6.QtNetwork import QLocalSocket
 
 # Custom logging level for character list activities
 CHARS_LEVEL = 25
+PLUGINS_LEVEL = 22
 OVERWORLD_LEVEL = 21
 logging.addLevelName(CHARS_LEVEL, "CHARS")
+logging.addLevelName(PLUGINS_LEVEL, "PLUGINS")
 logging.addLevelName(OVERWORLD_LEVEL, "OVERWORLD")
 
 
@@ -51,6 +53,8 @@ class QtLogHandler(logging.Handler):
             level = "WARN"
         elif record.levelno == CHARS_LEVEL:
             level = "CHARS"
+        elif record.name.startswith("plugin") or record.levelno == PLUGINS_LEVEL or "[Plugin:" in msg:
+            level = "PLUGINS"
         elif record.name.startswith("overworld") or record.levelno == OVERWORLD_LEVEL:
             level = "OVERWORLD"
         
@@ -85,6 +89,9 @@ def safe_thread_logger(process_name: str):
                 logging.error(f"[{process_name}] Critical error in background thread/task: {e}\n{tb}")
         return wrapper
     return decorator
+
+def log_plugin(message: str):
+    logging.log(PLUGINS_LEVEL, message)
 
 def log_overworld(message: str):
     logging.log(OVERWORLD_LEVEL, message)

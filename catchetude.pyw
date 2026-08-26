@@ -29,6 +29,7 @@ from PyQt6 import QtCore
 from PyQt6.QtCore import qInstallMessageHandler
 
 DEBUGER = False
+plugin_mgr = None
 
 def qt_handler(mode, context, message):
     logging.error("QT: %s", message)
@@ -63,6 +64,12 @@ def main():
     # Setup logging
     setup_logging(config.LOG_PATH)
 
+    # Initialize Plugin Manager
+    global plugin_mgr
+    from plugin_manager import PluginManager
+    plugin_mgr = PluginManager()
+    plugin_mgr.start_enabled_plugins()
+
     try:
         # Start background services
         start_watchdog()
@@ -80,6 +87,10 @@ def main():
 
         def _cleanup_services():
             try:
+                plugin_mgr.shutdown()
+            except Exception:
+                logging.exception("Failed to shutdown plugin manager")
+            try:
                 stop_parallel_services(timeout=10.0)
             except Exception:
                 logging.exception("Failed to stop parallel services during shutdown")
@@ -90,11 +101,34 @@ def main():
 
         app.aboutToQuit.connect(_cleanup_services)
 
+        # Notify plugins that app started
+        plugin_mgr.publish_event("app_started", {})
+
+        # Connect signals for plugins
+        def _on_file_detected(file_path):
+            p = Path(file_path) if isinstance(file_path, str) else file_path
+            plugin_mgr.publish_event("file_detected", {
+                "name": p.name,
+                "path": str(p),
+            })
+
+        signals.file_detected.connect(_on_file_detected)
+
         # Initial scan and flattening
         run_in_threadpool(lambda: (flatten_downloads_root(), scan_existing_downloads(state_manager)))
 
         # Create Main Window
         win = MainWindow(state_manager, signals)
+
+        def _on_move_finished(src, dst, ok, msg, src_meta, decision):
+            if ok:
+                plugin_mgr.publish_event("move_finished", {
+                    "src": str(src),
+                    "dst": str(dst),
+                    "category": str(decision.get("movement_type", "")),
+                })
+
+        win.background_move_mgr.move_finished.connect(_on_move_finished)
 
         # Start Thread Reporter for Main App
         from log_mgr import start_thread_reporter
