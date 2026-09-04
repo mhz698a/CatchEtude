@@ -11,7 +11,7 @@ from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedE
 from PyQt6 import QtCore
 
 import config
-from utils import is_temporary, is_file_locked, run_in_threadpool
+from utils import is_temporary, is_file_locked, folder_is_safe_to_flatten, run_in_threadpool
 from log_mgr import safe_thread_logger
 
 
@@ -28,13 +28,11 @@ class WatcherHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         """Called when a file or directory is created."""
-        if not event.is_directory:
-            self._handle(Path(event.src_path))
+        self._handle(Path(event.src_path))
 
     def on_moved(self, event):
         """Called when a file or directory is moved."""
-        if not event.is_directory:
-            self._handle(Path(event.dest_path))
+        self._handle(Path(event.dest_path))
 
     def _handle(self, p: Path):
         """
@@ -67,16 +65,25 @@ class WatcherHandler(FileSystemEventHandler):
 
     @safe_thread_logger("WatcherMonitor")
     def _monitor_file(self, p: Path):
-        """Monitors a file until its size and mtime are stable and it's no longer locked."""
+        """Monitors a file or directory until stable and ready for enqueuing."""
         try:
-            logging.info(f"[Watcher] Detected candidate file: {p.name}. Monitoring stability...")
+            logging.info(f"[Watcher] Detected candidate path: {p.name}. Monitoring stability...")
 
             while True:
                 if not p.exists():
-                    logging.info(f"[Watcher] File disappeared during monitoring: {p.name}")
+                    logging.info(f"[Watcher] Path disappeared during monitoring: {p.name}")
                     break
 
                 try:
+                    if p.is_dir():
+                        time.sleep(1)
+                        if not p.exists(): break
+                        if folder_is_safe_to_flatten(p):
+                            logging.info(f"[Watcher] Directory is stable and safe: '{p.name}'")
+                            self.enqueue(p)
+                            break
+                        continue
+
                     stat1 = p.stat()
                     size1 = stat1.st_size
                     mtime1 = stat1.st_mtime
@@ -102,7 +109,7 @@ class WatcherHandler(FileSystemEventHandler):
                     logging.warning(f"[Watcher] Access error during monitoring (vanishing?): {p.name} - {e}")
                     break
         except Exception:
-            logging.exception(f"[Watcher] Error monitoring file: {p}")
+            logging.exception(f"[Watcher] Error monitoring path: {p}")
         finally:
             locker = QtCore.QMutexLocker(self._lock)
             self._monitoring.discard(p)

@@ -140,6 +140,52 @@ def configure_dwm_thumbnail_behavior(hwnd):
                                  ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int(1)))
 
 
+def flatten_single_folder(folder: Path) -> list[Path]:
+    """
+    Aplana de forma manual una carpeta específica en Downloads.
+    Mueve los archivos contenidos a Downloads y elimina las carpetas vacías.
+    Retorna la lista de rutas de los archivos movidos a Downloads.
+    """
+    if not folder.exists() or not folder.is_dir():
+        return []
+
+    moved_files = []
+    # mover archivos uno por uno
+    for f in list(folder.rglob('*')):
+        if not f.is_file():
+            continue
+
+        dest = resolve_duplicate(config.DOWNLOADS / f.name)
+
+        try:
+            stat = f.stat()
+            ctime = stat.st_ctime
+
+            shutil.copy2(f, dest)
+
+            setctime_blocking(str(dest), ctime)
+            f.unlink(missing_ok=True)
+            logging.info(f"Flattened: {f} -> {dest}")
+            moved_files.append(dest)
+
+        except Exception:
+            logging.exception(f"Error flattening file {f}")
+            continue
+
+    # eliminar subcarpetas y carpeta principal si quedaron vacías
+    try:
+        for sub in sorted(folder.rglob('*'), reverse=True):
+            if sub.is_dir() and not any(sub.iterdir()):
+                sub.rmdir()
+        if folder.exists() and not any(folder.iterdir()):
+            folder.rmdir()
+            logging.info(f"Removed empty folder after manual flatten: {folder}")
+    except Exception:
+        logging.warning(f"Could not remove folder structure: {folder}")
+
+    return moved_files
+
+
 def flatten_downloads_root():
     """
     Aplana subcarpetas en Downloads de forma segura.
@@ -155,31 +201,4 @@ def flatten_downloads_root():
             logging.debug(f"Folder not safe yet: {sub}")
             continue
 
-        # mover archivos uno por uno
-        for f in list(sub.rglob('*')):
-            if not f.is_file():
-                continue
-
-            dest = resolve_duplicate(config.DOWNLOADS / f.name)
-
-            try:
-                stat = f.stat()
-                ctime = stat.st_ctime
-
-                shutil.copy2(f, dest)
-
-                setctime_blocking(str(dest), ctime)
-                f.unlink(missing_ok=True)
-                logging.info(f"Flattened: {f} -> {dest}")
-
-            except Exception:
-                logging.exception(f"Error flattening file {f}")
-                continue
-
-        # eliminar carpeta si quedó vacía
-        try:
-            if not any(sub.iterdir()):
-                sub.rmdir()
-                logging.info(f"Removed empty folder: {sub}")
-        except Exception:
-            logging.warning(f"Could not remove folder: {sub}")
+        flatten_single_folder(sub)

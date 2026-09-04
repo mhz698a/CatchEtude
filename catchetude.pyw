@@ -14,7 +14,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
-from utils import flatten_downloads_root, run_in_threadpool
+from utils import run_in_threadpool
 from state_manager import StateManager, scan_existing_downloads
 from watcher_mgr import WatcherThread
 from app_signals_mgr import AppSignals
@@ -114,8 +114,8 @@ def main():
 
         signals.file_detected.connect(_on_file_detected)
 
-        # Initial scan and flattening
-        run_in_threadpool(lambda: (flatten_downloads_root(), scan_existing_downloads(state_manager)))
+        # Initial scan
+        run_in_threadpool(scan_existing_downloads, state_manager)
 
         # Create Main Window
         win = MainWindow(state_manager, signals)
