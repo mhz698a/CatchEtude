@@ -363,21 +363,81 @@ class StateManager:
             current = self._active_file
             logging.info(f"Undo Hot-Swap: putting {current.name} back to queue, showing {target.name}")
             with self._lock:
-                self._q.put(current)
+                with self._q.mutex:
+                    if current in self._q.queue:
+                        self._q.queue.remove(current)
+                    self._q.queue.appendleft(current)
+
                 if current in self._queue_list:
                     self._queue_list.remove(current)
+                if target in self._queue_list:
+                    self._queue_list.remove(target)
+
                 self._queue_list.insert(0, target)
                 self._queue_list.insert(1, current)
 
                 self._active_file = target
                 self._pending.add(target)
+                self._pending.add(current)
                 self._emit_queue_update()
 
             self._set_state(State.FILE_DETECTED)
             if self.notifier:
                 self.notifier.file_detected.emit(str(target))
         else:
-            self.enqueue_file(target)
+            with self._lock:
+                if target not in self._pending and target not in self._background_moves:
+                    self._pending.add(target)
+                    if target in self._queue_list:
+                        self._queue_list.remove(target)
+                    self._queue_list.insert(0, target)
+                    with self._q.mutex:
+                        if target in self._q.queue:
+                            self._q.queue.remove(target)
+                        self._q.queue.appendleft(target)
+                    self._emit_queue_update()
+
+    def select_queued_file(self, target: Path) -> bool:
+        """
+        Switches the currently active file to a user-selected queued file.
+        The previously active file remains at the top of the pending queue.
+        """
+        if not target.exists():
+            logging.warning(f"Cannot select missing queued file: {target}")
+            return False
+
+        with self._lock:
+            if self._active_file == target:
+                return True
+
+            current = self._active_file
+
+            with self._q.mutex:
+                if target in self._q.queue:
+                    self._q.queue.remove(target)
+                if current and current.exists():
+                    if current in self._q.queue:
+                        self._q.queue.remove(current)
+                    self._q.queue.appendleft(current)
+
+            if target in self._queue_list:
+                self._queue_list.remove(target)
+            if current and current in self._queue_list:
+                self._queue_list.remove(current)
+
+            self._queue_list.insert(0, target)
+            if current:
+                self._queue_list.insert(1, current)
+                self._pending.add(current)
+
+            self._active_file = target
+            self._pending.add(target)
+            self._emit_queue_update()
+
+        self._set_state(State.FILE_DETECTED)
+        if self.notifier:
+            self.notifier.file_detected.emit(str(target))
+        return True
 
     def maintenance_tick(self):
         """

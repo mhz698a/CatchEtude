@@ -22,6 +22,7 @@ class QueuePanel(QWidget):
     """
     characters_updated = QtCore.pyqtSignal()
     character_updated = QtCore.pyqtSignal(object)
+    file_double_clicked = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -44,7 +45,14 @@ class QueuePanel(QWidget):
         self.queue_list_widget = QListWidget()
         self.queue_list_widget.setItemDelegate(QueueDelegate(self))
         self.queue_list_widget.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.queue_list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         layout.addWidget(self.queue_list_widget)
+
+    def _on_item_double_clicked(self, item: QtWidgets.QListWidgetItem):
+        path_str = item.data(Qt.ItemDataRole.UserRole)
+        is_active = item.data(Qt.ItemDataRole.UserRole + 1)
+        if path_str and not is_active:
+            self.file_double_clicked.emit(path_str)
 
         # Pending Movements
         self.lbl_movings = QLabel()

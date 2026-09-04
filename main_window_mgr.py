@@ -203,6 +203,7 @@ class MainWindow(QWidget):
         self.queue_panel.set_hide_secure(self._hide_secure)
         self.queue_panel.characters_updated.connect(self._update_character_buttons)
         self.queue_panel.character_updated.connect(self._on_single_character_updated)
+        self.queue_panel.file_double_clicked.connect(self._on_queue_file_double_clicked)
         root.addWidget(self.queue_panel)
         
         main_vbox.addLayout(root, 1)
@@ -948,6 +949,14 @@ class MainWindow(QWidget):
         self._char_load_generation += 1
         self.queue_panel.request_characters(self._pending_year, self._char_load_generation)
 
+    def _on_queue_file_double_clicked(self, path_str: str):
+        p = Path(path_str)
+        if not p.exists():
+            return
+        if self.filepath and self.filepath.is_dir():
+            return
+        self.state_manager.select_queued_file(p)
+
     @QtCore.pyqtSlot(list, str)
     def _on_queue_updated(self, queue_list: list[Path], active_path_str: str):
         self.queue_panel.update_queue(queue_list, active_path_str)
@@ -987,14 +996,23 @@ class MainWindow(QWidget):
         if self.filepath.is_dir():
             folder = self.filepath
             self.action_panel.suspend_preview_loading(folder)
-            self.action_panel.clear()
-            self.filepath = None
-            self.state_manager.discard_active_file()
+            self._set_ui_enabled_for_move(False)
 
             def flatten_worker():
-                moved = flatten_single_folder(folder)
+                moved, success = flatten_single_folder(folder)
                 if moved:
                     self.state_manager.enqueue_files(moved)
+
+                def on_finish():
+                    if success:
+                        self.action_panel.clear()
+                        self.filepath = None
+                        self.state_manager.discard_active_file()
+                    else:
+                        self._set_ui_enabled_for_move(True)
+                        self.show_status("La carpeta está en uso. Por favor, inténtelo de nuevo.", 5000)
+
+                QtCore.QTimer.singleShot(0, on_finish)
 
             run_in_threadpool(flatten_worker)
             return
