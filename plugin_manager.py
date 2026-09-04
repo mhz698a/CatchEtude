@@ -121,14 +121,27 @@ class PluginManager(QObject):
         proc.send_command(command, args)
         return True
 
-    def get_tray_actions(self) -> List[Tuple[str, str, str, str]]:
-        """Returns list of (plugin_id, action_id, label, command) for running plugins."""
+    def get_tray_actions(self) -> List[Dict[str, Any]]:
+        """Returns list of tray action dicts with plugin_id for running plugins."""
         actions = []
         for plugin_id, proc in self.processes.items():
             if proc.plugin.state == PluginState.RUNNING:
                 for act in proc.plugin.tray_actions:
-                    actions.append((plugin_id, act["id"], act["label"], act["command"]))
+                    item = dict(act)
+                    item["plugin_id"] = plugin_id
+                    actions.append(item)
         return actions
+
+    def get_ui_action_buttons(self) -> List[Dict[str, Any]]:
+        """Returns list of UI action button dicts with plugin_id for running plugins."""
+        buttons = []
+        for plugin_id, proc in self.processes.items():
+            if proc.plugin.state == PluginState.RUNNING:
+                for btn in proc.plugin.action_buttons:
+                    item = dict(btn)
+                    item["plugin_id"] = plugin_id
+                    buttons.append(item)
+        return buttons
 
     def update_plugin_config(self, plugin_id: str, new_config: Dict[str, Any]) -> bool:
         """Updates plugin configuration and notifies active process."""

@@ -12,7 +12,8 @@ import sys
 import traceback
 from typing import Any, Dict
 
-from PyQt6.QtCore import QCoreApplication, QTimer, QObject, pyqtSlot
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer, QObject, pyqtSlot
 from PyQt6.QtNetwork import QLocalSocket
 
 
@@ -141,10 +142,14 @@ class PluginContext(QObject):
                 except Exception as e:
                     self.log("ERROR", f"Error in stop handler: {e}")
             self.send_ipc({"cmd": "stopped"})
-            QCoreApplication.quit()
+            app = QApplication.instance()
+            if app:
+                app.quit()
 
     def _on_disconnected(self) -> None:
-        QCoreApplication.quit()
+        app = QApplication.instance()
+        if app:
+            app.quit()
 
 
 def main():
@@ -162,7 +167,9 @@ def main():
         sys.stderr.write(f"Plugin file not found: {file_path}\n")
         sys.exit(1)
 
-    app = QCoreApplication(sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
     ctx = PluginContext(args.mode, args.plugin_id, args.service_id, args.socket, args.token)
 
     if not ctx.connect_ipc():

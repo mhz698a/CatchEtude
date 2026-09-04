@@ -119,6 +119,8 @@ def main():
 
         # Create Main Window
         win = MainWindow(state_manager, signals)
+        plugin_mgr.plugin_state_changed.connect(lambda p_id, st: win._build_tray())
+        plugin_mgr.plugins_reloaded.connect(lambda: win._build_tray())
 
         def _on_move_finished(src, dst, ok, msg, src_meta, decision):
             if ok:

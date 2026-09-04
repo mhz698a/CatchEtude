@@ -27,10 +27,10 @@ class ActionPanel(QWidget):
     apply_custom_clicked = QtCore.pyqtSignal()
     delete_clicked = QtCore.pyqtSignal()
     secure_changed = QtCore.pyqtSignal(bool)
+    keep_mode_changed = QtCore.pyqtSignal(str)
     keep_changed = QtCore.pyqtSignal(bool)
     post_action_changed = QtCore.pyqtSignal(str)
     hide_t_clicked = QtCore.pyqtSignal()
-    pdf_action_requested = QtCore.pyqtSignal(str, Path)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -64,15 +64,15 @@ class ActionPanel(QWidget):
         self.btn_open = QPushButton(self.loc.get("btn_open"))
         self.btn_open.clicked.connect(self._open_file)
         self.btn_open.setFixedHeight(30)
-        self.btn_open.setFixedWidth(100)
+        self.btn_open.setFixedWidth(90)
         open_row.addWidget(self.btn_open)
 
-        self.btn_manage_pdf = QPushButton("Gestionar PDF")
-        self.btn_manage_pdf.setFixedHeight(30)
-        self.btn_manage_pdf.setFixedWidth(110)
-        self.btn_manage_pdf.setVisible(False)
-        self.btn_manage_pdf.clicked.connect(self._show_pdf_menu)
-        open_row.addWidget(self.btn_manage_pdf)
+        self.btn_delete = QPushButton(self.loc.get("btn_header_delete"))
+        self.btn_delete.clicked.connect(self._show_delete_menu)
+        self.btn_delete.setFixedHeight(30)
+        self.btn_delete.setFixedWidth(100)
+        self.btn_delete.setEnabled(False)
+        open_row.addWidget(self.btn_delete)
 
         self.btn_edit_metadata = QPushButton("Edit metadata")
         self.btn_edit_metadata.clicked.connect(self._open_metadata_editor)
@@ -80,6 +80,10 @@ class ActionPanel(QWidget):
         self.btn_edit_metadata.setFixedWidth(110)
         self.btn_edit_metadata.setVisible(False)
         open_row.addWidget(self.btn_edit_metadata)
+
+        self.dynamic_btn_layout = QHBoxLayout()
+        self.dynamic_btn_layout.setSpacing(8)
+        open_row.addLayout(self.dynamic_btn_layout)
 
         open_row.addStretch()
         layout.addLayout(open_row)
@@ -119,8 +123,14 @@ class ActionPanel(QWidget):
         self.hide_secure_cb.stateChanged.connect(self._on_hide_secure_changed)
         top_row.addWidget(self.hide_secure_cb)
         
-        self.keep_downloads_cb = QCheckBox(self.loc.get("keep in downloads"))
-        self.keep_downloads_cb.toggled.connect(self._on_keep_downloads_changed)
+        self.lbl_keep = QLabel("Keep in downloads:")
+        top_row.addWidget(self.lbl_keep)
+
+        self.keep_downloads_cb = QComboBox()
+        self.keep_downloads_cb.addItem("Nothing", "nothing")
+        self.keep_downloads_cb.addItem("Only this file", "only_this")
+        self.keep_downloads_cb.addItem("All Queue", "all_queue")
+        self.keep_downloads_cb.currentIndexChanged.connect(self._on_keep_downloads_mode_changed)
         top_row.addWidget(self.keep_downloads_cb)
         top_row.addStretch()
         
@@ -187,13 +197,14 @@ class ActionPanel(QWidget):
         self.post_action_cb.blockSignals(False)
 
         self.btn_open.setText(self.loc.get("btn_open"))
+        self.btn_delete.setText(self.loc.get("btn_header_delete"))
         self.lbl_name.setText(self.loc.get("lbl_new_name"))
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
-        self.keep_downloads_cb.setText(self.loc.get("keep_in_downloads"))
+        self.lbl_keep.setText(self.loc.get("keep_in_downloads") if self.loc.get("keep_in_downloads") else "Keep in downloads:")
         self.btn_hide_t.setText("Hide Temporal")
         self.btn_custom.setText(self.loc.get("btn_apply_custom"))
         self.btn_move.setText(
-            self.loc.get("btn_keep") if self.keep_downloads_cb.isChecked() else self.loc.get("btn_apply")
+            self.loc.get("btn_keep") if self.is_keep_downloads() else self.loc.get("btn_apply")
         )
 
     def set_file(self, p: Path, hide_secure: bool):
@@ -208,8 +219,9 @@ class ActionPanel(QWidget):
         self.drag_icon.set_file(p)
         self.btn_custom.setEnabled(True)
         self.btn_hide_t.setEnabled(True)
+        self.btn_delete.setEnabled(True)
         self._update_metadata_button_visibility()
-        self._update_pdf_button_visibility()
+        self._update_dynamic_plugin_buttons()
         # Note: btn_move enabling depends on type, handled by MainWindow
 
     def _update_file_info_label(self):
@@ -416,15 +428,103 @@ class ActionPanel(QWidget):
         self.progress.setValue(0)
         self.drag_icon.set_file(None)
         self.btn_hide_t.setEnabled(False)
+        self.btn_delete.setEnabled(False)
         self._update_metadata_button_visibility()
-        self._update_pdf_button_visibility()
+        self._update_dynamic_plugin_buttons()
+        if self.get_keep_mode() == "only_this":
+            self.set_keep_mode("nothing")
 
-    def _on_keep_downloads_changed(self, checked: bool):
-        self.btn_move.setText(self.loc.get("btn_keep") if checked else self.loc.get("btn_apply"))
-        self.keep_changed.emit(checked)
+    def _update_dynamic_plugin_buttons(self):
+        import sys
+        # Clear previous dynamic buttons
+        while self.dynamic_btn_layout.count():
+            item = self.dynamic_btn_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not self.filepath:
+            return
+
+        plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
+        if not plugin_mgr:
+            return
+
+        buttons_def = plugin_mgr.get_ui_action_buttons()
+        ext = self.filepath.suffix.lower()
+
+        for btn_def in buttons_def:
+            exts = btn_def.get("file_extensions")
+            if exts and ext not in [e.lower() for e in exts]:
+                continue
+
+            btn = QPushButton(btn_def.get("label", "Action"))
+            btn.setFixedHeight(30)
+            btn.setFixedWidth(110)
+
+            plugin_id = btn_def["plugin_id"]
+            menu_items = btn_def.get("menu_items")
+            command = btn_def.get("command")
+
+            if menu_items:
+                btn.clicked.connect(lambda checked, b=btn, pid=plugin_id, items=menu_items: self._show_dynamic_button_menu(b, pid, items))
+            elif command:
+                btn.clicked.connect(lambda checked, pid=plugin_id, cmd=command: plugin_mgr.invoke_command(pid, cmd))
+
+            self.dynamic_btn_layout.addWidget(btn)
+
+    def _show_dynamic_button_menu(self, button, plugin_id: str, items: list):
+        import sys
+        plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
+        if not plugin_mgr:
+            return
+
+        menu = QtWidgets.QMenu(self)
+        for item in items:
+            act = QtGui.QAction(item.get("label", "Item"), self)
+            cmd = item.get("command", "")
+            act.triggered.connect(lambda checked, pid=plugin_id, c=cmd: plugin_mgr.invoke_command(pid, c))
+            menu.addAction(act)
+
+        menu.exec(button.mapToGlobal(QtCore.QPoint(0, button.height())))
+
+    def _show_delete_menu(self):
+        if not self.filepath:
+            return
+
+        menu = QtWidgets.QMenu(self)
+
+        title_action = QtGui.QAction("¿Eliminar archivo?", self)
+        title_action.setEnabled(False)
+        menu.addAction(title_action)
+        menu.addSeparator()
+
+        act_yes = QtGui.QAction("Sí", self)
+        act_yes.triggered.connect(self.delete_clicked.emit)
+        menu.addAction(act_yes)
+
+        act_no = QtGui.QAction("No", self)
+        menu.addAction(act_no)
+
+        menu.exec(self.btn_delete.mapToGlobal(QtCore.QPoint(0, self.btn_delete.height())))
+
+    def _on_keep_downloads_mode_changed(self, index: int):
+        mode = self.get_keep_mode()
+        is_keep = (mode != "nothing")
+        self.btn_move.setText(self.loc.get("btn_keep") if is_keep else self.loc.get("btn_apply"))
+        self.keep_mode_changed.emit(mode)
+        self.keep_changed.emit(is_keep)
+
+    def get_keep_mode(self) -> str:
+        data = self.keep_downloads_cb.currentData()
+        return data if data in ("nothing", "only_this", "all_queue") else "nothing"
+
+    def set_keep_mode(self, mode: str):
+        idx = self.keep_downloads_cb.findData(mode)
+        if idx >= 0:
+            self.keep_downloads_cb.setCurrentIndex(idx)
 
     def is_keep_downloads(self) -> bool:
-        return self.keep_downloads_cb.isChecked()
+        return self.get_keep_mode() != "nothing"
 
     def get_post_action_mode(self) -> str:
         data = self.post_action_cb.currentData()
@@ -436,24 +536,3 @@ class ActionPanel(QWidget):
             idx = self.post_action_cb.findData("none")
         if idx >= 0:
             self.post_action_cb.setCurrentIndex(idx)
-
-    def _show_pdf_menu(self):
-        if not self.filepath or self.filepath.suffix.lower() != ".pdf":
-            return
-
-        menu = QtWidgets.QMenu(self)
-
-        act_jpeg = QtGui.QAction("PDF a JPEG", self)
-        act_jpeg.triggered.connect(lambda: self.pdf_action_requested.emit("pdf_to_jpeg", self.filepath))
-        menu.addAction(act_jpeg)
-
-        act_extract = QtGui.QAction("Extraer imágenes de PDF", self)
-        act_extract.triggered.connect(lambda: self.pdf_action_requested.emit("extract_images", self.filepath))
-        menu.addAction(act_extract)
-
-        menu.exec(self.btn_manage_pdf.mapToGlobal(QtCore.QPoint(0, self.btn_manage_pdf.height())))
-
-    def _update_pdf_button_visibility(self):
-        is_pdf = bool(self.filepath) and self.filepath.suffix.lower() == ".pdf"
-        self.btn_manage_pdf.setVisible(is_pdf)
-        self.btn_manage_pdf.setEnabled(is_pdf)

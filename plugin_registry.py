@@ -41,7 +41,8 @@ class DiscoveredPlugin:
         self.api_version: int = 1
         self.capabilities: List[str] = []
         self.events: List[str] = []
-        self.tray_actions: List[Dict[str, str]] = []
+        self.tray_actions: List[Dict[str, Any]] = []
+        self.action_buttons: List[Dict[str, Any]] = []
         self.services: List[Dict[str, Any]] = []
         self.settings_schema: Dict[str, Any] = {}
 
@@ -68,6 +69,7 @@ class DiscoveredPlugin:
         self.capabilities = info.get("capabilities", [])
         self.events = info.get("events", [])
         self.tray_actions = manifest.get("tray_actions", [])
+        self.action_buttons = manifest.get("action_buttons", [])
         self.services = manifest.get("services", [])
         self.settings_schema = manifest.get("settings_schema", {})
 

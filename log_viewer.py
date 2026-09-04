@@ -66,8 +66,8 @@ class LogViewerWindow(QWidget):
         self.thread_table = QTableWidget()
         self.thread_table.setColumnCount(5)
         self.thread_table.setHorizontalHeaderLabels(["Proceso", "ID Hilo", "Nombre", "Memoria", "Último Registro"])
-        self.thread_table.horizontalHeader().setSectionResizeMode(QHeaderView.SectionResizeMode.ResizeToContents)
-        self.thread_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.SectionResizeMode.Stretch)
+        self.thread_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.thread_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.thread_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         self.tabs.addTab(self.thread_table, "HILOS")
