@@ -44,7 +44,6 @@ from service_mgr import send_character_service_command
 from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
 from background_move_mgr import BackgroundMoveManager
-from pdf_gui_runner import run_pdf_task
 
 
 class MainWindow(QWidget):
@@ -140,9 +139,6 @@ class MainWindow(QWidget):
         
         # Header Row
         header_layout = QHBoxLayout()
-        self.btn_delete_header = QPushButton(self.loc.get("btn_header_delete"))
-        self.btn_delete_header.setFixedHeight(25)
-        self.btn_delete_header.clicked.connect(self._on_delete_clicked)
         
         self.chk_auto_run_pendings = QCheckBox()
         self.chk_auto_run_pendings.setFixedHeight(25)
@@ -167,8 +163,6 @@ class MainWindow(QWidget):
         self.btn_lang.setFixedHeight(25)
         self.btn_lang.clicked.connect(self._on_lang_toggle)
         
-        header_layout.addWidget(self.btn_delete_header)
-        header_layout.addStretch()
         header_layout.addStretch()
         header_layout.addWidget(self.chk_auto_run_pendings)
         header_layout.addWidget(self.time_auto_run_pendings)
@@ -194,12 +188,13 @@ class MainWindow(QWidget):
         self.action_panel = ActionPanel()
         self.action_panel.apply_clicked.connect(self._on_move)
         self.action_panel.apply_custom_clicked.connect(self._on_apply_custom)
+        self.action_panel.delete_clicked.connect(self._on_delete_clicked)
         self.action_panel.secure_changed.connect(self._on_secure_changed)
         self.action_panel.keep_changed.connect(self._on_keep_changed)
+        self.action_panel.keep_mode_changed.connect(self._on_keep_mode_changed)
         self.action_panel.post_action_changed.connect(self._on_post_action_changed)
         self.action_panel.set_post_action_mode(self._post_action_mode)
         self.action_panel.hide_t_clicked.connect(self._on_hide_t_clicked)
-        self.action_panel.pdf_action_requested.connect(self._on_pdf_action_requested)
         root.addWidget(self.action_panel)
 
         # Queue / Character Panel
@@ -347,6 +342,11 @@ class MainWindow(QWidget):
         data = socket.readAll().data().decode('utf-8')
         try:
             cmd = json.loads(data)
+            if cmd.get("cmd") == "capture_ui_render":
+                self._capture_ui_render()
+                socket.disconnectFromServer()
+                return
+
             path = cmd.get("path")
             hide_secure = cmd.get("hide_secure", True)
             if path and os.path.exists(path):
@@ -361,9 +361,20 @@ class MainWindow(QWidget):
             logging.exception("Failed to process server command")
         socket.disconnectFromServer()
 
+    def _capture_ui_render(self):
+        try:
+            pixmap = self.grab()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"catchetude_ui_render_{timestamp}.png"
+            dest_path = resolve_duplicate(config.DOWNLOADS / filename)
+            pixmap.save(str(dest_path), "PNG")
+            logging.info(f"UI render captured and saved to {dest_path}")
+            self.show_status(f"UI render guardado en Downloads: {dest_path.name}")
+        except Exception:
+            logging.exception("Failed to capture UI render")
+
     def retranslate_ui(self):
         self.chk_auto_run_pendings.setText("Autoexecure Pendings")
-        self.btn_delete_header.setText(self.loc.get("btn_header_delete"))
         self.btn_hide.setText(self.loc.get("btn_hide"))
         self.btn_undo.setText(self.loc.get("btn_history"))
         self.btn_lang.setText(self.loc.get("lang_toggle"))
@@ -469,25 +480,6 @@ class MainWindow(QWidget):
         hide_action = QAction(self.loc.get("tray_hide"), self)
         hide_action.triggered.connect(self._manual_hide)
         self.tray_menu.addAction(hide_action)
-        
-        convert_menu = QMenu("Convertir Archivo", self)
-        img_to_pdf_action = QAction("IMGs a PDF", self)
-        img_to_pdf_action.triggered.connect(self._on_tray_imgs_to_pdf)
-        convert_menu.addAction(img_to_pdf_action)
-
-        pdf_to_jpeg_action = QAction("PDF a JPEG", self)
-        pdf_to_jpeg_action.triggered.connect(self._on_tray_pdf_to_jpeg)
-        convert_menu.addAction(pdf_to_jpeg_action)
-
-        extract_imgs_action = QAction("Extraer imagenes de PDF", self)
-        extract_imgs_action.triggered.connect(self._on_tray_extract_pdf_images)
-        convert_menu.addAction(extract_imgs_action)
-
-        merge_pdfs_action = QAction("Unir PDFs", self)
-        merge_pdfs_action.triggered.connect(self._on_tray_merge_pdfs)
-        convert_menu.addAction(merge_pdfs_action)
-
-        self.tray_menu.addMenu(convert_menu)
 
         rescan_action = QAction(self.loc.get("tray_rescan"), self)
         rescan_action.triggered.connect(self._rescan_downloads)
@@ -783,7 +775,7 @@ class MainWindow(QWidget):
             self._sync_apply_button()
         else:
             self.action_panel.btn_move.setEnabled(False)
-        self.btn_delete_header.setEnabled(enabled)
+        self.action_panel.btn_delete.setEnabled(enabled and bool(self.filepath))
         if not enabled:
             self.btn_undo.setEnabled(False)
         else:
@@ -812,7 +804,6 @@ class MainWindow(QWidget):
             return
 
         logging.info("FD 5")
-        self.btn_delete_header.setEnabled(True)
 
         logging.info("FD 6")
         self._update_undo_button_tooltip()
@@ -889,6 +880,14 @@ class MainWindow(QWidget):
         t = self.selection_panel.get_selection()["type"]
         keep = self.action_panel.is_keep_downloads()
         self.action_panel.set_apply_enabled(keep or t == 7)
+
+    def _on_keep_mode_changed(self, mode: str):
+        if mode == "nothing":
+            self.show_status("Keep in downloads: Nothing")
+        elif mode == "only_this":
+            self.show_status("Keep in downloads: Only this file")
+        elif mode == "all_queue":
+            self.show_status("Keep in downloads: All Queue")
 
     def _on_keep_changed(self, checked: bool):
         self.selection_panel.set_keep_mode(checked)
@@ -1257,35 +1256,3 @@ class MainWindow(QWidget):
             self._hide_t_banner.stop()
 
         self._bring_and_center()
-
-    def _on_tray_imgs_to_pdf(self):
-        file_filter = "Imágenes (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff)"
-        files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar imágenes", str(config.DOWNLOADS), file_filter)
-        if files:
-            paths = [Path(f) for f in files]
-            run_pdf_task(self, "imgs_to_pdf", paths, "IMGs a PDF")
-
-    def _on_tray_pdf_to_jpeg(self):
-        file_filter = "Archivos PDF (*.pdf)"
-        files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar PDFs", str(config.DOWNLOADS), file_filter)
-        if files:
-            paths = [Path(f) for f in files]
-            run_pdf_task(self, "pdf_to_jpeg", paths, "PDF a JPEG")
-
-    def _on_tray_extract_pdf_images(self):
-        file_filter = "Archivos PDF (*.pdf)"
-        files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar PDFs", str(config.DOWNLOADS), file_filter)
-        if files:
-            paths = [Path(f) for f in files]
-            run_pdf_task(self, "extract_images", paths, "Extraer imágenes de PDF")
-
-    def _on_tray_merge_pdfs(self):
-        file_filter = "Archivos PDF (*.pdf)"
-        files, _ = QFileDialog.getOpenFileNames(self, "Seleccionar PDFs", str(config.DOWNLOADS), file_filter)
-        if files:
-            paths = [Path(f) for f in files]
-            run_pdf_task(self, "merge_pdfs", paths, "Unir PDFs")
-
-    def _on_pdf_action_requested(self, task_type: str, pdf_path: Path):
-        title = "PDF a JPEG" if task_type == "pdf_to_jpeg" else "Extraer imágenes de PDF"
-        run_pdf_task(self, task_type, [pdf_path], title)
