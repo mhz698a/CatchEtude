@@ -84,48 +84,39 @@ class RestartWindow(QtWidgets.QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self.container)
 
-        container_layout = QtWidgets.QHBoxLayout(self.container)
-        container_layout.setContentsMargins(10, 10, 15, 10)
-        container_layout.setSpacing(10)
+        self.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
 
-        # Left Drag Handle Gap
-        self.drag_gap = QtWidgets.QLabel("⋮\n⋮")
-        self.drag_gap.setFixedWidth(20)
-        self.drag_gap.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.drag_gap.setStyleSheet("color: #457b9d; font-size: 16px; font-weight: bold; cursor: openhand;")
-        container_layout.addWidget(self.drag_gap)
-
-        # Content Layout
-        content_layout = QtWidgets.QVBoxLayout()
-        content_layout.setSpacing(6)
+        container_layout = QtWidgets.QVBoxLayout(self.container)
+        container_layout.setContentsMargins(15, 12, 15, 12)
+        container_layout.setSpacing(6)
 
         self.status_label = QtWidgets.QLabel("Reiniciando CatchEtude...")
         self.status_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        content_layout.addWidget(self.status_label)
+        container_layout.addWidget(self.status_label)
 
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 0) # Indeterminate mode
-        content_layout.addWidget(self.progress_bar)
+        container_layout.addWidget(self.progress_bar)
 
-        self.btn_ok = QtWidgets.QPushButton("OK")
+        self.btn_ok = QtWidgets.QPushButton("OK (20)")
         self.btn_ok.setVisible(False)
+        self.btn_ok.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.btn_ok.clicked.connect(QtWidgets.QApplication.quit)
-        content_layout.addWidget(self.btn_ok, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        container_layout.addWidget(self.btn_ok, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
         self.error_area = QtWidgets.QPlainTextEdit()
         self.error_area.setReadOnly(True)
         self.error_area.setVisible(False)
-        content_layout.addWidget(self.error_area)
-
-        container_layout.addLayout(content_layout)
+        container_layout.addWidget(self.error_area)
 
         # Position at the bottom of the primary screen above taskbar
         self._position_bottom()
 
-        # Auto-close timer for 20s
-        self.auto_close_timer = QtCore.QTimer(self)
-        self.auto_close_timer.setSingleShot(True)
-        self.auto_close_timer.timeout.connect(QtWidgets.QApplication.quit)
+        # Countdown timer for OK button (20s)
+        self._remaining_seconds = 20
+        self.countdown_timer = QtCore.QTimer(self)
+        self.countdown_timer.setInterval(1000)
+        self.countdown_timer.timeout.connect(self._on_countdown_tick)
 
         # Start the restart logic in a background thread
         self.worker = RestartWorker(self.pid, self.script_path)
@@ -157,8 +148,10 @@ class RestartWindow(QtWidgets.QWidget):
     def _on_finished(self):
         self.status_label.setText("CatchEtude se ha reiniciado con éxito.")
         self.progress_bar.setVisible(False)
+        self._remaining_seconds = 20
+        self.btn_ok.setText(f"OK ({self._remaining_seconds})")
         self.btn_ok.setVisible(True)
-        self.auto_close_timer.start(20000) # 20 seconds auto-disappear
+        self.countdown_timer.start()
 
     def _on_error(self, err_msg):
         self.status_label.setText("Error al reiniciar CatchEtude")
@@ -167,9 +160,19 @@ class RestartWindow(QtWidgets.QWidget):
         self.error_area.setPlainText(err_msg)
         self.error_area.setVisible(True)
         self.setFixedSize(550, 220)
+        self._remaining_seconds = 20
+        self.btn_ok.setText(f"OK ({self._remaining_seconds})")
         self.btn_ok.setVisible(True)
         self._position_bottom()
-        self.auto_close_timer.start(20000)
+        self.countdown_timer.start()
+
+    def _on_countdown_tick(self):
+        self._remaining_seconds -= 1
+        if self._remaining_seconds <= 0:
+            self.countdown_timer.stop()
+            QtWidgets.QApplication.quit()
+        else:
+            self.btn_ok.setText(f"OK ({self._remaining_seconds})")
 
 class RestartWorker(QtCore.QThread):
     finished = QtCore.pyqtSignal()
