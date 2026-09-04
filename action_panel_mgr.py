@@ -203,9 +203,12 @@ class ActionPanel(QWidget):
         self.lbl_keep.setText(self.loc.get("keep_in_downloads") if self.loc.get("keep_in_downloads") else "Keep in downloads:")
         self.btn_hide_t.setText("Hide Temporal")
         self.btn_custom.setText(self.loc.get("btn_apply_custom"))
-        self.btn_move.setText(
-            self.loc.get("btn_keep") if self.is_keep_downloads() else self.loc.get("btn_apply")
-        )
+        if self.filepath and self.filepath.is_dir():
+            self.btn_move.setText("Flat Folder")
+        else:
+            self.btn_move.setText(
+                self.loc.get("btn_keep") if self.is_keep_downloads() else self.loc.get("btn_apply")
+            )
 
     def set_file(self, p: Path, hide_secure: bool):
         self._preview_generation += 1
@@ -214,15 +217,71 @@ class ActionPanel(QWidget):
         self._hide_secure = hide_secure
         self.hide_secure_cb.setChecked(hide_secure)
         self.rename_input.setText(p.stem)
+
+        if p.is_dir():
+            self._update_folder_info_label()
+            self.load_preview()
+            self.drag_icon.set_file(p)
+            self.rename_input.setEnabled(False)
+            self.btn_open.setEnabled(True)
+            self.btn_delete.setEnabled(False)
+            self.btn_custom.setEnabled(False)
+            self.keep_downloads_cb.setEnabled(False)
+            self.post_action_cb.setEnabled(False)
+            self.btn_move.setText("Flat Folder")
+            self.btn_move.setEnabled(True)
+            self.btn_hide_t.setEnabled(True)
+            self._update_metadata_button_visibility()
+            self._update_dynamic_plugin_buttons()
+            return
+
+        self.rename_input.setEnabled(True)
+        self.btn_open.setEnabled(True)
+        self.btn_delete.setEnabled(True)
+        self.btn_custom.setEnabled(True)
+        self.keep_downloads_cb.setEnabled(True)
+        self.post_action_cb.setEnabled(True)
         self._update_file_info_label()        
         self.load_preview()
         self.drag_icon.set_file(p)
-        self.btn_custom.setEnabled(True)
         self.btn_hide_t.setEnabled(True)
-        self.btn_delete.setEnabled(True)
         self._update_metadata_button_visibility()
         self._update_dynamic_plugin_buttons()
         # Note: btn_move enabling depends on type, handled by MainWindow
+
+    def _update_folder_info_label(self):
+        if not self.filepath:
+            self.lbl_file_info.setText("")
+            return
+
+        p = self.filepath
+
+        try:
+            created = datetime.fromtimestamp(p.stat().st_ctime)
+            created_text = created.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            created_text = "-"
+
+        try:
+            modified = datetime.fromtimestamp(p.stat().st_mtime)
+            modified_text = modified.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            modified_text = "-"
+
+        try:
+            item_count = len(list(p.iterdir()))
+            count_text = f"{item_count} elementos"
+        except Exception:
+            count_text = "-"
+
+        self.lbl_file_info.setText(
+            "\n".join([
+                "Tipo: Carpeta",
+                f"Contenido: {count_text}",
+                f"Creación: {created_text}",
+                f"Modificación: {modified_text}",
+            ])
+        )
 
     def _update_file_info_label(self):
 
@@ -359,6 +418,18 @@ class ActionPanel(QWidget):
 
             if not self._preview_request_is_current(p, generation):
                 return
+
+            if p.is_dir():
+                provider = QFileIconProvider()
+                pixmap = provider.icon(QFileIconProvider.IconType.Folder).pixmap(64, 64)
+                if self._hide_secure:
+                    img = pixmap.toImage()
+                    img = apply_secure_blur(img)
+                    pixmap = QtGui.QPixmap.fromImage(img)
+                if self._preview_request_is_current(p, generation):
+                    self.preview_label.setPixmap(pixmap)
+                return
+
             provider = QFileIconProvider()
             pixmap = provider.icon(QtCore.QFileInfo(str(p))).pixmap(64, 64)
             if self._hide_secure:
@@ -424,6 +495,12 @@ class ActionPanel(QWidget):
         self.filepath = None
         self.preview_label.clear()
         self.rename_input.setText("")
+        self.rename_input.setEnabled(True)
+        self.btn_custom.setEnabled(False)
+        self.keep_downloads_cb.setEnabled(True)
+        self.post_action_cb.setEnabled(True)
+        self.btn_move.setText(self.loc.get("btn_apply"))
+        self.btn_move.setEnabled(False)
         self.lbl_file_info.setText(self.loc.get("msg_no_file"))
         self.progress.setValue(0)
         self.drag_icon.set_file(None)
@@ -510,7 +587,10 @@ class ActionPanel(QWidget):
     def _on_keep_downloads_mode_changed(self, index: int):
         mode = self.get_keep_mode()
         is_keep = (mode != "nothing")
-        self.btn_move.setText(self.loc.get("btn_keep") if is_keep else self.loc.get("btn_apply"))
+        if self.filepath and self.filepath.is_dir():
+            self.btn_move.setText("Flat Folder")
+        else:
+            self.btn_move.setText(self.loc.get("btn_keep") if is_keep else self.loc.get("btn_apply"))
         self.keep_mode_changed.emit(mode)
         self.keep_changed.emit(is_keep)
 

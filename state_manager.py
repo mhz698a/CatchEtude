@@ -5,7 +5,7 @@ from pathlib import Path
 from collections import deque
 from PyQt6 import QtCore
 
-from utils import is_file_locked, is_temporary, flatten_downloads_root, run_in_threadpool
+from utils import is_file_locked, is_temporary, folder_is_safe_to_flatten, run_in_threadpool
 from fallback_utils import safe_move_to_conflicts
 from log_mgr import safe_thread_logger
 
@@ -88,14 +88,7 @@ class StateManager:
 
     @safe_thread_logger("StateManagerMaintenance")
     def _safe_maintenance_and_flatten(self):
-        """Runs flatten_downloads_root and _run_maintenance_scan safely in a daemon thread."""
-        try:
-            flatten_downloads_root()
-        except (FileNotFoundError, PermissionError, OSError) as e:
-            logging.warning(f"OS/IO error during flatten_downloads_root: {e}")
-        except Exception:
-            logging.exception("Flatten downloads failed")
-
+        """Runs _run_maintenance_scan safely in a daemon thread."""
         with self._lock:
             scanning = self._is_scanning
         if not scanning:
@@ -112,7 +105,6 @@ class StateManager:
 
         self._purge_missing_queue_entries()
 
-        # 🔽 NUEVO: cuando el sistema queda libre, aplanar descargas
         if s == State.IDLE:
             try:
                 run_in_threadpool(self._safe_maintenance_and_flatten)
@@ -453,10 +445,18 @@ def scan_existing_downloads(state_manager: StateManager):
         now = time.time()
         to_enqueue = []
         for p in sorted(config.DOWNLOADS.iterdir()):
-            if not p.is_file() or is_temporary(p):
+            if is_temporary(p):
                 continue
 
             try:
+                if p.is_dir():
+                    if folder_is_safe_to_flatten(p):
+                        to_enqueue.append(p)
+                    continue
+
+                if not p.is_file():
+                    continue
+
                 stat = p.stat()
                 # If modified within the last 1 second, skip it (will be caught later)
                 if now - stat.st_mtime < 1:

@@ -29,7 +29,8 @@ from utils import (
     resolve_duplicate, 
     configure_dwm_thumbnail_behavior, is_internal_available,
     sanitize_windows_filename, is_temporary,
-    is_file_locked, delete_to_recycle_bin, run_in_threadpool
+    is_file_locked, delete_to_recycle_bin, run_in_threadpool,
+    flatten_single_folder
 )
 from state_manager import StateManager, State, scan_existing_downloads
 from fallback_utils import compute_destination
@@ -391,7 +392,7 @@ class MainWindow(QWidget):
         self._build_tray()
 
     def _on_delete_clicked(self):
-        if not self.filepath:
+        if not self.filepath or self.filepath.is_dir():
             return
 
         send_character_service_command("pause")
@@ -785,6 +786,18 @@ class MainWindow(QWidget):
         run_in_threadpool(worker)
 
     def _set_ui_enabled_for_move(self, enabled: bool):
+        if self.filepath and self.filepath.is_dir():
+            self.action_panel.btn_custom.setEnabled(False)
+            self.action_panel.btn_move.setText("Flat Folder")
+            self.action_panel.btn_move.setEnabled(enabled)
+            self.action_panel.btn_delete.setEnabled(False)
+            self.action_panel.rename_input.setEnabled(False)
+            self.action_panel.keep_downloads_cb.setEnabled(False)
+            self.action_panel.post_action_cb.setEnabled(False)
+            self.selection_panel.setEnabled(False)
+            return
+
+        self.selection_panel.setEnabled(True)
         self.action_panel.btn_custom.setEnabled(enabled)
         if enabled:
             self._sync_apply_button()
@@ -833,7 +846,11 @@ class MainWindow(QWidget):
         self.action_panel.set_progress(0)
 
         logging.info("FD 10")
-        self.selection_panel.refresh_classification_ui()
+        if p.is_dir():
+            self.selection_panel.setEnabled(False)
+        else:
+            self.selection_panel.setEnabled(True)
+            self.selection_panel.refresh_classification_ui()
 
         logging.info("FD 11")
         sel = self.selection_panel.get_selection()
@@ -892,6 +909,10 @@ class MainWindow(QWidget):
         self._sync_apply_button()
 
     def _sync_apply_button(self):
+        if self.filepath and self.filepath.is_dir():
+            self.action_panel.btn_move.setText("Flat Folder")
+            self.action_panel.btn_move.setEnabled(True)
+            return
         t = self.selection_panel.get_selection()["type"]
         keep = self.action_panel.is_keep_downloads()
         self.action_panel.set_apply_enabled(keep or t == 7)
@@ -962,7 +983,22 @@ class MainWindow(QWidget):
     def _on_move(self):
         if not self.filepath: 
             return
-        
+
+        if self.filepath.is_dir():
+            folder = self.filepath
+            self.action_panel.suspend_preview_loading(folder)
+            self.action_panel.clear()
+            self.filepath = None
+            self.state_manager.discard_active_file()
+
+            def flatten_worker():
+                moved = flatten_single_folder(folder)
+                if moved:
+                    self.state_manager.enqueue_files(moved)
+
+            run_in_threadpool(flatten_worker)
+            return
+
         sel = self.selection_panel.get_selection()
         
         if self.action_panel.is_keep_downloads():
@@ -999,7 +1035,7 @@ class MainWindow(QWidget):
         self._start_move_task(decision, final_dest)
 
     def _move_to_subfolder(self, sub_name: str):
-        if not self.filepath: 
+        if not self.filepath or self.filepath.is_dir():
             return
         
         self.selection_panel.set_subfolders_enabled(False)
@@ -1040,7 +1076,7 @@ class MainWindow(QWidget):
         self._move_to_subfolder(sub_name)
 
     def _on_apply_custom(self):
-        if not self.filepath: 
+        if not self.filepath or self.filepath.is_dir():
             return
         
         folder = QFileDialog.getExistingDirectory(self, "Select Destination Folder", str(self.filepath.parent))
