@@ -48,12 +48,6 @@ class QueuePanel(QWidget):
         self.queue_list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         layout.addWidget(self.queue_list_widget)
 
-    def _on_item_double_clicked(self, item: QtWidgets.QListWidgetItem):
-        path_str = item.data(Qt.ItemDataRole.UserRole)
-        is_active = item.data(Qt.ItemDataRole.UserRole + 1)
-        if path_str and not is_active:
-            self.file_double_clicked.emit(path_str)
-
         # Pending Movements
         self.lbl_movings = QLabel()
         self.lbl_movings.setText(self.loc.get("lbl_queue_movings"))
@@ -67,6 +61,12 @@ class QueuePanel(QWidget):
         self.char_model = CharacterListModel()
         self.char_model.modelReset.connect(self.characters_updated.emit)
         self.char_model.dataChanged.connect(self._on_char_data_changed)
+
+    def _on_item_double_clicked(self, item: QtWidgets.QListWidgetItem):
+        path_str = item.data(Qt.ItemDataRole.UserRole)
+        is_active = item.data(Qt.ItemDataRole.UserRole + 1)
+        if path_str and not is_active:
+            self.file_double_clicked.emit(path_str)
 
     def _on_char_data_changed(self, topLeft, bottomRight, roles=None):
         for row in range(topLeft.row(), bottomRight.row() + 1):
