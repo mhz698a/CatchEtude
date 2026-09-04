@@ -520,15 +520,26 @@ class MainWindow(QWidget):
         plugins_action.triggered.connect(self._show_plugin_manager)
         self.tray_menu.addAction(plugins_action)
 
-        # Build declarative sub-menu for plugins with tray_action capabilities
+        # Build declarative plugin tray actions (directly or in grouped submenus)
         plugin_actions = self._get_plugin_tray_actions()
         if plugin_actions:
-            plugins_submenu = QMenu(self.loc.get("plugins_menu"), self)
-            for p_id, a_id, label, cmd in plugin_actions:
+            grouped_menus = {}
+            for act_def in plugin_actions:
+                pid = act_def.get("plugin_id")
+                label = act_def.get("label", "Action")
+                command = act_def.get("command", "")
+                group = act_def.get("group")
+
                 act = QAction(label, self)
-                act.triggered.connect(lambda checked, pid=p_id, command=cmd: self._on_plugin_tray_action(pid, command))
-                plugins_submenu.addAction(act)
-            self.tray_menu.addMenu(plugins_submenu)
+                act.triggered.connect(lambda checked, p=pid, c=command: self._on_plugin_tray_action(p, c))
+
+                if group:
+                    if group not in grouped_menus:
+                        grouped_menus[group] = QMenu(group, self)
+                        self.tray_menu.addMenu(grouped_menus[group])
+                    grouped_menus[group].addAction(act)
+                else:
+                    self.tray_menu.addAction(act)
 
         appdta_folder_action = QAction("Open Appdata Folder", self)
         appdta_folder_action.triggered.connect(self._open_appdta_folder)

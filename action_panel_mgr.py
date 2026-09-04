@@ -81,6 +81,10 @@ class ActionPanel(QWidget):
         self.btn_edit_metadata.setVisible(False)
         open_row.addWidget(self.btn_edit_metadata)
 
+        self.dynamic_btn_layout = QHBoxLayout()
+        self.dynamic_btn_layout.setSpacing(8)
+        open_row.addLayout(self.dynamic_btn_layout)
+
         open_row.addStretch()
         layout.addLayout(open_row)
 
@@ -217,6 +221,7 @@ class ActionPanel(QWidget):
         self.btn_hide_t.setEnabled(True)
         self.btn_delete.setEnabled(True)
         self._update_metadata_button_visibility()
+        self._update_dynamic_plugin_buttons()
         # Note: btn_move enabling depends on type, handled by MainWindow
 
     def _update_file_info_label(self):
@@ -425,8 +430,62 @@ class ActionPanel(QWidget):
         self.btn_hide_t.setEnabled(False)
         self.btn_delete.setEnabled(False)
         self._update_metadata_button_visibility()
+        self._update_dynamic_plugin_buttons()
         if self.get_keep_mode() == "only_this":
             self.set_keep_mode("nothing")
+
+    def _update_dynamic_plugin_buttons(self):
+        import sys
+        # Clear previous dynamic buttons
+        while self.dynamic_btn_layout.count():
+            item = self.dynamic_btn_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not self.filepath:
+            return
+
+        plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
+        if not plugin_mgr:
+            return
+
+        buttons_def = plugin_mgr.get_ui_action_buttons()
+        ext = self.filepath.suffix.lower()
+
+        for btn_def in buttons_def:
+            exts = btn_def.get("file_extensions")
+            if exts and ext not in [e.lower() for e in exts]:
+                continue
+
+            btn = QPushButton(btn_def.get("label", "Action"))
+            btn.setFixedHeight(30)
+            btn.setFixedWidth(110)
+
+            plugin_id = btn_def["plugin_id"]
+            menu_items = btn_def.get("menu_items")
+            command = btn_def.get("command")
+
+            if menu_items:
+                btn.clicked.connect(lambda checked, b=btn, pid=plugin_id, items=menu_items: self._show_dynamic_button_menu(b, pid, items))
+            elif command:
+                btn.clicked.connect(lambda checked, pid=plugin_id, cmd=command: plugin_mgr.invoke_command(pid, cmd))
+
+            self.dynamic_btn_layout.addWidget(btn)
+
+    def _show_dynamic_button_menu(self, button, plugin_id: str, items: list):
+        import sys
+        plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
+        if not plugin_mgr:
+            return
+
+        menu = QtWidgets.QMenu(self)
+        for item in items:
+            act = QtGui.QAction(item.get("label", "Item"), self)
+            cmd = item.get("command", "")
+            act.triggered.connect(lambda checked, pid=plugin_id, c=cmd: plugin_mgr.invoke_command(pid, c))
+            menu.addAction(act)
+
+        menu.exec(button.mapToGlobal(QtCore.QPoint(0, button.height())))
 
     def _show_delete_menu(self):
         if not self.filepath:

@@ -13,6 +13,7 @@ ALLOWED_CAPABILITIES = {
     "background_task",
     "event_listener",
     "tray_action",
+    "ui_action",
     "settings",
     "parallel_service",
 }
@@ -153,6 +154,37 @@ def validate_manifest(manifest_dict: Dict[str, Any]) -> Tuple[bool, Optional[str
             if act["id"] in action_ids:
                 return False, f"Duplicate tray action id '{act['id']}'"
             action_ids.add(act["id"])
+
+    # Validate action_buttons
+    if "action_buttons" in manifest_dict:
+        buttons = manifest_dict["action_buttons"]
+        if not isinstance(buttons, list):
+            return False, "'action_buttons' must be a list"
+        if buttons and "ui_action" not in caps_set:
+            return False, "Declared 'action_buttons' without 'ui_action' capability"
+        btn_ids = set()
+        for btn in buttons:
+            if not isinstance(btn, dict):
+                return False, "Invalid item in 'action_buttons'"
+            for f in ["id", "label"]:
+                if f not in btn or not isinstance(btn[f], str) or not btn[f].strip():
+                    return False, f"Action button missing or empty field '{f}'"
+            if btn["id"] in btn_ids:
+                return False, f"Duplicate action button id '{btn['id']}'"
+            btn_ids.add(btn["id"])
+
+            if "file_extensions" in btn and not isinstance(btn["file_extensions"], list):
+                return False, "'file_extensions' in action_buttons must be a list"
+
+            if "menu_items" in btn:
+                if not isinstance(btn["menu_items"], list):
+                    return False, "'menu_items' in action_buttons must be a list"
+                for item in btn["menu_items"]:
+                    if not isinstance(item, dict):
+                        return False, "Invalid menu item in action_buttons"
+                    for f in ["label", "command"]:
+                        if f not in item or not isinstance(item[f], str) or not item[f].strip():
+                            return False, f"Menu item missing or empty field '{f}'"
 
     # Validate services
     if "services" in manifest_dict:

@@ -4,28 +4,41 @@
 # name = "Herramientas PDF Plugin"
 # version = "1.0.0"
 # api_version = 1
-# capabilities = ["background_task", "tray_action"]
+# capabilities = ["background_task", "tray_action", "ui_action"]
 # events = []
 #
 # [[tray_actions]]
 # id = "imgs_to_pdf"
 # label = "IMGs a PDF"
 # command = "imgs_to_pdf"
+# group = "Convertir Archivo"
 #
 # [[tray_actions]]
 # id = "pdf_to_jpeg"
 # label = "PDF a JPEG"
 # command = "pdf_to_jpeg"
+# group = "Convertir Archivo"
 #
 # [[tray_actions]]
 # id = "extract_images"
 # label = "Extraer imágenes de PDF"
 # command = "extract_images"
+# group = "Convertir Archivo"
 #
 # [[tray_actions]]
 # id = "merge_pdfs"
 # label = "Unir PDFs"
 # command = "merge_pdfs"
+# group = "Convertir Archivo"
+#
+# [[action_buttons]]
+# id = "btn_manage_pdf"
+# label = "Gestionar PDF"
+# file_extensions = [".pdf"]
+# menu_items = [
+#     { label = "PDF a JPEG", command = "pdf_to_jpeg" },
+#     { label = "Extraer imágenes de PDF", command = "extract_images" },
+# ]
 # /// end catch-etude-plugin
 
 """
