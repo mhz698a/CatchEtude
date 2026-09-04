@@ -520,26 +520,7 @@ class MainWindow(QWidget):
         plugins_action.triggered.connect(self._show_plugin_manager)
         self.tray_menu.addAction(plugins_action)
 
-        # Build declarative plugin tray actions (directly or in grouped submenus)
-        plugin_actions = self._get_plugin_tray_actions()
-        if plugin_actions:
-            grouped_menus = {}
-            for act_def in plugin_actions:
-                pid = act_def.get("plugin_id")
-                label = act_def.get("label", "Action")
-                command = act_def.get("command", "")
-                group = act_def.get("group")
-
-                act = QAction(label, self)
-                act.triggered.connect(lambda checked, p=pid, c=command: self._on_plugin_tray_action(p, c))
-
-                if group:
-                    if group not in grouped_menus:
-                        grouped_menus[group] = QMenu(group, self)
-                        self.tray_menu.addMenu(grouped_menus[group])
-                    grouped_menus[group].addAction(act)
-                else:
-                    self.tray_menu.addAction(act)
+        self._build_or_update_plugins_submenu()
 
         appdta_folder_action = QAction("Open Appdata Folder", self)
         appdta_folder_action.triggered.connect(self._open_appdta_folder)
@@ -576,9 +557,32 @@ class MainWindow(QWidget):
         self._plugin_dialog = PluginManagerDialog(plugin_mgr, self.loc, self)
         self._plugin_dialog.show()
 
+    def _build_or_update_plugins_submenu(self):
+        plugin_actions = self._get_plugin_tray_actions()
+        if not plugin_actions:
+            return
+
+        grouped_menus = {}
+        for act_def in plugin_actions:
+            pid = act_def.get("plugin_id")
+            label = act_def.get("label", "Action")
+            command = act_def.get("command", "")
+            group = act_def.get("group")
+
+            act = QAction(label, self)
+            act.triggered.connect(lambda checked, p=pid, c=command: self._on_plugin_tray_action(p, c))
+
+            if group:
+                if group not in grouped_menus:
+                    grouped_menus[group] = QMenu(group, self)
+                    self.tray_menu.addMenu(grouped_menus[group])
+                grouped_menus[group].addAction(act)
+            else:
+                self.tray_menu.addAction(act)
+
     def _get_plugin_tray_actions(self):
         try:
-            plugin_mgr = getattr(sys.modules["__main__"], "plugin_mgr", None)
+            plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
             if plugin_mgr:
                 return plugin_mgr.get_tray_actions()
         except Exception:
