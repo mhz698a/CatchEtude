@@ -140,19 +140,29 @@ def configure_dwm_thumbnail_behavior(hwnd):
                                  ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int(1)))
 
 
-def flatten_single_folder(folder: Path) -> list[Path]:
+def flatten_single_folder(folder: Path) -> tuple[list[Path], bool]:
     """
     Aplana de forma manual una carpeta específica en Downloads.
     Mueve los archivos contenidos a Downloads y elimina las carpetas vacías.
-    Retorna la lista de rutas de los archivos movidos a Downloads.
+    Retorna la lista de rutas de los archivos movidos a Downloads y un booleano
+    que indica si la carpeta fue aplanada y eliminada completamente.
     """
     if not folder.exists() or not folder.is_dir():
-        return []
+        return [], True
 
     moved_files = []
+    flatten_failed = False
+
+    if not folder_is_safe_to_flatten(folder):
+        flatten_failed = True
+
     # mover archivos uno por uno
     for f in list(folder.rglob('*')):
         if not f.is_file():
+            continue
+
+        if is_temporary(f) or is_file_locked(f):
+            flatten_failed = True
             continue
 
         dest = resolve_duplicate(config.DOWNLOADS / f.name)
@@ -170,20 +180,25 @@ def flatten_single_folder(folder: Path) -> list[Path]:
 
         except Exception:
             logging.exception(f"Error flattening file {f}")
+            flatten_failed = True
             continue
 
     # eliminar subcarpetas y carpeta principal si quedaron vacías
+    folder_removed = False
     try:
         for sub in sorted(folder.rglob('*'), reverse=True):
             if sub.is_dir() and not any(sub.iterdir()):
                 sub.rmdir()
         if folder.exists() and not any(folder.iterdir()):
             folder.rmdir()
+            folder_removed = True
             logging.info(f"Removed empty folder after manual flatten: {folder}")
     except Exception:
         logging.warning(f"Could not remove folder structure: {folder}")
+        flatten_failed = True
 
-    return moved_files
+    success = folder_removed and not folder.exists() and not flatten_failed
+    return moved_files, success
 
 
 def flatten_downloads_root():
