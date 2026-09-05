@@ -84,7 +84,6 @@ class MainWindow(QWidget):
         self._internal_warned = False
         self.filepath: Optional[Path] = None
         self._bulk_subfolder_name: Optional[str] = None
-        self._internal_available_at_start = is_internal_available()
         
         self._hide_secure = False
         self._post_action_mode = "none"
@@ -725,6 +724,8 @@ class MainWindow(QWidget):
     def _bring_and_center(self):
         if hasattr(self, '_pending_dialog'):
             self._pending_dialog.hide()
+        if self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized | Qt.WindowState.WindowActive)
         self.show()
         screen = self.screen().availableGeometry()
         size = self.geometry()
@@ -927,7 +928,7 @@ class MainWindow(QWidget):
         logging.info("FD 15")
         if self._hide_t_active:
             self._restore_from_hide_t()
-        elif not self.isVisible() and self._internal_available_at_start:
+        else:
             self._bring_and_center()
 
         logging.info("FD 16")
