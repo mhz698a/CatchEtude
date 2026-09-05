@@ -84,7 +84,6 @@ class MainWindow(QWidget):
         self._internal_warned = False
         self.filepath: Optional[Path] = None
         self._bulk_subfolder_name: Optional[str] = None
-        self._internal_available_at_start = is_internal_available()
         
         self._hide_secure = False
         self._post_action_mode = "none"
@@ -141,6 +140,11 @@ class MainWindow(QWidget):
         # Header Row
         header_layout = QHBoxLayout()
         
+        self.btn_reload = QPushButton(self.loc.get("btn_reload"))
+        self.btn_reload.setFixedHeight(25)
+        self.btn_reload.setToolTip(self.loc.get("tooltip_reload"))
+        self.btn_reload.clicked.connect(self._on_reload_clicked)
+
         self.chk_auto_run_pendings = QCheckBox()
         self.chk_auto_run_pendings.setFixedHeight(25)
         self.chk_auto_run_pendings.toggled.connect(self._on_pending_schedule_changed)
@@ -164,6 +168,7 @@ class MainWindow(QWidget):
         self.btn_lang.setFixedHeight(25)
         self.btn_lang.clicked.connect(self._on_lang_toggle)
         
+        header_layout.addWidget(self.btn_reload)
         header_layout.addStretch()
         header_layout.addWidget(self.chk_auto_run_pendings)
         header_layout.addWidget(self.time_auto_run_pendings)
@@ -376,6 +381,8 @@ class MainWindow(QWidget):
             logging.exception("Failed to capture UI render")
 
     def retranslate_ui(self):
+        self.btn_reload.setText(self.loc.get("btn_reload"))
+        self.btn_reload.setToolTip(self.loc.get("tooltip_reload"))
         self.chk_auto_run_pendings.setText("Autoexecure Pendings")
         self.btn_hide.setText(self.loc.get("btn_hide"))
         self.btn_undo.setText(self.loc.get("btn_history"))
@@ -423,8 +430,23 @@ class MainWindow(QWidget):
             else:
                 self._build_tray()
                 self._update_undo_button_tooltip()
+                self._bring_and_center()
         finally:
             send_character_service_command("resume")
+
+    def _on_reload_clicked(self):
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            self.loc.get("btn_reload"),
+            self.loc.get("msg_reload_confirm"),
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No
+        )
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.filepath = None
+            self.action_panel.clear()
+            self.state_manager.reset_queue_and_rescan()
+            self._bring_and_center()
 
     def _on_exit_clicked(self):
         if not self.background_move_mgr.is_idle():
@@ -702,6 +724,8 @@ class MainWindow(QWidget):
     def _bring_and_center(self):
         if hasattr(self, '_pending_dialog'):
             self._pending_dialog.hide()
+        if self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized | Qt.WindowState.WindowActive)
         self.show()
         screen = self.screen().availableGeometry()
         size = self.geometry()
@@ -904,7 +928,7 @@ class MainWindow(QWidget):
         logging.info("FD 15")
         if self._hide_t_active:
             self._restore_from_hide_t()
-        elif not self.isVisible() and self._internal_available_at_start:
+        else:
             self._bring_and_center()
 
         logging.info("FD 16")

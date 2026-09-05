@@ -179,5 +179,26 @@ class TestQueueFeatures(unittest.TestCase):
             # Next in queue deque is file_1
             self.assertEqual(sm._q.queue[0], file_1)
 
+    def test_reset_queue_and_rescan(self):
+        sm = StateManager()
+        file_1 = config.DOWNLOADS / "file_1.txt"
+        file_2 = config.DOWNLOADS / "file_2.txt"
+        bg_file = config.DOWNLOADS / "bg_file.txt"
+
+        for f in (file_1, file_2, bg_file):
+            f.write_text("data")
+
+        sm.enqueue_files([file_1, file_2])
+        with sm._lock:
+            sm._active_file = file_1
+            sm._background_moves.add(bg_file)
+
+        sm.reset_queue_and_rescan()
+
+        with sm._lock:
+            # Active file and queue list should have been reset
+            self.assertIsNone(sm._active_file)
+            self.assertIn(bg_file, sm._background_moves)
+
 if __name__ == "__main__":
     unittest.main()

@@ -40,9 +40,13 @@ class WatcherHandler(FileSystemEventHandler):
         Schedules monitoring task on the global thread pool to wait for stability.
         """
         try:
-            # Check if it's in the monitored folder
-            if p.parent != config.DOWNLOADS:
-                return
+            # Check if it's in the monitored folder (case-insensitive and resolve path comparison)
+            try:
+                if not (p.parent == config.DOWNLOADS or p.parent.resolve() == config.DOWNLOADS.resolve()):
+                    return
+            except Exception:
+                if p.parent != config.DOWNLOADS:
+                    return
 
             # Filter temporary files
             if is_temporary(p):

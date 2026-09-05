@@ -499,6 +499,26 @@ class StateManager:
         self._skip_missing_active_file(reason)
         return True
 
+    def reset_queue_and_rescan(self):
+        """
+        Resets the download queue and active file, then rescans the Downloads folder.
+        Preserves active background file moves.
+        """
+        logging.info("Resetting queue and rescanning downloads folder...")
+        with self._lock:
+            self._pending.clear()
+            self._queue_list.clear()
+            with self._q.mutex:
+                self._q.queue.clear()
+            self._active_file = None
+            self._emit_queue_update()
+
+        self._set_state(State.RESUME_WATCHER)
+        self._set_state(State.IDLE)
+        self._enqueue_allowed.set()
+
+        run_in_threadpool(scan_existing_downloads, self)
+
 
 def scan_existing_downloads(state_manager: StateManager):
     try:
