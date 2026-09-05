@@ -402,13 +402,13 @@ class MainWindow(QWidget):
                 self.state_manager.discard_missing_active_file(
                     f"Archivo ya no existe: {self.filepath.name}"
                 )
-                self.action_panel.set_progress(0)
+                self.queue_panel.set_progress(0)
                 self.show_status(f"Archivo ya no existe: {self.filepath.name}", 5000)
                 return
 
             if delete_to_recycle_bin(self.filepath):
                 self.state_manager.discard_active_file()
-                self.action_panel.set_progress(0)
+                self.queue_panel.set_progress(0)
             else:
                 self.show_status("No se pudo eliminar el archivo.", 5000)
 
@@ -844,11 +844,36 @@ class MainWindow(QWidget):
         self.action_panel.set_file(p, self._hide_secure)
 
         logging.info("FD 9")
-        self.action_panel.set_progress(0)
+        self.queue_panel.set_progress(0)
 
         logging.info("FD 10")
         if p.is_dir():
             self.selection_panel.setEnabled(False)
+            autoflat_targets = [f.strip().lower() for f in getattr(config, "AUTOFLAT_FOLDERS", "").split("/") if f.strip()]
+            if p.name.lower() in autoflat_targets:
+                logging.info(f"Auto-flattening folder: {p.name}")
+                folder = p
+                self.action_panel.suspend_preview_loading(folder)
+                self._set_ui_enabled_for_move(False)
+
+                def autoflat_worker():
+                    moved, success = flatten_single_folder(folder)
+                    if moved:
+                        self.state_manager.enqueue_files(moved)
+
+                    def on_autoflat_finish():
+                        if success:
+                            self.action_panel.clear()
+                            self.filepath = None
+                            self.state_manager.discard_active_file()
+                        else:
+                            self._set_ui_enabled_for_move(True)
+                            self.show_status(f"Auto-flat falló para {folder.name}. Por favor, hágalo manualmente.", 5000)
+
+                    QtCore.QTimer.singleShot(0, on_autoflat_finish)
+
+                run_in_threadpool(autoflat_worker)
+                return
         else:
             self.selection_panel.setEnabled(True)
             self.selection_panel.refresh_classification_ui()
@@ -1139,7 +1164,7 @@ class MainWindow(QWidget):
             return
         self.queue_panel.queue_movings_widget.update_progress(src, val)
         if self.filepath == src:
-            self.action_panel.set_progress(val)
+            self.queue_panel.set_progress(val)
 
     @QtCore.pyqtSlot(Path, Path, bool, str, dict, dict)
     def _on_background_move_finished(self, src: Path, dst: Path, ok: bool, msg: str, src_meta: dict, decision: dict):

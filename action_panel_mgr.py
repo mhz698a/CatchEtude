@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider, QSizePolicy, QSpinBox
 from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
 import config
@@ -102,37 +102,44 @@ class ActionPanel(QWidget):
         
         layout.addStretch()        
 
-        # Progress Bar
-        self.progress = QtWidgets.QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.setValue(0)
-        layout.addWidget(self.progress)
-
         # Buttons
         footer = QVBoxLayout()
         footer.setSpacing(6)                        
                                 
-        top_row = QHBoxLayout()
-        top_row.setSpacing(10)     
+        # Secure & Blur row
+        secure_row = QHBoxLayout()
+        secure_row.setSpacing(10)
                 
         self.drag_icon = DragLabel()
         self.drag_icon.setEnabled(False)
-        top_row.addWidget(self.drag_icon)
+        secure_row.addWidget(self.drag_icon)
         
         self.hide_secure_cb = QCheckBox(self.loc.get("btn_secure"))
         self.hide_secure_cb.stateChanged.connect(self._on_hide_secure_changed)
-        top_row.addWidget(self.hide_secure_cb)
-        
+        secure_row.addWidget(self.hide_secure_cb)
+
+        self.blur_spinbox = QSpinBox()
+        self.blur_spinbox.setRange(1, 255)
+        self.blur_spinbox.setValue(config.BLUR_LEVEL)
+        self.blur_spinbox.setToolTip("Nivel de difuminado (1-255)")
+        self.blur_spinbox.valueChanged.connect(self._on_blur_level_changed)
+        secure_row.addWidget(self.blur_spinbox)
+        secure_row.addStretch()
+
+        # Keep in downloads row
+        keep_row = QHBoxLayout()
+        keep_row.setSpacing(10)
+
         self.lbl_keep = QLabel("Keep in downloads:")
-        top_row.addWidget(self.lbl_keep)
+        keep_row.addWidget(self.lbl_keep)
 
         self.keep_downloads_cb = QComboBox()
         self.keep_downloads_cb.addItem("Nothing", "nothing")
         self.keep_downloads_cb.addItem("Only this file", "only_this")
         self.keep_downloads_cb.addItem("All Queue", "all_queue")
         self.keep_downloads_cb.currentIndexChanged.connect(self._on_keep_downloads_mode_changed)
-        top_row.addWidget(self.keep_downloads_cb)
-        top_row.addStretch()
+        keep_row.addWidget(self.keep_downloads_cb)
+        keep_row.addStretch()
         
         # comobox action after download
         self.lbl_post_action = QLabel(self.loc.get("lbl_post_action"))
@@ -152,7 +159,8 @@ class ActionPanel(QWidget):
         self.post_action_row.addWidget(self.post_action_cb)
         self.post_action_row.addStretch(1)
 
-        footer.addLayout(top_row)
+        footer.addLayout(secure_row)
+        footer.addLayout(keep_row)
         footer.addLayout(self.post_action_row)
     
         # buttons arrow
@@ -480,8 +488,13 @@ class ActionPanel(QWidget):
         self.secure_changed.emit(self._hide_secure)
         self.load_preview()
 
-    def set_progress(self, val):
-        self.progress.setValue(val)
+    def _on_blur_level_changed(self, value: int):
+        config.BLUR_LEVEL = value
+        self.load_preview()
+        parent_mw = self.window()
+        if hasattr(parent_mw, "queue_panel") and parent_mw.queue_panel is not None:
+            parent_mw.queue_panel.queue_list_widget.itemDelegate()._thumb_cache.clear()
+            parent_mw.queue_panel.queue_list_widget.viewport().update()
 
     def get_new_name(self):
         return self.rename_input.text().strip()
@@ -502,7 +515,6 @@ class ActionPanel(QWidget):
         self.btn_move.setText(self.loc.get("btn_apply"))
         self.btn_move.setEnabled(False)
         self.lbl_file_info.setText(self.loc.get("msg_no_file"))
-        self.progress.setValue(0)
         self.drag_icon.set_file(None)
         self.btn_hide_t.setEnabled(False)
         self.btn_delete.setEnabled(False)

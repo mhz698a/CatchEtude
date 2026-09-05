@@ -32,6 +32,8 @@ class SettingsDialog(QDialog):
         for key in config.DEFAULT_SETTINGS.keys():
             value = self.settings.get(key, config.DEFAULT_SETTINGS[key])
             line_edit = QLineEdit(str(value))
+            if key == "AUTOFLAT_FOLDERS":
+                line_edit.setPlaceholderText("example_1/example_2")
             form_layout.addRow(QLabel(key), line_edit)
             self.inputs[key] = line_edit
             

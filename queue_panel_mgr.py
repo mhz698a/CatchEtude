@@ -57,6 +57,12 @@ class QueuePanel(QWidget):
         self.queue_movings_widget.setMaximumHeight(200)
         layout.addWidget(self.queue_movings_widget)
 
+        # Global Progress Bar
+        self.progress = QtWidgets.QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        layout.addWidget(self.progress)
+
         # Character Model
         self.char_model = CharacterListModel()
         self.char_model.modelReset.connect(self.characters_updated.emit)
@@ -78,6 +84,9 @@ class QueuePanel(QWidget):
         self._refresh_queue_label()
         if hasattr(self, 'lbl_movings'):
             self.lbl_movings.setText(self.loc.get("lbl_queue_movings"))
+
+    def set_progress(self, val: int):
+        self.progress.setValue(val)
 
     def set_hide_secure(self, enabled: bool):
         self._hide_secure = enabled
