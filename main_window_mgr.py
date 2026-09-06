@@ -434,6 +434,23 @@ class MainWindow(QWidget):
         finally:
             send_character_service_command("resume")
 
+    def _on_tray_undo_clicked(self):
+        send_character_service_command("pause")
+        try:
+            if not self.background_move_mgr.undo_last_move():
+                QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
+            else:
+                with self.state_manager._lock:
+                    queue_list = list(self.state_manager._queue_list)
+                if queue_list:
+                    first_file = queue_list[0]
+                    self.state_manager.select_queued_file(first_file)
+                self._build_tray()
+                self._update_undo_button_tooltip()
+                self._bring_and_center()
+        finally:
+            send_character_service_command("resume")
+
     def _on_reload_clicked(self):
         reply = QtWidgets.QMessageBox.question(
             self,
@@ -529,7 +546,7 @@ class MainWindow(QWidget):
         self.tray_menu.addAction(open_recent_file_action)
         
         undo_action = QAction(self.loc.get("tray_undo"), self)
-        undo_action.triggered.connect(self._on_undo_clicked)
+        undo_action.triggered.connect(self._on_tray_undo_clicked)
         self.tray_menu.addAction(undo_action)
         
         center_action = QAction(self.loc.get("tray_center"), self)
