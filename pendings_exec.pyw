@@ -105,29 +105,63 @@ def get_pending_path():
 
     return year, path
 
-def play_alarm():
-    try:
-        import pygame
-        import time
-        
-        # Inicializar el mezclador de audio de pygame
-        pygame.mixer.init()
-        pygame.mixer.music.load(str(ALARM_MP3))
-        
-        # Ajustar el volumen: 0.0 es silencio, 1.0 es el máximo (ejemplo: 30%)
-        # Puedes cambiar este valor según lo necesites
-        volumen = 0.09
-        pygame.mixer.music.set_volume(volumen)
-        
-        # Iniciar la reproducción
-        pygame.mixer.music.play()
-        
-        # Mantener el script vivo mientras suena la alarma
-        while pygame.mixer.music.get_busy():
-            time.sleep(0.5)
-            
-    except Exception as e:
-        print(f"No se pudo reproducir alarma: {e}")        
+def show_year_notice(year: str):
+    from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QPushButton
+    from PyQt6.QtCore import Qt
+
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+
+    dialog = QDialog()
+    dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+
+    dialog.setStyleSheet("""
+        QDialog {
+            border: 6px solid #d9534f;
+            background-color: #1e1e2e;
+            border-radius: 8px;
+        }
+        QLabel {
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        QPushButton {
+            background-color: #d9534f;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            padding: 8px 24px;
+            border: none;
+            border-radius: 4px;
+        }
+        QPushButton:hover {
+            background-color: #c9302c;
+        }
+    """)
+
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(30, 30, 30, 30)
+    layout.setSpacing(20)
+
+    lbl = QLabel(f"Atención: Pendientes del año {year}")
+    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    layout.addWidget(lbl)
+
+    btn_ok = QPushButton("OK")
+    btn_ok.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn_ok.clicked.connect(dialog.accept)
+    layout.addWidget(btn_ok, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    dialog.setFixedSize(380, 180)
+
+    screen = app.primaryScreen().availableGeometry()
+    x = (screen.width() - dialog.width()) // 2
+    y = (screen.height() - dialog.height()) // 2
+    dialog.move(x, y)
+
+    dialog.exec()
 
 def list_files(path: str):
     """
@@ -228,7 +262,7 @@ def compact_to_70(base_path: str, donor_paths: list[str]):
 
 
 def send_command(path: str, hide_secure: bool = True) -> bool:
-    app = QCoreApplication(sys.argv)
+    app = QCoreApplication.instance() or QCoreApplication(sys.argv)
     socket = QLocalSocket()
     socket.connectToServer(SERVER_NAME)
 
@@ -251,9 +285,9 @@ def send_command(path: str, hide_secure: bool = True) -> bool:
 
 
 def main():
-    
+
     if USE_DECK_MODE:
-        
+
         year, path = get_pending_path()
 
         if not path:
@@ -261,14 +295,12 @@ def main():
             return
 
         if year in {"2021", "2020", "2019", "2018", "2017"}:
-            print("Reproduciendo alarma...")
-            play_alarm()
-            print("Alarma finalizada.")
+            show_year_notice(year)
 
         send_command(path)
-        
+
     else:
-    
+
         if not os.path.isfile(TXT_PATH):
             print("TXT no encontrado")
             return
@@ -287,7 +319,7 @@ def main():
                 print(f"Ruta inválida, eliminada: {path}")
                 remaining.remove(path)
                 continue
-            
+
             if is_dir_empty(path):
                 continue
 

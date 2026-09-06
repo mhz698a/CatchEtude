@@ -50,7 +50,7 @@ class TestAutoflatAndUI(unittest.TestCase):
         dialog = SettingsDialog()
         self.assertIn("AUTOFLAT_FOLDERS", dialog.inputs)
         line_edit = dialog.inputs["AUTOFLAT_FOLDERS"]
-        self.assertEqual(line_edit.placeholderText(), "example_1/example_2")
+        self.assertEqual(line_edit.placeholderText(), "example_folder/other_folder")
 
     def test_action_panel_layout_and_blur_spinbox(self):
         panel = ActionPanel()
