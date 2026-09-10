@@ -1085,7 +1085,12 @@ class MainWindow(QWidget):
 
         sel = self.selection_panel.get_selection()
         
-        if self.action_panel.is_keep_downloads():
+        keep_mode = self.action_panel.get_keep_mode()
+        if keep_mode == "all_queue":
+            self._keep_all_queued_files()
+            return
+
+        if keep_mode == "only_this":
             if self.state_manager.current_state() != State.USER_DECIDING:
                 logging.error("Keep ignorado: estado inválido")
                 return
@@ -1117,6 +1122,50 @@ class MainWindow(QWidget):
         if action != "move" or final_dest is None:
             return
         self._start_move_task(decision, final_dest)
+
+    def _keep_all_queued_files(self):
+        """Queue a keep operation for every file currently in the download queue."""
+        sources = self.state_manager.start_all_background_moves()
+        if not sources:
+            self.show_status("No hay archivos en cola para conservar.", 5000)
+            return
+
+        tasks = []
+        for source in sources:
+            if not source.exists() or source.is_dir():
+                self.state_manager.fail_background_move(source)
+                continue
+            try:
+                stat = source.stat()
+                source_meta = {
+                    "atime": stat.st_atime,
+                    "mtime": stat.st_mtime,
+                    "ctime": getattr(stat, "st_birthtime", stat.st_ctime),
+                }
+            except Exception:
+                logging.exception("Could not read metadata for queued keep: %s", source)
+                self.state_manager.fail_background_move(source)
+                continue
+
+            destination = resolve_duplicate(config.CONFLICTS / source.name)
+            tasks.append((source, destination, source_meta))
+
+        if not tasks:
+            self.show_status("No se pudieron preparar archivos para conservar.", 5000)
+            return
+
+        send_character_service_command("pause")
+        for source, destination, source_meta in tasks:
+            self.background_move_mgr.enqueue_move(
+                source,
+                destination,
+                {"action": "keep", "new_name": source.stem, "post_action": "none"},
+                source_meta,
+            )
+
+        self.filepath = None
+        self.action_panel.clear()
+        self.show_status(f"Conservando {len(tasks)} archivos de la cola.", 5000)
 
     def _move_to_subfolder(self, sub_name: str):
         if not self.filepath or self.filepath.is_dir():

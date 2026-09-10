@@ -2,7 +2,7 @@
 # [plugin]
 # id = "catchetude.pdf-tools"
 # name = "Herramientas PDF Plugin"
-# version = "1.0.1"
+# version = "1.0.2"
 # api_version = 1
 # capabilities = ["background_task", "tray_action", "ui_action"]
 # events = []
@@ -46,12 +46,27 @@ PDF Tools Plugin for CatchEtude.
 Provides conversion and image extraction utilities for PDF files.
 """
 
+import importlib.util
 import sys
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
+
 from PyQt6.QtWidgets import QFileDialog
 
 import config
-from pdf_gui_runner import run_pdf_task
+
+# The progress UI is a private plugin resource (.pylib keeps it out of plugin
+# discovery, which intentionally scans only executable .py/.pyw plugins).
+_runner_path = Path(__file__).with_name("pdf_gui_runner.pylib")
+_runner_spec = importlib.util.spec_from_loader(
+    "catchetude_pdf_tools_gui_runner", SourceFileLoader("catchetude_pdf_tools_gui_runner", str(_runner_path))
+)
+if _runner_spec is None or _runner_spec.loader is None:
+    raise ImportError(f"Could not load PDF GUI runner: {_runner_path}")
+_runner_module = importlib.util.module_from_spec(_runner_spec)
+sys.modules[_runner_spec.name] = _runner_module
+_runner_spec.loader.exec_module(_runner_module)
+run_pdf_task = _runner_module.run_pdf_task
 
 
 def run_plugin(ctx):

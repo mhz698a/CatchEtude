@@ -295,6 +295,39 @@ class StateManager:
         self._enqueue_allowed.set()
         return True
 
+    def start_all_background_moves(self) -> list[Path]:
+        """Hand every queued file to background workers as one atomic batch.
+
+        This is used by the explicit ``All Queue`` keep option.  Removing every
+        source from the processor queue before returning to ``IDLE`` prevents a
+        second file from being presented to the user while it is already queued
+        for its keep operation.
+        """
+        if self.current_state() != State.USER_DECIDING:
+            logging.warning(
+                "start_all_background_moves called in state %s", self.current_state()
+            )
+            return []
+
+        with self._lock:
+            sources = [
+                path for path in self._queue_list
+                if path == self._active_file or path in self._pending
+            ]
+            if not sources:
+                return []
+
+            self._background_moves.update(sources)
+            self._queue_list = [path for path in self._queue_list if path not in sources]
+            with self._q.mutex:
+                self._q.queue = deque(path for path in self._q.queue if path not in sources)
+            self._active_file = None
+            self._emit_queue_update()
+
+        self._set_state(State.IDLE)
+        self._enqueue_allowed.set()
+        return sources
+
     def fail_background_move(self, src: Path) -> None:
         """Requeues a failed background move without dropping the next active file."""
         with self._lock:

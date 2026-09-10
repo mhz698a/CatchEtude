@@ -200,5 +200,24 @@ class TestQueueFeatures(unittest.TestCase):
             self.assertIsNone(sm._active_file)
             self.assertIn(bg_file, sm._background_moves)
 
+    def test_start_all_background_moves_transfers_the_entire_queue(self):
+        sm = StateManager()
+        files = [config.DOWNLOADS / f"file_{index}.txt" for index in range(3)]
+        for file_path in files:
+            file_path.write_text("data")
+
+        sm.enqueue_files(files)
+        with sm._lock:
+            sm._active_file = files[0]
+            sm._state = State.USER_DECIDING
+
+        started = sm.start_all_background_moves()
+
+        self.assertEqual(started, files)
+        with sm._lock:
+            self.assertIsNone(sm._active_file)
+            self.assertEqual(sm._queue_list, [])
+            self.assertTrue(set(files).issubset(sm._background_moves))
+
 if __name__ == "__main__":
     unittest.main()
