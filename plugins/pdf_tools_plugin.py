@@ -2,7 +2,7 @@
 # [plugin]
 # id = "catchetude.pdf-tools"
 # name = "Herramientas PDF Plugin"
-# version = "1.0.2"
+# version = "1.0.3"
 # api_version = 1
 # capabilities = ["background_task", "tray_action", "ui_action"]
 # events = []

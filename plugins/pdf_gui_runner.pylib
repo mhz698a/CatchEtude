@@ -140,6 +140,7 @@ class PDFProgressDialog(QtWidgets.QDialog):
         self.task_type = task_type
         self.files = files
         self.worker: Optional[PDFWorkerThread] = None
+        self._close_after_worker_stops = False
 
         self._build_ui()
 
@@ -168,6 +169,11 @@ class PDFProgressDialog(QtWidgets.QDialog):
         self.worker.finished_success.connect(self._on_finished_success)
         self.worker.finished_error.connect(self._on_finished_error)
         self.worker.cancelled.connect(self._on_cancelled)
+        # Result signals can be delivered just before QThread has fully exited.
+        # Closing this dialog in a result slot would then destroy its child
+        # worker prematurely and abort the plugin process ("QThread: Destroyed
+        # while thread is still running").
+        self.worker.finished.connect(self._close_after_worker_finished)
         self.show()
         self.worker.start()
 
@@ -195,8 +201,6 @@ class PDFProgressDialog(QtWidgets.QDialog):
             except Exception as e:
                 logging.exception(f"Failed to move {src_path} to downloads: {e}")
 
-        self.close()
-
         if self.worker:
             self.worker.cleanup_temp()
 
@@ -216,22 +220,35 @@ class PDFProgressDialog(QtWidgets.QDialog):
                     f"Imágenes extraídas con algunas advertencias:\n{warn_msg}"
                 )
 
+        self._close_when_worker_has_stopped()
+
     @pyqtSlot(str)
     def _on_finished_error(self, err_msg: str):
         if self.worker:
             self.worker.cleanup_temp()
-        self.close()
         QtWidgets.QMessageBox.critical(
             self.parentWidget(),
             "Error en PDF",
             f"Ocurrió un error al procesar el archivo PDF:\n{err_msg}"
         )
+        self._close_when_worker_has_stopped()
 
     @pyqtSlot()
     def _on_cancelled(self):
         if self.worker:
             self.worker.cleanup_temp()
+        self._close_when_worker_has_stopped()
+
+    def _close_when_worker_has_stopped(self):
+        """Close only after the QThread has stopped and can be safely deleted."""
+        if self.worker and self.worker.isRunning():
+            self._close_after_worker_stops = True
+            return
         self.close()
+
+    def _close_after_worker_finished(self):
+        if self._close_after_worker_stops:
+            self.close()
 
     def _on_cancel_clicked(self):
         if self.worker and self.worker.isRunning():
