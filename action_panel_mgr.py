@@ -557,7 +557,11 @@ class ActionPanel(QWidget):
             if menu_items:
                 btn.clicked.connect(lambda checked, b=btn, pid=plugin_id, items=menu_items: self._show_dynamic_button_menu(b, pid, items))
             elif command:
-                btn.clicked.connect(lambda checked, pid=plugin_id, cmd=command: plugin_mgr.invoke_command(pid, cmd))
+                btn.clicked.connect(
+                    lambda checked, pid=plugin_id, cmd=command: self._invoke_plugin_command(
+                        plugin_mgr, pid, cmd
+                    )
+                )
 
             self.dynamic_btn_layout.addWidget(btn)
 
@@ -571,10 +575,25 @@ class ActionPanel(QWidget):
         for item in items:
             act = QtGui.QAction(item.get("label", "Item"), self)
             cmd = item.get("command", "")
-            act.triggered.connect(lambda checked, pid=plugin_id, c=cmd: plugin_mgr.invoke_command(pid, c))
+            act.triggered.connect(
+                lambda checked, pid=plugin_id, c=cmd: self._invoke_plugin_command(
+                    plugin_mgr, pid, c
+                )
+            )
             menu.addAction(act)
 
         menu.exec(button.mapToGlobal(QtCore.QPoint(0, button.height())))
+
+    def _invoke_plugin_command(self, plugin_mgr, plugin_id: str, command: str):
+        """Invoke a contextual plugin action with the selected queue file.
+
+        UI action buttons are shown for a concrete file, so the host must pass that
+        file to the plugin.  Without this context, plugins can only fall back to
+        showing their own file picker, which defeats the purpose of the button.
+        """
+        if not self.filepath:
+            return
+        plugin_mgr.invoke_command(plugin_id, command, {"paths": [str(self.filepath)]})
 
     def _show_delete_menu(self):
         if not self.filepath:
