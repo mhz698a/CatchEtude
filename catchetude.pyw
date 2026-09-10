@@ -119,8 +119,14 @@ def main():
 
         # Create Main Window
         win = MainWindow(state_manager, signals)
-        plugin_mgr.plugin_state_changed.connect(lambda p_id, st: win._build_tray())
-        plugin_mgr.plugins_reloaded.connect(lambda: win._build_tray())
+        def _refresh_plugin_actions(*_args):
+            # Tray entries and contextual action buttons have independent UI
+            # lifecycles; refresh both when a plugin becomes available.
+            win._build_tray()
+            win.action_panel._update_dynamic_plugin_buttons()
+
+        plugin_mgr.plugin_state_changed.connect(_refresh_plugin_actions)
+        plugin_mgr.plugins_reloaded.connect(_refresh_plugin_actions)
 
         def _on_move_finished(src, dst, ok, msg, src_meta, decision):
             if ok:

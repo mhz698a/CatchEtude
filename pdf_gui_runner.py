@@ -17,6 +17,11 @@ import pdf_tools_mgr
 from utils import resolve_duplicate
 
 
+# A non-modal QDialog is not kept alive by Qt after the local Python reference
+# disappears.  Keep active tasks here until their dialog is destroyed.
+_ACTIVE_PDF_DIALOGS = set()
+
+
 class PDFWorkerThread(QThread):
     """
     Background worker thread executing PDF tasks without freezing the GUI.
@@ -252,5 +257,8 @@ def run_pdf_task(
     """
     dpi = getattr(config, "PDF_DPI", 150)
     dialog = PDFProgressDialog(title, task_type, files, parent=parent_widget)
+    dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+    _ACTIVE_PDF_DIALOGS.add(dialog)
+    dialog.destroyed.connect(lambda *_: _ACTIVE_PDF_DIALOGS.discard(dialog))
     dialog.start_task(dpi=dpi)
     return dialog
