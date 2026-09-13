@@ -170,6 +170,7 @@ def main():
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     ctx = PluginContext(args.mode, args.plugin_id, args.service_id, args.socket, args.token)
 
     if not ctx.connect_ipc():
