@@ -3,7 +3,7 @@ import logging
 import subprocess
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider, QSizePolicy, QApplication
 from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
 
@@ -26,11 +26,15 @@ class DragLabel(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("border: 1px dashed #ccc; border-radius: 4px;")
 
-        # We'll use a standard icon for dragging
-        # Using a system icon or a placeholder if ICON_PATH fails
         provider = QFileIconProvider()
         icon = provider.icon(QtWidgets.QFileIconProvider.IconType.File)
         self.setPixmap(icon.pixmap(20, 20))
+
+        self._drag_timer = QtCore.QTimer(self)
+        self._drag_timer.setSingleShot(True)
+        self._drag_timer.setInterval(2000)
+        self._drag_timer.timeout.connect(self._start_drag)
+        self._is_pressed = False
 
     def set_file(self, filepath: Path):
         self.filepath = filepath
@@ -48,32 +52,50 @@ class DragLabel(QLabel):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.filepath and self.filepath.exists():
+            self._is_pressed = True
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
-            drag = QDrag(self)
-            mime_data = QMimeData()
+            self._drag_timer.start()
 
-            # Use absolute path with backslashes for Windows
-            url = QtCore.QUrl.fromLocalFile(str(self.filepath.absolute()))
-            mime_data.setUrls([url])
+    def mouseReleaseEvent(self, event):
+        self._is_pressed = False
+        self._drag_timer.stop()
+        if self.filepath:
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
+        super().mouseReleaseEvent(event)
 
-            drag.setMimeData(mime_data)
+    def _start_drag(self):
+        if not self._is_pressed or not (QApplication.mouseButtons() & Qt.MouseButton.LeftButton):
+            return
 
-            # Create a drag pixmap
-            pixmap = self.pixmap().scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            drag.setPixmap(pixmap)
-            drag.setHotSpot(QtCore.QPoint(pixmap.width() // 2, pixmap.height() // 2))
+        if not self.filepath or not self.filepath.exists():
+            return
 
-            main_win = self.window()
-            orig_flags = main_win.windowFlags()
+        drag = QDrag(self)
+        mime_data = QMimeData()
 
-            try:
-                main_win.setWindowOpacity(0.35)
-                main_win.setWindowFlag(Qt.WindowType.WindowTransparentForInput, True)
-                main_win.show()
+        url = QtCore.QUrl.fromLocalFile(str(self.filepath.absolute()))
+        mime_data.setUrls([url])
 
-                drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
-            finally:
-                main_win.setWindowOpacity(1.0)
-                main_win.setWindowFlags(orig_flags)
-                main_win.show()
-                self.setCursor(Qt.CursorShape.SizeAllCursor)
+        drag.setMimeData(mime_data)
+
+        pixmap = self.pixmap().scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(QtCore.QPoint(pixmap.width() // 2, pixmap.height() // 2))
+
+        main_win = self.window()
+        orig_flags = main_win.windowFlags()
+
+        try:
+            main_win.setWindowOpacity(0.35)
+            main_win.setWindowFlag(Qt.WindowType.WindowTransparentForInput, True)
+            main_win.show()
+
+            drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
+        finally:
+            self._is_pressed = False
+            main_win.setWindowOpacity(1.0)
+            main_win.setWindowFlags(orig_flags)
+            main_win.show()
+            main_win.raise_()
+            main_win.activateWindow()
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
