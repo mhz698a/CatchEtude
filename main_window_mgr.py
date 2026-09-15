@@ -183,6 +183,8 @@ class MainWindow(QWidget):
         # Selection Panel
         self.selection_panel = SelectionPanel()
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
+        self.selection_panel.keep_action_clicked.connect(self._on_keep_action_clicked)
+        self.selection_panel.linear_docs_action_clicked.connect(self._on_linear_docs_action_clicked)
         self.selection_panel.subfolders_refreshed.connect(self._update_character_buttons)
         self.selection_panel.move_all_in_folder_clicked.connect(self._move_all_in_this_folder)
         self.selection_panel.folder_structure_changed.connect(self._on_folder_structure_changed)
@@ -192,12 +194,8 @@ class MainWindow(QWidget):
 
         # Action Panel
         self.action_panel = ActionPanel()
-        self.action_panel.apply_clicked.connect(self._on_move)
-        self.action_panel.apply_custom_clicked.connect(self._on_apply_custom)
         self.action_panel.delete_clicked.connect(self._on_delete_clicked)
         self.action_panel.secure_changed.connect(self._on_secure_changed)
-        self.action_panel.keep_changed.connect(self._on_keep_changed)
-        self.action_panel.keep_mode_changed.connect(self._on_keep_mode_changed)
         self.action_panel.post_action_changed.connect(self._on_post_action_changed)
         self.action_panel.set_post_action_mode(self._post_action_mode)
         self.action_panel.hide_t_clicked.connect(self._on_hide_t_clicked)
@@ -209,6 +207,7 @@ class MainWindow(QWidget):
         self.queue_panel.characters_updated.connect(self._update_character_buttons)
         self.queue_panel.character_updated.connect(self._on_single_character_updated)
         self.queue_panel.file_double_clicked.connect(self._on_queue_file_double_clicked)
+        self.queue_panel.movings_minimized_changed.connect(self._on_movings_minimized_changed)
         root.addWidget(self.queue_panel)
         
         main_vbox.addLayout(root, 1)
@@ -230,6 +229,9 @@ class MainWindow(QWidget):
         self._pending_scheduler = PendingScheduler(self._run_pendings, self)
         self._apply_pending_schedule_state()
         
+        if hasattr(self, "_movings_minimized"):
+            self.queue_panel.set_movings_minimized(self._movings_minimized)
+
         # Initial size adjustment
         self.resize(self.base_width + self.queue_panel.width(), self.base_height)
 
@@ -254,6 +256,7 @@ class MainWindow(QWidget):
                     data = json.load(f)
                 self._hide_secure = data.get("hide_secure", False)
                 self._post_action_mode = data.get("post_action_mode", "none")
+                self._movings_minimized = data.get("movings_minimized", False)
                 
                 self._pending_auto_run_enabled = data.get("auto_run_pendings", False)
                 pending_time_str = data.get("auto_run_pendings_time", "20:15")
@@ -263,7 +266,7 @@ class MainWindow(QWidget):
                 
         except Exception:
             logging.exception("Failed to load config")
-            
+
     def _save_config(self):
         try:
             data = {}
@@ -272,12 +275,17 @@ class MainWindow(QWidget):
                     data = json.load(f)
             data["hide_secure"] = self._hide_secure
             data["post_action_mode"] = self._post_action_mode
+            data["movings_minimized"] = getattr(self, "_movings_minimized", False)
             data["auto_run_pendings"] = getattr(self, "_pending_auto_run_enabled", False)
             data["auto_run_pendings_time"] = getattr(self, "_pending_auto_run_time", QTime(20, 15)).toString("HH:mm")
             with config.CONFIG_PATH.open('w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4)
         except Exception:
             logging.exception("Failed to save config")
+
+    def _on_movings_minimized_changed(self, minimized: bool):
+        self._movings_minimized = minimized
+        self._save_config()
 
     def _apply_pending_schedule_state(self):
         if not hasattr(self, "chk_auto_run_pendings") or not hasattr(self, "time_auto_run_pendings"):
@@ -829,22 +837,13 @@ class MainWindow(QWidget):
 
     def _set_ui_enabled_for_move(self, enabled: bool):
         if self.filepath and self.filepath.is_dir():
-            self.action_panel.btn_custom.setEnabled(False)
-            self.action_panel.btn_move.setText("Flat Folder")
-            self.action_panel.btn_move.setEnabled(enabled)
             self.action_panel.btn_delete.setEnabled(False)
             self.action_panel.rename_input.setEnabled(False)
-            self.action_panel.keep_downloads_cb.setEnabled(False)
             self.action_panel.post_action_cb.setEnabled(False)
             self.selection_panel.setEnabled(False)
             return
 
         self.selection_panel.setEnabled(True)
-        self.action_panel.btn_custom.setEnabled(enabled)
-        if enabled:
-            self._sync_apply_button()
-        else:
-            self.action_panel.btn_move.setEnabled(False)
         self.action_panel.btn_delete.setEnabled(enabled and bool(self.filepath))
         if not enabled:
             self.btn_undo.setEnabled(False)
@@ -931,16 +930,9 @@ class MainWindow(QWidget):
             self.selection_panel.list_sub.clear()
             self.selection_panel.list_sub.setEnabled(False)
             self.selection_panel.list_year.setEnabled(False)
-        else:
-            self._sync_apply_button()
 
         logging.info("FD 13")
-        self.selection_panel.set_keep_mode(
-            self.action_panel.is_keep_downloads()
-        )
-
         logging.info("FD 14")
-        self._sync_apply_button()
 
         logging.info("FD 15")
         if self._hide_t_active:
@@ -973,28 +965,69 @@ class MainWindow(QWidget):
             self.selection_panel.list_year.setEnabled(False)
             return
 
-        self._sync_apply_button()
+    def _on_keep_action_clicked(self, action_name: str):
+        if action_name == "Keep this file in Conflicts":
+            if not self.filepath:
+                return
+            if self.state_manager.current_state() != State.USER_DECIDING:
+                logging.error("Keep ignorado: estado inválido")
+                return
 
-    def _sync_apply_button(self):
-        if self.filepath and self.filepath.is_dir():
-            self.action_panel.btn_move.setText("Flat Folder")
-            self.action_panel.btn_move.setEnabled(True)
+            decision = {
+                "action": "keep",
+                "new_name": self.action_panel.get_new_name() or self.filepath.stem,
+                "post_action": self.action_panel.get_post_action_mode(),
+            }
+            keep_name = sanitize_windows_filename(decision.get('new_name', self.filepath.stem))
+            dest = resolve_duplicate(config.CONFLICTS / (keep_name + self.filepath.suffix))
+
+            logging.info(f"Delegating Keep decision to async background worker for destination: {dest}")
+            self._start_move_task(decision, dest)
+
+        elif action_name == "Keep all files in conflicts":
+            self._keep_all_queued_files()
+
+        elif action_name == "Save in another folder":
+            self._on_apply_custom()
+
+    def _on_linear_docs_action_clicked(self, action_name: str):
+        if not self.filepath:
             return
-        t = self.selection_panel.get_selection()["type"]
-        keep = self.action_panel.is_keep_downloads()
-        self.action_panel.set_apply_enabled(keep or t == 7)
 
-    def _on_keep_mode_changed(self, mode: str):
-        if mode == "nothing":
-            self.show_status("Keep in downloads: Nothing")
-        elif mode == "only_this":
-            self.show_status("Keep in downloads: Only this file")
-        elif mode == "all_queue":
-            self.show_status("Keep in downloads: All Queue")
+        if action_name == "Guardar en el año seleccionado":
+            selected_year = self.selection_panel.get_selection()["year"] or datetime.now().year
+            target_year = selected_year
+        else: # "Guardar en el año actual"
+            target_year = datetime.now().year
 
-    def _on_keep_changed(self, checked: bool):
-        self.selection_panel.set_keep_mode(checked)
-        self._sync_apply_button()
+        dt = datetime.fromtimestamp(self.filepath.stat().st_mtime)
+        base_year_folder = config.BASE_INTERNAL / str(target_year)
+        if not base_year_folder.exists():
+            target_year = datetime.now().year
+            base_year_folder = config.BASE_INTERNAL / str(target_year)
+
+        prefix = f"{target_year - 2003:02d}"
+        base = base_year_folder / f"{prefix}. {config.ACROBAT_FOLDER}"
+        month_folder = dt.strftime("%Y-%m")
+        dest_dir = base / month_folder
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        new_name = sanitize_windows_filename(self.action_panel.get_new_name() or self.filepath.stem)
+        candidate = dest_dir / (new_name + self.filepath.suffix)
+
+        decision = {
+            'action': 'move',
+            'movement_type': 7,
+            'year': target_year,
+            'sub': None,
+            'new_name': new_name,
+            'post_action': self.action_panel.get_post_action_mode(),
+        }
+
+        action, final_dest = self._check_destination_collision(candidate)
+        if action != "move" or final_dest is None:
+            return
+        self._start_move_task(decision, final_dest)
 
     def _on_year_changed(self, year: int):
         t = self.selection_panel.get_selection()['type']
@@ -1055,73 +1088,6 @@ class MainWindow(QWidget):
             self._on_single_character_updated(c)
 
 
-    def _on_move(self):
-        if not self.filepath: 
-            return
-
-        if self.filepath.is_dir():
-            folder = self.filepath
-            self.action_panel.suspend_preview_loading(folder)
-            self._set_ui_enabled_for_move(False)
-
-            def flatten_worker():
-                moved, success = flatten_single_folder(folder)
-                if moved:
-                    self.state_manager.enqueue_files(moved)
-
-                def on_finish():
-                    if success:
-                        self.action_panel.clear()
-                        self.filepath = None
-                        self.state_manager.discard_active_file()
-                    else:
-                        self._set_ui_enabled_for_move(True)
-                        self.show_status("La carpeta está en uso. Por favor, inténtelo de nuevo.", 5000)
-
-                QtCore.QTimer.singleShot(0, on_finish)
-
-            run_in_threadpool(flatten_worker)
-            return
-
-        sel = self.selection_panel.get_selection()
-        
-        keep_mode = self.action_panel.get_keep_mode()
-        if keep_mode == "all_queue":
-            self._keep_all_queued_files()
-            return
-
-        if keep_mode == "only_this":
-            if self.state_manager.current_state() != State.USER_DECIDING:
-                logging.error("Keep ignorado: estado inválido")
-                return
-
-            decision = {
-                "action": "keep",
-                "new_name": self.action_panel.get_new_name() or self.filepath.stem,
-                "post_action": self.action_panel.get_post_action_mode(),
-            }
-            keep_name = sanitize_windows_filename(decision.get('new_name', self.filepath.stem))
-            dest = resolve_duplicate(config.CONFLICTS / (keep_name + self.filepath.suffix))
-
-            # Delegate copy task asynchronously using _start_move_task to avoid blocking the main UI thread.
-            logging.info(f"Delegating Keep decision to async background worker for destination: {dest}")
-            self._start_move_task(decision, dest)
-            return
-            
-        decision = {
-            'action': 'move',
-            'movement_type': sel['type'],
-            'year': sel['year'],
-            'sub': None,
-            'new_name': self.action_panel.get_new_name() or self.filepath.stem,
-            "post_action": self.action_panel.get_post_action_mode(),
-        }
-            
-        candidate = compute_destination(decision, self.filepath)
-        action, final_dest = self._check_destination_collision(candidate)
-        if action != "move" or final_dest is None:
-            return
-        self._start_move_task(decision, final_dest)
 
     def _keep_all_queued_files(self):
         """Queue a keep operation for every file currently in the download queue."""
