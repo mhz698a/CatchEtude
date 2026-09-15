@@ -25,7 +25,6 @@ class ActionPanel(QWidget):
     """
     delete_clicked = QtCore.pyqtSignal()
     secure_changed = QtCore.pyqtSignal(bool)
-    post_action_changed = QtCore.pyqtSignal(str)
     hide_t_clicked = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
@@ -122,26 +121,7 @@ class ActionPanel(QWidget):
         secure_row.addWidget(self.blur_spinbox)
         secure_row.addStretch()
 
-        # comobox action after download
-        self.lbl_post_action = QLabel(self.loc.get("lbl_post_action"))
-
-        self.post_action_row = QHBoxLayout()
-        self.post_action_row.addWidget(self.lbl_post_action)
-
-        self.post_action_cb = QComboBox()
-        self.post_action_cb.setMaximumWidth(310)
-        self.post_action_cb.addItem(self.loc.get("post_action_none"), "none")
-        self.post_action_cb.addItem(self.loc.get("post_action_open_file"), "open_file")
-        self.post_action_cb.addItem(self.loc.get("post_action_open_folder"), "open_folder")
-        self.post_action_cb.currentIndexChanged.connect(
-            lambda _: self.post_action_changed.emit(self.get_post_action_mode())
-        )
-
-        self.post_action_row.addWidget(self.post_action_cb)
-        self.post_action_row.addStretch(1)
-
         footer.addLayout(secure_row)
-        footer.addLayout(self.post_action_row)
     
         # buttons arrow
         buttons_row = QHBoxLayout()
@@ -158,17 +138,7 @@ class ActionPanel(QWidget):
         layout.addLayout(footer)
 
     def retranslate_ui(self):
-        self.lbl_post_action.setText(self.loc.get("lbl_post_action"))
         self.btn_edit_metadata.setText("Edit metadata")
-        
-        current = self.get_post_action_mode()
-        self.post_action_cb.blockSignals(True)
-        self.post_action_cb.setItemText(0, self.loc.get("post_action_none"))
-        self.post_action_cb.setItemText(1, self.loc.get("post_action_open_file"))
-        self.post_action_cb.setItemText(2, self.loc.get("post_action_open_folder"))
-        self.set_post_action_mode(current)
-        self.post_action_cb.blockSignals(False)
-
         self.btn_open.setText(self.loc.get("btn_open"))
         self.btn_delete.setText(self.loc.get("btn_header_delete"))
         self.lbl_name.setText(self.loc.get("lbl_new_name"))
@@ -190,7 +160,6 @@ class ActionPanel(QWidget):
             self.rename_input.setEnabled(False)
             self.btn_open.setEnabled(True)
             self.btn_delete.setEnabled(False)
-            self.post_action_cb.setEnabled(False)
             self.btn_hide_t.setEnabled(True)
             self._update_metadata_button_visibility()
             self._update_dynamic_plugin_buttons()
@@ -199,7 +168,6 @@ class ActionPanel(QWidget):
         self.rename_input.setEnabled(True)
         self.btn_open.setEnabled(True)
         self.btn_delete.setEnabled(True)
-        self.post_action_cb.setEnabled(True)
         self._update_file_info_label()        
         self.load_preview()
         self.drag_icon.set_file(p)
@@ -456,7 +424,6 @@ class ActionPanel(QWidget):
         self.preview_label.clear()
         self.rename_input.setText("")
         self.rename_input.setEnabled(True)
-        self.post_action_cb.setEnabled(True)
         self.lbl_file_info.setText(self.loc.get("msg_no_file"))
         self.drag_icon.set_file(None)
         self.btn_hide_t.setEnabled(False)
@@ -556,13 +523,3 @@ class ActionPanel(QWidget):
 
         menu.exec(self.btn_delete.mapToGlobal(QtCore.QPoint(0, self.btn_delete.height())))
 
-    def get_post_action_mode(self) -> str:
-        data = self.post_action_cb.currentData()
-        return data if data in ("none", "open_file", "open_folder") else "none"
-
-    def set_post_action_mode(self, mode: str):
-        idx = self.post_action_cb.findData(mode)
-        if idx < 0:
-            idx = self.post_action_cb.findData("none")
-        if idx >= 0:
-            self.post_action_cb.setCurrentIndex(idx)

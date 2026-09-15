@@ -31,6 +31,9 @@ class SelectionPanel(QWidget):
     subfolders_refreshed = QtCore.pyqtSignal()
     folder_structure_changed = QtCore.pyqtSignal()
     move_all_in_folder_clicked = QtCore.pyqtSignal(str)
+    move_and_open_file_clicked = QtCore.pyqtSignal(str)
+    move_and_open_folder_clicked = QtCore.pyqtSignal(str)
+    move_all_and_open_folder_clicked = QtCore.pyqtSignal(str)
     type_changed = QtCore.pyqtSignal(int)
     year_changed = QtCore.pyqtSignal(int)
     keep_action_clicked = QtCore.pyqtSignal(str)
@@ -177,6 +180,7 @@ class SelectionPanel(QWidget):
         curr = self.list_type.currentRow()
         self.btn_recently.setText(self.loc.get("btn_recently"))
         self._fill_type_list(curr)
+        self.refresh_classification_ui(force=True)
 
 
     def _on_subfolder_clicked(self, name: str):
@@ -283,9 +287,15 @@ class SelectionPanel(QWidget):
 
         if t == 1:
             self.list_sub.add_subfolders([
-                "Keep this file in Conflicts",
-                "Keep all files in conflicts",
-                "Save in another folder"
+                self.loc.get("keep_this_file"),
+                self.loc.get("keep_this_file_open_file"),
+                self.loc.get("keep_this_file_open_folder"),
+                self.loc.get("keep_all_files"),
+                self.loc.get("keep_all_files_open_folder"),
+                self.loc.get("save_another_folder"),
+                self.loc.get("save_another_folder_open_file"),
+                self.loc.get("save_another_folder_open_folder"),
+                self.loc.get("save_all_another_folder_open_folder"),
             ])
             self.list_sub.setEnabled(True)
             self.list_year.setEnabled(False)
@@ -429,6 +439,11 @@ class SelectionPanel(QWidget):
         if is_empty:
             act_delete = menu.addAction(self.loc.get("menu_delete_folder"))
 
+        menu.addSeparator()
+        act_move_open_file = menu.addAction(self.loc.get("menu_move_and_open_file"))
+        act_move_open_folder = menu.addAction(self.loc.get("menu_move_and_open_folder"))
+        act_move_all_open_folder = menu.addAction(self.loc.get("menu_move_all_and_open_folder"))
+
         action = menu.exec(pos)
         
         if action == act_open:
@@ -441,6 +456,12 @@ class SelectionPanel(QWidget):
             self._handle_rename_folder(target_folder)
         elif action == act_delete and act_delete:
             self._handle_delete_folder(target_folder)
+        elif action == act_move_open_file:
+            self.move_and_open_file_clicked.emit(name)
+        elif action == act_move_open_folder:
+            self.move_and_open_folder_clicked.emit(name)
+        elif action == act_move_all_open_folder:
+            self.move_all_and_open_folder_clicked.emit(name)
 
     def _is_folder_empty(self, path: Path) -> bool:
         try:

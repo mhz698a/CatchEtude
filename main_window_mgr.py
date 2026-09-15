@@ -183,6 +183,9 @@ class MainWindow(QWidget):
         # Selection Panel
         self.selection_panel = SelectionPanel()
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
+        self.selection_panel.move_and_open_file_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_file"))
+        self.selection_panel.move_and_open_folder_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_folder"))
+        self.selection_panel.move_all_and_open_folder_clicked.connect(lambda sub: self._move_all_in_this_folder(sub, post_action="open_folder"))
         self.selection_panel.keep_action_clicked.connect(self._on_keep_action_clicked)
         self.selection_panel.linear_docs_action_clicked.connect(self._on_linear_docs_action_clicked)
         self.selection_panel.subfolders_refreshed.connect(self._update_character_buttons)
@@ -196,8 +199,6 @@ class MainWindow(QWidget):
         self.action_panel = ActionPanel()
         self.action_panel.delete_clicked.connect(self._on_delete_clicked)
         self.action_panel.secure_changed.connect(self._on_secure_changed)
-        self.action_panel.post_action_changed.connect(self._on_post_action_changed)
-        self.action_panel.set_post_action_mode(self._post_action_mode)
         self.action_panel.hide_t_clicked.connect(self._on_hide_t_clicked)
         root.addWidget(self.action_panel)
 
@@ -839,7 +840,6 @@ class MainWindow(QWidget):
         if self.filepath and self.filepath.is_dir():
             self.action_panel.btn_delete.setEnabled(False)
             self.action_panel.rename_input.setEnabled(False)
-            self.action_panel.post_action_cb.setEnabled(False)
             self.selection_panel.setEnabled(False)
             return
 
@@ -966,9 +966,28 @@ class MainWindow(QWidget):
             return
 
     def _on_keep_action_clicked(self, action_name: str):
-        if action_name == "Keep this file in Conflicts":
-            if not self.filepath:
-                return
+        if not self.filepath and action_name not in (
+            self.loc.get("keep_all_files"),
+            self.loc.get("keep_all_files_open_folder"),
+            self.loc.get("save_all_another_folder_open_folder"),
+            "Keep all files in conflicts",
+            "Keep all files in Conflicts and open folder",
+            "Save all file in another folder and open folder"
+        ):
+            return
+
+        post_action = "none"
+        if "open this file" in action_name or "open file" in action_name or action_name == self.loc.get("keep_this_file_open_file") or action_name == self.loc.get("save_another_folder_open_file"):
+            post_action = "open_file"
+        elif "open folder" in action_name or action_name in (
+            self.loc.get("keep_this_file_open_folder"),
+            self.loc.get("keep_all_files_open_folder"),
+            self.loc.get("save_another_folder_open_folder"),
+            self.loc.get("save_all_another_folder_open_folder")
+        ):
+            post_action = "open_folder"
+
+        if action_name in (self.loc.get("keep_this_file"), self.loc.get("keep_this_file_open_file"), self.loc.get("keep_this_file_open_folder"), "Keep this file in Conflicts", "Keep this file in Conflicts and open this file", "Keep this file in Conflicts and open folder"):
             if self.state_manager.current_state() != State.USER_DECIDING:
                 logging.error("Keep ignorado: estado inválido")
                 return
@@ -976,7 +995,7 @@ class MainWindow(QWidget):
             decision = {
                 "action": "keep",
                 "new_name": self.action_panel.get_new_name() or self.filepath.stem,
-                "post_action": self.action_panel.get_post_action_mode(),
+                "post_action": post_action,
             }
             keep_name = sanitize_windows_filename(decision.get('new_name', self.filepath.stem))
             dest = resolve_duplicate(config.CONFLICTS / (keep_name + self.filepath.suffix))
@@ -984,11 +1003,22 @@ class MainWindow(QWidget):
             logging.info(f"Delegating Keep decision to async background worker for destination: {dest}")
             self._start_move_task(decision, dest)
 
-        elif action_name == "Keep all files in conflicts":
-            self._keep_all_queued_files()
+        elif action_name in (self.loc.get("keep_all_files"), self.loc.get("keep_all_files_open_folder"), "Keep all files in conflicts", "Keep all files in Conflicts and open folder"):
+            self._keep_all_queued_files(post_action=post_action)
 
-        elif action_name == "Save in another folder":
-            self._on_apply_custom()
+        elif action_name in (self.loc.get("save_all_another_folder_open_folder"), "Save all file in another folder and open folder"):
+            self._save_all_queued_files_custom(post_action=post_action)
+
+        elif action_name in (
+            self.loc.get("save_another_folder"),
+            self.loc.get("save_another_folder_open_file"),
+            self.loc.get("save_another_folder_open_folder"),
+            "Save in another folder",
+            "Save this file in another folder",
+            "Save this file in another folder and open file",
+            "Save this file in another folder and open folder"
+        ):
+            self._on_apply_custom(post_action=post_action)
 
     def _on_linear_docs_action_clicked(self, action_name: str):
         if not self.filepath:
@@ -1021,7 +1051,7 @@ class MainWindow(QWidget):
             'year': target_year,
             'sub': None,
             'new_name': new_name,
-            'post_action': self.action_panel.get_post_action_mode(),
+            'post_action': "none",
         }
 
         action, final_dest = self._check_destination_collision(candidate)
@@ -1087,9 +1117,7 @@ class MainWindow(QWidget):
         for c in self.queue_panel.get_characters():
             self._on_single_character_updated(c)
 
-
-
-    def _keep_all_queued_files(self):
+    def _keep_all_queued_files(self, post_action: str = "none"):
         """Queue a keep operation for every file currently in the download queue."""
         sources = self.state_manager.start_all_background_moves()
         if not sources:
@@ -1125,7 +1153,7 @@ class MainWindow(QWidget):
             self.background_move_mgr.enqueue_move(
                 source,
                 destination,
-                {"action": "keep", "new_name": source.stem, "post_action": "none"},
+                {"action": "keep", "new_name": source.stem, "post_action": post_action},
                 source_meta,
             )
 
@@ -1133,7 +1161,56 @@ class MainWindow(QWidget):
         self.action_panel.clear()
         self.show_status(f"Conservando {len(tasks)} archivos de la cola.", 5000)
 
-    def _move_to_subfolder(self, sub_name: str):
+    def _save_all_queued_files_custom(self, post_action: str = "none"):
+        """Queue a custom move operation for every file currently in the download queue."""
+        folder = QFileDialog.getExistingDirectory(self, "Select Destination Folder", str(config.DOWNLOADS))
+        if not folder:
+            return
+
+        dest_dir = Path(folder)
+        sources = self.state_manager.start_all_background_moves()
+        if not sources:
+            self.show_status("No hay archivos en cola para guardar.", 5000)
+            return
+
+        tasks = []
+        for source in sources:
+            if not source.exists() or source.is_dir():
+                self.state_manager.fail_background_move(source)
+                continue
+            try:
+                stat = source.stat()
+                source_meta = {
+                    "atime": stat.st_atime,
+                    "mtime": stat.st_mtime,
+                    "ctime": getattr(stat, "st_birthtime", stat.st_ctime),
+                }
+            except Exception:
+                logging.exception("Could not read metadata for queued custom move: %s", source)
+                self.state_manager.fail_background_move(source)
+                continue
+
+            destination = resolve_duplicate(dest_dir / source.name)
+            tasks.append((source, destination, source_meta))
+
+        if not tasks:
+            self.show_status("No se pudieron preparar archivos para guardar.", 5000)
+            return
+
+        send_character_service_command("pause")
+        for source, destination, source_meta in tasks:
+            self.background_move_mgr.enqueue_move(
+                source,
+                destination,
+                {"action": "move_custom", "custom_dir": str(dest_dir), "new_name": source.stem, "post_action": post_action},
+                source_meta,
+            )
+
+        self.filepath = None
+        self.action_panel.clear()
+        self.show_status(f"Guardando {len(tasks)} archivos en {dest_dir.name}.", 5000)
+
+    def _move_to_subfolder(self, sub_name: str, post_action: str = "none"):
         if not self.filepath or self.filepath.is_dir():
             return
         
@@ -1146,7 +1223,7 @@ class MainWindow(QWidget):
             'year': sel['year'],
             'sub': sub_name,
             'new_name': self.action_panel.get_new_name() or self.filepath.stem,
-            'post_action': self.action_panel.get_post_action_mode(),
+            'post_action': post_action,
         }
         
         candidate = compute_destination(decision, self.filepath)
@@ -1155,26 +1232,11 @@ class MainWindow(QWidget):
             return
         self._start_move_task(decision, final_dest)
 
-    def _move_all_in_this_folder(self, sub_name: str):
-        post_action = self.action_panel.get_post_action_mode()
-
-        if post_action == "open_file":
-            self.show_status(
-                self.loc.get("status_bulk_open_file_disabled"),
-                8000
-            )
-
-            self.action_panel.blockSignals(True)
-            self.action_panel.set_post_action_mode("none")
-            self.action_panel.blockSignals(False)
-
-            self._post_action_mode = "none"
-            self._save_config()
-            
+    def _move_all_in_this_folder(self, sub_name: str, post_action: str = "none"):
         self._bulk_subfolder_name = sub_name
-        self._move_to_subfolder(sub_name)
+        self._move_to_subfolder(sub_name, post_action=post_action)
 
-    def _on_apply_custom(self):
+    def _on_apply_custom(self, post_action: str = "none"):
         if not self.filepath or self.filepath.is_dir():
             return
         
@@ -1187,7 +1249,7 @@ class MainWindow(QWidget):
             'action': 'move_custom',
             'custom_dir': folder,
             'new_name': self.action_panel.get_new_name() or self.filepath.stem,
-            'post_action': self.action_panel.get_post_action_mode(),
+            'post_action': post_action,
         }
                 
         newname = sanitize_windows_filename(decision['new_name'])
