@@ -24,7 +24,6 @@ class ActionPanel(QWidget):
     Panel para previsualizar y aplicar acciones al archivo actual.
     """
     delete_clicked = QtCore.pyqtSignal()
-    hide_t_clicked = QtCore.pyqtSignal()
     flat_folder_clicked = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
@@ -65,6 +64,13 @@ class ActionPanel(QWidget):
         self.btn_open.setFixedHeight(30)
         self.btn_open.setFixedWidth(90)
         open_row.addWidget(self.btn_open)
+
+        self.btn_flat_folder = QPushButton("Flat Folder")
+        self.btn_flat_folder.setFixedHeight(30)
+        self.btn_flat_folder.setFixedWidth(100)
+        self.btn_flat_folder.setVisible(False)
+        self.btn_flat_folder.clicked.connect(self.flat_folder_clicked.emit)
+        open_row.addWidget(self.btn_flat_folder)
 
         self.btn_delete = QPushButton(self.loc.get("btn_header_delete"))
         self.btn_delete.clicked.connect(self._show_delete_menu)
@@ -111,26 +117,6 @@ class ActionPanel(QWidget):
         drag_row.addStretch()
 
         footer.addLayout(drag_row)
-    
-        # buttons arrow
-        buttons_row = QHBoxLayout()
-        buttons_row.setContentsMargins(0, 0, 0, 0)
-        buttons_row.setSpacing(8)
-
-        self.btn_hide_t = QPushButton("Hide Temporal")
-        self.btn_hide_t.setMinimumHeight(30)
-        self.btn_hide_t.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.btn_hide_t.clicked.connect(self.hide_t_clicked.emit)
-        buttons_row.addWidget(self.btn_hide_t, 1)
-
-        self.btn_flat_folder = QPushButton("Flat Folder")
-        self.btn_flat_folder.setMinimumHeight(30)
-        self.btn_flat_folder.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.btn_flat_folder.setEnabled(True)
-        self.btn_flat_folder.clicked.connect(self.flat_folder_clicked.emit)
-        buttons_row.addWidget(self.btn_flat_folder, 1)
-
-        footer.addLayout(buttons_row)
         layout.addLayout(footer)
 
     def retranslate_ui(self):
@@ -138,7 +124,6 @@ class ActionPanel(QWidget):
         self.btn_open.setText(self.loc.get("btn_open"))
         self.btn_delete.setText(self.loc.get("btn_header_delete"))
         self.lbl_name.setText(self.loc.get("lbl_new_name"))
-        self.btn_hide_t.setText("Hide Temporal")
         self.btn_flat_folder.setText("Flat Folder")
 
     def set_file(self, p: Path, hide_secure: bool):
@@ -154,19 +139,19 @@ class ActionPanel(QWidget):
             self.drag_icon.set_file(p)
             self.rename_input.setEnabled(False)
             self.btn_open.setEnabled(True)
+            self.btn_flat_folder.setVisible(True)
             self.btn_delete.setEnabled(False)
-            self.btn_hide_t.setEnabled(True)
             self._update_metadata_button_visibility()
             self._update_dynamic_plugin_buttons()
             return
 
+        self.btn_flat_folder.setVisible(False)
         self.rename_input.setEnabled(True)
         self.btn_open.setEnabled(True)
         self.btn_delete.setEnabled(True)
         self._update_file_info_label()        
         self.load_preview()
         self.drag_icon.set_file(p)
-        self.btn_hide_t.setEnabled(True)
         self._update_metadata_button_visibility()
         self._update_dynamic_plugin_buttons()
 
@@ -409,7 +394,7 @@ class ActionPanel(QWidget):
         self.rename_input.setEnabled(True)
         self.lbl_file_info.setText(self.loc.get("msg_no_file"))
         self.drag_icon.set_file(None)
-        self.btn_hide_t.setEnabled(False)
+        self.btn_flat_folder.setVisible(False)
         self.btn_delete.setEnabled(False)
         self._update_metadata_button_visibility()
         self._update_dynamic_plugin_buttons()

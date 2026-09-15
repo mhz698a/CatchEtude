@@ -34,6 +34,8 @@ class SelectionPanel(QWidget):
     move_and_open_file_clicked = QtCore.pyqtSignal(str)
     move_and_open_folder_clicked = QtCore.pyqtSignal(str)
     move_all_and_open_folder_clicked = QtCore.pyqtSignal(str)
+    hide_temporal_clicked = QtCore.pyqtSignal()
+    move_and_enable_secure_clicked = QtCore.pyqtSignal(str)
     type_changed = QtCore.pyqtSignal(int)
     year_changed = QtCore.pyqtSignal(int)
     keep_action_clicked = QtCore.pyqtSignal(str)
@@ -443,6 +445,10 @@ class SelectionPanel(QWidget):
         act_move_open_file = menu.addAction(self.loc.get("menu_move_and_open_file"))
         act_move_open_folder = menu.addAction(self.loc.get("menu_move_and_open_folder"))
         act_move_all_open_folder = menu.addAction(self.loc.get("menu_move_all_and_open_folder"))
+        menu.addSeparator()
+        act_hide_temporal = menu.addAction("Hide Temporal")
+        menu.addSeparator()
+        act_move_and_secure = menu.addAction("Mover este archivo aqui y activar Secure")
 
         action = menu.exec(pos)
         
@@ -462,6 +468,10 @@ class SelectionPanel(QWidget):
             self.move_and_open_folder_clicked.emit(name)
         elif action == act_move_all_open_folder:
             self.move_all_and_open_folder_clicked.emit(name)
+        elif action == act_hide_temporal:
+            self.hide_temporal_clicked.emit()
+        elif action == act_move_and_secure:
+            self.move_and_enable_secure_clicked.emit(name)
 
     def _is_folder_empty(self, path: Path) -> bool:
         try:

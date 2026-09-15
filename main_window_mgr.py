@@ -200,6 +200,8 @@ class MainWindow(QWidget):
         self.selection_panel.move_and_open_file_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_file"))
         self.selection_panel.move_and_open_folder_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_folder"))
         self.selection_panel.move_all_and_open_folder_clicked.connect(lambda sub: self._move_all_in_this_folder(sub, post_action="open_folder"))
+        self.selection_panel.hide_temporal_clicked.connect(self._on_hide_t_clicked)
+        self.selection_panel.move_and_enable_secure_clicked.connect(self._move_and_enable_secure)
         self.selection_panel.keep_action_clicked.connect(self._on_keep_action_clicked)
         self.selection_panel.linear_docs_action_clicked.connect(self._on_linear_docs_action_clicked)
         self.selection_panel.subfolders_refreshed.connect(self._update_character_buttons)
@@ -212,7 +214,6 @@ class MainWindow(QWidget):
         # Action Panel
         self.action_panel = ActionPanel()
         self.action_panel.delete_clicked.connect(self._on_delete_clicked)
-        self.action_panel.hide_t_clicked.connect(self._on_hide_t_clicked)
         self.action_panel.flat_folder_clicked.connect(self._on_flat_folder_clicked)
         root.addWidget(self.action_panel)
 
@@ -1261,6 +1262,11 @@ class MainWindow(QWidget):
     def _move_all_in_this_folder(self, sub_name: str, post_action: str = "none"):
         self._bulk_subfolder_name = sub_name
         self._move_to_subfolder(sub_name, post_action=post_action)
+
+    def _move_and_enable_secure(self, sub_name: str):
+        if not self.hide_secure_cb.isChecked():
+            self.hide_secure_cb.setChecked(True)
+        self._move_to_subfolder(sub_name)
 
     def _on_apply_custom(self, post_action: str = "none"):
         if not self.filepath or self.filepath.is_dir():
