@@ -200,7 +200,7 @@ STRINGS = {
         "save_another_folder": "Save this file in another folder",
         "save_another_folder_open_file": "Save this file in another folder and open file",
         "save_another_folder_open_folder": "Save this file in another folder and open folder",
-        "save_all_another_folder_open_folder": "Save all file in another folder and open folder",
+        "save_all_another_folder_open_folder": "Save all files in another folder and open folder",
         "menu_hidden_years": "Select hidden years",
         "menu_no_recently_folders": "No recently folders yet",
         "dlg_create_title": "New folder",
