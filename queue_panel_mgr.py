@@ -5,7 +5,7 @@ Componente del panel de cola y personajes para CatchEtude.
 
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QListWidget
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QPushButton, QSizePolicy
 from PyQt6.QtCore import Qt
 
 from localization import LocalizationManager
@@ -23,6 +23,7 @@ class QueuePanel(QWidget):
     characters_updated = QtCore.pyqtSignal()
     character_updated = QtCore.pyqtSignal(object)
     file_double_clicked = QtCore.pyqtSignal(str)
+    movings_minimized_changed = QtCore.pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -31,6 +32,7 @@ class QueuePanel(QWidget):
         self._queue_pending = 0
         self._queue_total = 0
         self._queue_non_shown = 0
+        self._movings_minimized = False
         self._build_ui()
 
     def _build_ui(self):
@@ -46,12 +48,25 @@ class QueuePanel(QWidget):
         self.queue_list_widget.setItemDelegate(QueueDelegate(self))
         self.queue_list_widget.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.queue_list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
-        layout.addWidget(self.queue_list_widget)
+        self.queue_list_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self.queue_list_widget, 1)
 
-        # Pending Movements
+        # Pending Movements Row (Label + Minimize Button)
+        movings_header_row = QHBoxLayout()
+        movings_header_row.setContentsMargins(0, 0, 0, 0)
+
         self.lbl_movings = QLabel()
         self.lbl_movings.setText(self.loc.get("lbl_queue_movings"))
-        layout.addWidget(self.lbl_movings)
+        movings_header_row.addWidget(self.lbl_movings)
+        movings_header_row.addStretch()
+
+        self.btn_toggle_movings = QPushButton("▲")
+        self.btn_toggle_movings.setFixedSize(24, 20)
+        self.btn_toggle_movings.setToolTip("Ocultar/Mostrar movimientos pendientes")
+        self.btn_toggle_movings.clicked.connect(self.toggle_movings_minimized)
+        movings_header_row.addWidget(self.btn_toggle_movings)
+
+        layout.addLayout(movings_header_row)
 
         self.queue_movings_widget = QueueMovingsWidget(self)
         self.queue_movings_widget.setMaximumHeight(200)
@@ -73,6 +88,22 @@ class QueuePanel(QWidget):
         is_active = item.data(Qt.ItemDataRole.UserRole + 1)
         if path_str and not is_active:
             self.file_double_clicked.emit(path_str)
+
+    def toggle_movings_minimized(self):
+        self.set_movings_minimized(not self._movings_minimized)
+
+    def set_movings_minimized(self, minimized: bool):
+        self._movings_minimized = minimized
+        if minimized:
+            self.queue_movings_widget.hide()
+            self.btn_toggle_movings.setText("▼")
+        else:
+            self.queue_movings_widget.show()
+            self.btn_toggle_movings.setText("▲")
+        self.movings_minimized_changed.emit(minimized)
+
+    def is_movings_minimized(self) -> bool:
+        return self._movings_minimized
 
     def _on_char_data_changed(self, topLeft, bottomRight, roles=None):
         for row in range(topLeft.row(), bottomRight.row() + 1):

@@ -23,13 +23,8 @@ class ActionPanel(QWidget):
     Panel for previewing and applying actions to the current file.
     Panel para previsualizar y aplicar acciones al archivo actual.
     """
-    apply_clicked = QtCore.pyqtSignal()
-    apply_custom_clicked = QtCore.pyqtSignal()
     delete_clicked = QtCore.pyqtSignal()
     secure_changed = QtCore.pyqtSignal(bool)
-    keep_mode_changed = QtCore.pyqtSignal(str)
-    keep_changed = QtCore.pyqtSignal(bool)
-    post_action_changed = QtCore.pyqtSignal(str)
     hide_t_clicked = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
@@ -126,42 +121,7 @@ class ActionPanel(QWidget):
         secure_row.addWidget(self.blur_spinbox)
         secure_row.addStretch()
 
-        # Keep in downloads row
-        keep_row = QHBoxLayout()
-        keep_row.setSpacing(10)
-
-        self.lbl_keep = QLabel("Keep in downloads:")
-        keep_row.addWidget(self.lbl_keep)
-
-        self.keep_downloads_cb = QComboBox()
-        self.keep_downloads_cb.addItem("Nothing", "nothing")
-        self.keep_downloads_cb.addItem("Only this file", "only_this")
-        self.keep_downloads_cb.addItem("All Queue", "all_queue")
-        self.keep_downloads_cb.currentIndexChanged.connect(self._on_keep_downloads_mode_changed)
-        keep_row.addWidget(self.keep_downloads_cb)
-        keep_row.addStretch()
-        
-        # comobox action after download
-        self.lbl_post_action = QLabel(self.loc.get("lbl_post_action"))
-
-        self.post_action_row = QHBoxLayout()
-        self.post_action_row.addWidget(self.lbl_post_action)
-
-        self.post_action_cb = QComboBox()
-        self.post_action_cb.setMaximumWidth(310)
-        self.post_action_cb.addItem(self.loc.get("post_action_none"), "none")
-        self.post_action_cb.addItem(self.loc.get("post_action_open_file"), "open_file")
-        self.post_action_cb.addItem(self.loc.get("post_action_open_folder"), "open_folder")
-        self.post_action_cb.currentIndexChanged.connect(
-            lambda _: self.post_action_changed.emit(self.get_post_action_mode())
-        )
-
-        self.post_action_row.addWidget(self.post_action_cb)
-        self.post_action_row.addStretch(1)
-
         footer.addLayout(secure_row)
-        footer.addLayout(keep_row)
-        footer.addLayout(self.post_action_row)
     
         # buttons arrow
         buttons_row = QHBoxLayout()
@@ -174,49 +134,16 @@ class ActionPanel(QWidget):
         self.btn_hide_t.clicked.connect(self.hide_t_clicked.emit)
         buttons_row.addWidget(self.btn_hide_t, 1)
 
-        self.btn_custom = QPushButton(self.loc.get("btn_apply_custom"))
-        self.btn_custom.setMinimumHeight(30)
-        self.btn_custom.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.btn_custom.clicked.connect(self.apply_custom_clicked.emit)
-        buttons_row.addWidget(self.btn_custom, 1)
-
-        self.btn_move = QPushButton(self.loc.get("btn_apply"))
-        self.btn_move.setMinimumHeight(30)
-        self.btn_move.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.btn_move.clicked.connect(self.apply_clicked.emit)
-        buttons_row.addWidget(self.btn_move, 1)
-
         footer.addLayout(buttons_row)
-
-        self.btn_custom.setEnabled(False)
-        self.btn_move.setEnabled(False)
         layout.addLayout(footer)
 
     def retranslate_ui(self):
-        self.lbl_post_action.setText(self.loc.get("lbl_post_action"))
         self.btn_edit_metadata.setText("Edit metadata")
-        
-        current = self.get_post_action_mode()
-        self.post_action_cb.blockSignals(True)
-        self.post_action_cb.setItemText(0, self.loc.get("post_action_none"))
-        self.post_action_cb.setItemText(1, self.loc.get("post_action_open_file"))
-        self.post_action_cb.setItemText(2, self.loc.get("post_action_open_folder"))
-        self.set_post_action_mode(current)
-        self.post_action_cb.blockSignals(False)
-
         self.btn_open.setText(self.loc.get("btn_open"))
         self.btn_delete.setText(self.loc.get("btn_header_delete"))
         self.lbl_name.setText(self.loc.get("lbl_new_name"))
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
-        self.lbl_keep.setText(self.loc.get("keep_in_downloads") if self.loc.get("keep_in_downloads") else "Keep in downloads:")
         self.btn_hide_t.setText("Hide Temporal")
-        self.btn_custom.setText(self.loc.get("btn_apply_custom"))
-        if self.filepath and self.filepath.is_dir():
-            self.btn_move.setText("Flat Folder")
-        else:
-            self.btn_move.setText(
-                self.loc.get("btn_keep") if self.is_keep_downloads() else self.loc.get("btn_apply")
-            )
 
     def set_file(self, p: Path, hide_secure: bool):
         self._preview_generation += 1
@@ -233,11 +160,6 @@ class ActionPanel(QWidget):
             self.rename_input.setEnabled(False)
             self.btn_open.setEnabled(True)
             self.btn_delete.setEnabled(False)
-            self.btn_custom.setEnabled(False)
-            self.keep_downloads_cb.setEnabled(False)
-            self.post_action_cb.setEnabled(False)
-            self.btn_move.setText("Flat Folder")
-            self.btn_move.setEnabled(True)
             self.btn_hide_t.setEnabled(True)
             self._update_metadata_button_visibility()
             self._update_dynamic_plugin_buttons()
@@ -246,16 +168,12 @@ class ActionPanel(QWidget):
         self.rename_input.setEnabled(True)
         self.btn_open.setEnabled(True)
         self.btn_delete.setEnabled(True)
-        self.btn_custom.setEnabled(True)
-        self.keep_downloads_cb.setEnabled(True)
-        self.post_action_cb.setEnabled(True)
         self._update_file_info_label()        
         self.load_preview()
         self.drag_icon.set_file(p)
         self.btn_hide_t.setEnabled(True)
         self._update_metadata_button_visibility()
         self._update_dynamic_plugin_buttons()
-        # Note: btn_move enabling depends on type, handled by MainWindow
 
     def _update_folder_info_label(self):
         if not self.filepath:
@@ -499,9 +417,6 @@ class ActionPanel(QWidget):
     def get_new_name(self):
         return self.rename_input.text().strip()
 
-    def set_apply_enabled(self, enabled):
-        self.btn_move.setEnabled(enabled)
-        
     def clear(self):
         self._preview_generation += 1
         self._preview_loading_suspended = True
@@ -509,19 +424,12 @@ class ActionPanel(QWidget):
         self.preview_label.clear()
         self.rename_input.setText("")
         self.rename_input.setEnabled(True)
-        self.btn_custom.setEnabled(False)
-        self.keep_downloads_cb.setEnabled(True)
-        self.post_action_cb.setEnabled(True)
-        self.btn_move.setText(self.loc.get("btn_apply"))
-        self.btn_move.setEnabled(False)
         self.lbl_file_info.setText(self.loc.get("msg_no_file"))
         self.drag_icon.set_file(None)
         self.btn_hide_t.setEnabled(False)
         self.btn_delete.setEnabled(False)
         self._update_metadata_button_visibility()
         self._update_dynamic_plugin_buttons()
-        if self.get_keep_mode() == "only_this":
-            self.set_keep_mode("nothing")
 
     def _update_dynamic_plugin_buttons(self):
         import sys
@@ -615,35 +523,3 @@ class ActionPanel(QWidget):
 
         menu.exec(self.btn_delete.mapToGlobal(QtCore.QPoint(0, self.btn_delete.height())))
 
-    def _on_keep_downloads_mode_changed(self, index: int):
-        mode = self.get_keep_mode()
-        is_keep = (mode != "nothing")
-        if self.filepath and self.filepath.is_dir():
-            self.btn_move.setText("Flat Folder")
-        else:
-            self.btn_move.setText(self.loc.get("btn_keep") if is_keep else self.loc.get("btn_apply"))
-        self.keep_mode_changed.emit(mode)
-        self.keep_changed.emit(is_keep)
-
-    def get_keep_mode(self) -> str:
-        data = self.keep_downloads_cb.currentData()
-        return data if data in ("nothing", "only_this", "all_queue") else "nothing"
-
-    def set_keep_mode(self, mode: str):
-        idx = self.keep_downloads_cb.findData(mode)
-        if idx >= 0:
-            self.keep_downloads_cb.setCurrentIndex(idx)
-
-    def is_keep_downloads(self) -> bool:
-        return self.get_keep_mode() != "nothing"
-
-    def get_post_action_mode(self) -> str:
-        data = self.post_action_cb.currentData()
-        return data if data in ("none", "open_file", "open_folder") else "none"
-
-    def set_post_action_mode(self, mode: str):
-        idx = self.post_action_cb.findData(mode)
-        if idx < 0:
-            idx = self.post_action_cb.findData("none")
-        if idx >= 0:
-            self.post_action_cb.setCurrentIndex(idx)

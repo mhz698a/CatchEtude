@@ -31,8 +31,13 @@ class SelectionPanel(QWidget):
     subfolders_refreshed = QtCore.pyqtSignal()
     folder_structure_changed = QtCore.pyqtSignal()
     move_all_in_folder_clicked = QtCore.pyqtSignal(str)
+    move_and_open_file_clicked = QtCore.pyqtSignal(str)
+    move_and_open_folder_clicked = QtCore.pyqtSignal(str)
+    move_all_and_open_folder_clicked = QtCore.pyqtSignal(str)
     type_changed = QtCore.pyqtSignal(int)
     year_changed = QtCore.pyqtSignal(int)
+    keep_action_clicked = QtCore.pyqtSignal(str)
+    linear_docs_action_clicked = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -40,6 +45,7 @@ class SelectionPanel(QWidget):
         self._app_icon = QIcon(config.ICON_PATH)
         
         self._type_icon_paths = {
+            1: config.ICON_PATH,
             2: f"{config.APP_DIR}/assets/me-gusta.png",
             3: f"{config.APP_DIR}/assets/película.png",
             4: f"{config.APP_DIR}/assets/música.png",
@@ -174,14 +180,23 @@ class SelectionPanel(QWidget):
         curr = self.list_type.currentRow()
         self.btn_recently.setText(self.loc.get("btn_recently"))
         self._fill_type_list(curr)
+        self.refresh_classification_ui(force=True)
 
 
     def _on_subfolder_clicked(self, name: str):
+        t = self.list_type.currentRow() + 1
+        if t == 1:
+            self.keep_action_clicked.emit(name)
+            return
+        if t == 7:
+            self.linear_docs_action_clicked.emit(name)
+            return
+
         self._remember_recent_subfolder(name)
         self.subfolder_clicked.emit(name)
 
     def _remember_recent_subfolder(self, name: str):
-        t = self.list_type.currentRow() + 2
+        t = self.list_type.currentRow() + 1
         year = self.list_year.current_year() if t in (2, 3, 4, 8) else None
         if not name or year is None:
             return
@@ -216,7 +231,7 @@ class SelectionPanel(QWidget):
         if not type_id or year is None or not name:
             return
 
-        row = type_id - 2
+        row = type_id - 1
         if 0 <= row < self.list_type.count():
             self.list_type.setCurrentRow(row)
 
@@ -228,23 +243,23 @@ class SelectionPanel(QWidget):
         self.subfolder_clicked.emit(name)
 
     def _on_type_changed(self, idx):
-        self.type_changed.emit(idx + 2)
+        self.type_changed.emit(idx + 1)
         self.refresh_classification_ui()
 
     def _on_year_changed(self, year):
         if year >= 0:
             self.year_changed.emit(year)
             self.refresh_classification_ui()
-                
+
     def get_selection(self):
         return {
-            'type': self.list_type.currentRow() + 2,
+            'type': self.list_type.currentRow() + 1,
             'year': self.list_year.current_year()
         }
 
     def refresh_classification_ui(self, force=False):
-        t = self.list_type.currentRow() + 2
-        year = self.list_year.current_year() if t in (2, 3, 4, 8) else None
+        t = self.list_type.currentRow() + 1
+        year = self.list_year.current_year() if t in (2, 3, 4, 7, 8) else None
 
         if not force and t == self._last_loaded_type and year == self._last_loaded_year:
             if t in (2, 3, 4, 8):
@@ -253,6 +268,12 @@ class SelectionPanel(QWidget):
                     self.list_sub.setEnabled(True)
                 else:
                     self.list_sub.setEnabled(False)
+            elif t == 1:
+                self.list_sub.setEnabled(True)
+                self.list_year.setEnabled(False)
+            elif t == 7:
+                self.list_sub.setEnabled(True)
+                self.list_year.setEnabled(True)
             elif t in (5, 6):
                 self.list_sub.setEnabled(True)
                 self.list_year.setEnabled(False)
@@ -264,7 +285,28 @@ class SelectionPanel(QWidget):
         self._last_loaded_type = t
         self._last_loaded_year = year
 
-        if t in (2, 3, 4, 8):
+        if t == 1:
+            self.list_sub.add_subfolders([
+                self.loc.get("keep_this_file"),
+                self.loc.get("keep_this_file_open_file"),
+                self.loc.get("keep_this_file_open_folder"),
+                self.loc.get("keep_all_files"),
+                self.loc.get("keep_all_files_open_folder"),
+                self.loc.get("save_another_folder"),
+                self.loc.get("save_another_folder_open_file"),
+                self.loc.get("save_another_folder_open_folder"),
+                self.loc.get("save_all_another_folder_open_folder"),
+            ])
+            self.list_sub.setEnabled(True)
+            self.list_year.setEnabled(False)
+        elif t == 7:
+            self.list_sub.add_subfolders([
+                "Guardar en el año seleccionado",
+                "Guardar en el año actual"
+            ])
+            self.list_sub.setEnabled(True)
+            self.list_year.setEnabled(True)
+        elif t in (2, 3, 4, 8):
             if year:
                 base = get_base_path_for_type_year(t, year)
                 self._populate_subfolders(base)
@@ -289,12 +331,12 @@ class SelectionPanel(QWidget):
             self._sub_scanner.wait()
             self._sub_scanner = None
 
-        if not is_internal_available() and (self.list_type.currentRow() + 2) in (2, 3, 4, 7, 8):
+        if not is_internal_available() and (self.list_type.currentRow() + 1) in (2, 3, 4, 7, 8):
             self.list_sub.setEnabled(False)
             return
 
         try:
-            t = self.list_type.currentRow() + 2
+            t = self.list_type.currentRow() + 1
             subs = []
             
             if base.exists() and base.is_dir():
@@ -353,7 +395,7 @@ class SelectionPanel(QWidget):
         self.list_sub.setEnabled(False)
 
     def _on_empty_create_folder_clicked(self):
-        t = self.list_type.currentRow() + 2
+        t = self.list_type.currentRow() + 1
         year = self.list_year.current_year()
         if t != 8 or not year:
             return
@@ -367,7 +409,10 @@ class SelectionPanel(QWidget):
         self.list_sub.setEnabled(enabled)
 
     def _on_subfolder_right_clicked(self, name, pos):
-        t = self.list_type.currentRow() + 2
+        t = self.list_type.currentRow() + 1
+        if t in (1, 7):
+            return
+
         year = self.list_year.current_year()
         if t in (2, 3, 4, 8) and year:
             base = get_base_path_for_type_year(t, year)
@@ -394,6 +439,11 @@ class SelectionPanel(QWidget):
         if is_empty:
             act_delete = menu.addAction(self.loc.get("menu_delete_folder"))
 
+        menu.addSeparator()
+        act_move_open_file = menu.addAction(self.loc.get("menu_move_and_open_file"))
+        act_move_open_folder = menu.addAction(self.loc.get("menu_move_and_open_folder"))
+        act_move_all_open_folder = menu.addAction(self.loc.get("menu_move_all_and_open_folder"))
+
         action = menu.exec(pos)
         
         if action == act_open:
@@ -406,6 +456,12 @@ class SelectionPanel(QWidget):
             self._handle_rename_folder(target_folder)
         elif action == act_delete and act_delete:
             self._handle_delete_folder(target_folder)
+        elif action == act_move_open_file:
+            self.move_and_open_file_clicked.emit(name)
+        elif action == act_move_open_folder:
+            self.move_and_open_folder_clicked.emit(name)
+        elif action == act_move_all_open_folder:
+            self.move_all_and_open_folder_clicked.emit(name)
 
     def _is_folder_empty(self, path: Path) -> bool:
         try:
@@ -419,7 +475,7 @@ class SelectionPanel(QWidget):
 
     def _on_overworld_result(self, name: str, line2: str = "", line3: str = ""):
         self._overworld_refresh_pending = False
-        t = self.list_type.currentRow() + 2
+        t = self.list_type.currentRow() + 1
         if t != 8:
             return
 
@@ -493,7 +549,7 @@ class SelectionPanel(QWidget):
         self.list_type.blockSignals(True)
         self.list_type.clear()
 
-        for type_id in range(2, 9):
+        for type_id in range(1, 9):
             text = self.loc.get(f"type_{type_id}")
             item = QListWidgetItem(self._type_icon_for(type_id), '')
             item.setData(QtCore.Qt.ItemDataRole.UserRole, type_id)
