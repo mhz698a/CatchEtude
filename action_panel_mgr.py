@@ -24,8 +24,8 @@ class ActionPanel(QWidget):
     Panel para previsualizar y aplicar acciones al archivo actual.
     """
     delete_clicked = QtCore.pyqtSignal()
-    secure_changed = QtCore.pyqtSignal(bool)
     hide_t_clicked = QtCore.pyqtSignal()
+    flat_folder_clicked = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -56,6 +56,10 @@ class ActionPanel(QWidget):
         open_row.setSpacing(8)
         open_row.addStretch()
 
+        self.dynamic_btn_layout = QHBoxLayout()
+        self.dynamic_btn_layout.setSpacing(8)
+        open_row.addLayout(self.dynamic_btn_layout)
+
         self.btn_open = QPushButton(self.loc.get("btn_open"))
         self.btn_open.clicked.connect(self._open_file)
         self.btn_open.setFixedHeight(30)
@@ -75,10 +79,6 @@ class ActionPanel(QWidget):
         self.btn_edit_metadata.setFixedWidth(110)
         self.btn_edit_metadata.setVisible(False)
         open_row.addWidget(self.btn_edit_metadata)
-
-        self.dynamic_btn_layout = QHBoxLayout()
-        self.dynamic_btn_layout.setSpacing(8)
-        open_row.addLayout(self.dynamic_btn_layout)
 
         open_row.addStretch()
         layout.addLayout(open_row)
@@ -101,27 +101,16 @@ class ActionPanel(QWidget):
         footer = QVBoxLayout()
         footer.setSpacing(6)                        
                                 
-        # Secure & Blur row
-        secure_row = QHBoxLayout()
-        secure_row.setSpacing(10)
+        # Drag row
+        drag_row = QHBoxLayout()
+        drag_row.setSpacing(10)
                 
         self.drag_icon = DragLabel()
         self.drag_icon.setEnabled(False)
-        secure_row.addWidget(self.drag_icon)
-        
-        self.hide_secure_cb = QCheckBox(self.loc.get("btn_secure"))
-        self.hide_secure_cb.stateChanged.connect(self._on_hide_secure_changed)
-        secure_row.addWidget(self.hide_secure_cb)
+        drag_row.addWidget(self.drag_icon)
+        drag_row.addStretch()
 
-        self.blur_spinbox = QSpinBox()
-        self.blur_spinbox.setRange(1, 255)
-        self.blur_spinbox.setValue(config.BLUR_LEVEL)
-        self.blur_spinbox.setToolTip("Nivel de difuminado (1-255)")
-        self.blur_spinbox.valueChanged.connect(self._on_blur_level_changed)
-        secure_row.addWidget(self.blur_spinbox)
-        secure_row.addStretch()
-
-        footer.addLayout(secure_row)
+        footer.addLayout(drag_row)
     
         # buttons arrow
         buttons_row = QHBoxLayout()
@@ -134,6 +123,13 @@ class ActionPanel(QWidget):
         self.btn_hide_t.clicked.connect(self.hide_t_clicked.emit)
         buttons_row.addWidget(self.btn_hide_t, 1)
 
+        self.btn_flat_folder = QPushButton("Flat Folder")
+        self.btn_flat_folder.setMinimumHeight(30)
+        self.btn_flat_folder.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.btn_flat_folder.setEnabled(True)
+        self.btn_flat_folder.clicked.connect(self.flat_folder_clicked.emit)
+        buttons_row.addWidget(self.btn_flat_folder, 1)
+
         footer.addLayout(buttons_row)
         layout.addLayout(footer)
 
@@ -142,15 +138,14 @@ class ActionPanel(QWidget):
         self.btn_open.setText(self.loc.get("btn_open"))
         self.btn_delete.setText(self.loc.get("btn_header_delete"))
         self.lbl_name.setText(self.loc.get("lbl_new_name"))
-        self.hide_secure_cb.setText(self.loc.get("btn_secure"))
         self.btn_hide_t.setText("Hide Temporal")
+        self.btn_flat_folder.setText("Flat Folder")
 
     def set_file(self, p: Path, hide_secure: bool):
         self._preview_generation += 1
         self._preview_loading_suspended = False
         self.filepath = p
         self._hide_secure = hide_secure
-        self.hide_secure_cb.setChecked(hide_secure)
         self.rename_input.setText(p.stem)
 
         if p.is_dir():
@@ -401,18 +396,6 @@ class ActionPanel(QWidget):
         except Exception:
             logging.exception("Error launching metadata editor")
 
-    def _on_hide_secure_changed(self, state):
-        self._hide_secure = (state == Qt.CheckState.Checked.value)
-        self.secure_changed.emit(self._hide_secure)
-        self.load_preview()
-
-    def _on_blur_level_changed(self, value: int):
-        config.BLUR_LEVEL = value
-        self.load_preview()
-        parent_mw = self.window()
-        if hasattr(parent_mw, "queue_panel") and parent_mw.queue_panel is not None:
-            parent_mw.queue_panel.queue_list_widget.itemDelegate()._thumb_cache.clear()
-            parent_mw.queue_panel.queue_list_widget.viewport().update()
 
     def get_new_name(self):
         return self.rename_input.text().strip()
