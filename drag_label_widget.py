@@ -25,7 +25,7 @@ class DragLabel(QLabel):
         self.setToolTip("Arrastrar archivo / Drag file")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("border: 1px dashed #ccc; border-radius: 4px;")
-        
+
         # We'll use a standard icon for dragging
         # Using a system icon or a placeholder if ICON_PATH fails
         provider = QFileIconProvider()
@@ -51,19 +51,29 @@ class DragLabel(QLabel):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             drag = QDrag(self)
             mime_data = QMimeData()
-            
+
             # Use absolute path with backslashes for Windows
             url = QtCore.QUrl.fromLocalFile(str(self.filepath.absolute()))
             mime_data.setUrls([url])
-            
+
             drag.setMimeData(mime_data)
-            
+
             # Create a drag pixmap
             pixmap = self.pixmap().scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             drag.setPixmap(pixmap)
             drag.setHotSpot(QtCore.QPoint(pixmap.width() // 2, pixmap.height() // 2))
-            
-            drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
-            self.setCursor(Qt.CursorShape.SizeAllCursor)
 
-#
+            main_win = self.window()
+            orig_flags = main_win.windowFlags()
+
+            try:
+                main_win.setWindowOpacity(0.35)
+                main_win.setWindowFlag(Qt.WindowType.WindowTransparentForInput, True)
+                main_win.show()
+
+                drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
+            finally:
+                main_win.setWindowOpacity(1.0)
+                main_win.setWindowFlags(orig_flags)
+                main_win.show()
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
