@@ -45,7 +45,7 @@ class SelectionPanel(QWidget):
         self._app_icon = QIcon(config.ICON_PATH)
         
         self._type_icon_paths = {
-            1: config.ICON_PATH,
+            1: f"{config.APP_DIR}/assets/descargas.png",
             2: f"{config.APP_DIR}/assets/me-gusta.png",
             3: f"{config.APP_DIR}/assets/película.png",
             4: f"{config.APP_DIR}/assets/música.png",
