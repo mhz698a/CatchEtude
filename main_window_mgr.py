@@ -1478,7 +1478,11 @@ class MainWindow(QWidget):
             logging.exception("Failed to show post-action reset notification")
 
     def _on_flat_folder_clicked(self):
-        if not self.filepath or not self.filepath.is_dir():
+        if not self.filepath:
+            self.show_status("No hay carpeta activa", 5000)
+            return
+
+        if not self.filepath.is_dir():
             self.show_status("Es un archivo", 5000)
             return
 
