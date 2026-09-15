@@ -393,6 +393,11 @@ class MainWindow(QWidget):
             hide_secure = cmd.get("hide_secure", True)
             if path and os.path.exists(path):
                 self._hide_secure = hide_secure
+                self.hide_secure_cb.setChecked(self._hide_secure)
+                self.queue_panel.set_hide_secure(self._hide_secure)
+                if hasattr(self, "action_panel") and self.action_panel is not None:
+                    self.action_panel._hide_secure = self._hide_secure
+                    self.action_panel.load_preview()
                 self._save_config()
                 p = Path(path)
                 if p.is_dir():
