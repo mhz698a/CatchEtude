@@ -63,6 +63,7 @@ class FastImageViewerWindow(QMainWindow):
     def _build_ui(self):
         self.setWindowTitle("Fast Image Viewer")
         self.setMinimumSize(400, 300)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
 
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
@@ -206,6 +207,12 @@ class FastImageViewerWindow(QMainWindow):
             tmp_file.replace(self.config_file)
         except Exception:
             pass
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+            return
+        super().keyPressEvent(event)
 
     def closeEvent(self, event):
         self._save_window_settings()
