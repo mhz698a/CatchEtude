@@ -4,6 +4,7 @@ Módulo para gestionar una lista de botones para el movimiento rápido de archiv
 """
 
 from PyQt6 import QtWidgets, QtCore
+from PyQt6.QtWidgets import QScroller, QScrollerProperties
 
 class SubfolderButton(QtWidgets.QPushButton):
     """
@@ -108,9 +109,22 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
         self.layout.setSpacing(2)
         self.layout.addStretch()
         self.setWidget(self.container)
+        
+        self.scroller = QScroller.scroller(self.viewport())
+        self.scroller.grabGesture(
+            self.viewport(), 
+            QScroller.ScrollerGestureType.LeftMouseButtonGesture
+        )
+        
+        props = self.scroller.scrollerProperties()
+        props.setScrollMetric(QScrollerProperties.ScrollMetric.MousePressEventDelay, 0.1)
+        props.setScrollMetric(QScrollerProperties.ScrollMetric.MinimumVelocity, 0.05)
+        self.scroller.setScrollerProperties(props)
+        
         self._enabled = True
         self._buttons = {} # name -> SubfolderButton
         self._empty_button = None
+        
 
     def clear(self):
         """Removes all buttons from the list."""
