@@ -45,6 +45,7 @@ from service_mgr import send_character_service_command
 from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
 from background_move_mgr import BackgroundMoveManager
+from tray_menu_mgr import TrayMenuManager
 
 
 class MainWindow(QWidget):
@@ -94,7 +95,8 @@ class MainWindow(QWidget):
         
         self._build_ui()
         self._pending_dialog = PendingDialog(self.loc, self._bring_and_center)
-        self._build_tray()
+        self.tray_mgr = TrayMenuManager(self)
+        self.tray_mgr.build_tray()
         
         self._hide_t_active = False
         self._hide_t_banner = TemporaryHideBanner(self)
@@ -576,85 +578,12 @@ class MainWindow(QWidget):
             self._bring_and_center()
 
     def _update_tray_show_hide_action(self):
-        if hasattr(self, 'toggle_show_hide_action'):
-            if self.isVisible():
-                self.toggle_show_hide_action.setText(self.loc.get("tray_hide"))
-            else:
-                self.toggle_show_hide_action.setText(self.loc.get("tray_show"))
+        if hasattr(self, 'tray_mgr'):
+            self.tray_mgr.update_show_hide_action()
 
     def _build_tray(self):
-        icon = QIcon.fromTheme("folder-downloads")
-        if icon.isNull(): icon = QIcon(config.ICON_PATH)
-        if not hasattr(self, 'tray'):
-            self.tray = QSystemTrayIcon(icon, self)
-            self.tray.setToolTip(config.APP_NAME)
-            
-        self.tray_menu = QMenu(self)
-
-        toggle_label = self.loc.get("tray_hide") if self.isVisible() else self.loc.get("tray_show")
-        self.toggle_show_hide_action = QAction(toggle_label, self)
-        self.toggle_show_hide_action.triggered.connect(self._toggle_show_hide)
-        self.tray_menu.addAction(self.toggle_show_hide_action)
-
-        rescan_action = QAction(self.loc.get("tray_rescan"), self)
-        rescan_action.triggered.connect(self._rescan_downloads)
-        self.tray_menu.addAction(rescan_action)
-        
-        order_pending_action = QAction(self.loc.get("tray_order_pending"), self)
-        order_pending_action.triggered.connect(self._on_order_pending_clicked)
-        self.tray_menu.addAction(order_pending_action)
-        
-        run_pendings_action = QAction(self.loc.get("tray_run_pendings"), self)
-        run_pendings_action.triggered.connect(self._run_pendings)
-        self.tray_menu.addAction(run_pendings_action)
-        
-        open_last_action = QAction(self.loc.get("tray_open_last"), self)        
-        last_move = self.background_move_mgr._history.get_last_move()
-        open_last_action.setEnabled(bool(last_move))
-        open_last_action.triggered.connect(self._open_last_chosen)
-        self.tray_menu.addAction(open_last_action)
-        
-        open_recent_file_action = QAction(self.loc.get("last_file_open"), self)  
-        open_recent_file_action.setEnabled(bool(last_move))
-        open_recent_file_action.triggered.connect(self._open_recent_file)
-        self.tray_menu.addAction(open_recent_file_action)
-        
-        undo_action = QAction(self.loc.get("tray_undo"), self)
-        undo_action.triggered.connect(self._on_tray_undo_clicked)
-        self.tray_menu.addAction(undo_action)
-        
-        center_action = QAction(self.loc.get("tray_center"), self)
-        center_action.triggered.connect(self._bring_and_center)
-        self.tray_menu.addAction(center_action)
-        
-        logs_action = QAction(self.loc.get("tray_logs"), self)
-        logs_action.triggered.connect(self._show_logs)
-        self.tray_menu.addAction(logs_action)
-
-        plugins_action = QAction(self.loc.get("tray_plugins"), self)
-        plugins_action.triggered.connect(self._show_plugin_manager)
-        self.tray_menu.addAction(plugins_action)
-
-        self._build_or_update_plugins_submenu()
-
-        appdta_folder_action = QAction("Open Appdata Folder", self)
-        appdta_folder_action.triggered.connect(self._open_appdta_folder)
-        self.tray_menu.addAction(appdta_folder_action)
-        
-        settings_action = QAction(self.loc.get("tray_settings"), self)
-        settings_action.triggered.connect(self._open_settings_dialog)
-        self.tray_menu.addAction(settings_action)
-
-        restart_action = QAction(self.loc.get("tray_restart"), self)
-        restart_action.triggered.connect(self._restart_service)
-        self.tray_menu.addAction(restart_action)
-        
-        quit_action = QAction(self.loc.get("tray_exit"), self)
-        quit_action.triggered.connect(self._on_exit_clicked)
-        self.tray_menu.addAction(quit_action)
-        
-        self.tray.setContextMenu(self.tray_menu)
-        self.tray.show()
+        if hasattr(self, 'tray_mgr'):
+            self.tray_mgr.build_tray()
 
     def _show_plugin_manager(self):
         if hasattr(self, "_plugin_dialog") and self._plugin_dialog is not None and self._plugin_dialog.isVisible():
@@ -671,46 +600,6 @@ class MainWindow(QWidget):
 
         self._plugin_dialog = PluginManagerDialog(plugin_mgr, self.loc, self)
         self._plugin_dialog.show()
-
-    def _build_or_update_plugins_submenu(self):
-        plugin_actions = self._get_plugin_tray_actions()
-        if not plugin_actions:
-            return
-
-        grouped_menus = {}
-        for act_def in plugin_actions:
-            pid = act_def.get("plugin_id")
-            label = act_def.get("label", "Action")
-            command = act_def.get("command", "")
-            group = act_def.get("group")
-
-            act = QAction(label, self)
-            act.triggered.connect(lambda checked, p=pid, c=command: self._on_plugin_tray_action(p, c))
-
-            if group:
-                if group not in grouped_menus:
-                    grouped_menus[group] = QMenu(group, self)
-                    self.tray_menu.addMenu(grouped_menus[group])
-                grouped_menus[group].addAction(act)
-            else:
-                self.tray_menu.addAction(act)
-
-    def _get_plugin_tray_actions(self):
-        try:
-            plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
-            if plugin_mgr:
-                return plugin_mgr.get_tray_actions()
-        except Exception:
-            logging.exception("Failed to load plugin tray actions")
-        return []
-
-    def _on_plugin_tray_action(self, plugin_id: str, command: str):
-        try:
-            plugin_mgr = getattr(sys.modules["__main__"], "plugin_mgr", None)
-            if plugin_mgr:
-                plugin_mgr.invoke_command(plugin_id, command)
-        except Exception:
-            logging.exception(f"Failed to execute plugin tray action '{command}' for '{plugin_id}'")
 
     def _open_last_chosen(self):
         last_move = self.background_move_mgr._history.get_last_move()
