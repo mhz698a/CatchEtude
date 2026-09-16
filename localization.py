@@ -78,8 +78,10 @@ STRINGS = {
         "save_another_folder_open_file": "Save this file in another folder and open file",
         "save_another_folder_open_folder": "Save this file in another folder and open folder",
         "save_all_another_folder_open_folder": "Save all files in another folder and open folder",
+        "menu_move_and_active_secure": "Mover este archivo aqui y activar Secure",
         "menu_hidden_years": "Seleccionar años ocultos",
         "menu_no_recently_folders": "No recently folders yet",
+        "menu_hide_temporal": "Hide Temporal",
         "dlg_create_title": "Nueva carpeta",
         "dlg_create_label": "Nombre de la carpeta:",
         "dlg_rename_title": "Renombrar carpeta",
@@ -108,6 +110,7 @@ STRINGS = {
         # Safe close warning strings / Cadenas de advertencia para cierre seguro
         "msg_cannot_close_moving_title": "Operación en progreso",
         "msg_cannot_close_moving": "No se puede cerrar la aplicación mientras se realiza un movimiento de archivos. Por favor, espere a que termine.",
+        "msg_nothing_to_undo": "No hay nada que deshacer o el archivo ya no existe.",
         # Plugin Manager Strings
         "tray_plugins": "Gestionar plugins",
         "plugins_menu": "Plugins",
@@ -201,8 +204,10 @@ STRINGS = {
         "save_another_folder_open_file": "Save this file in another folder and open file",
         "save_another_folder_open_folder": "Save this file in another folder and open folder",
         "save_all_another_folder_open_folder": "Save all files in another folder and open folder",
+        "menu_move_and_active_secure": "Move this file here and activate Secure",
         "menu_hidden_years": "Select hidden years",
         "menu_no_recently_folders": "No recently folders yet",
+        "menu_hide_temporal": "Hide Temporal",
         "dlg_create_title": "New folder",
         "dlg_create_label": "Folder name:",
         "dlg_rename_title": "Rename folder",
@@ -230,6 +235,7 @@ STRINGS = {
         "status_bulk_open_file_disabled": "'Open file after action' is not available for 'Move everything to this folder'. 'Do nothing after' will be used.",
         "msg_cannot_close_moving_title": "Operation in progress",
         "msg_cannot_close_moving": "The application cannot be closed while a file is being moved. Please wait for the operation to complete.",
+        "msg_nothing_to_undo": "Nothing to undo or file no longer exists.",
         # Plugin Manager Strings
         "tray_plugins": "Manage plugins",
         "plugins_menu": "Plugins",

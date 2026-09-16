@@ -197,6 +197,7 @@ class MainWindow(QWidget):
         # Selection Panel
         self.selection_panel = SelectionPanel()
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
+        self.selection_panel.undo_clicked.connect(self._on_context_undo_clicked)
         self.selection_panel.move_and_open_file_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_file"))
         self.selection_panel.move_and_open_folder_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_folder"))
         self.selection_panel.move_all_and_open_folder_clicked.connect(lambda sub: self._move_all_in_this_folder(sub, post_action="open_folder"))
@@ -468,6 +469,18 @@ class MainWindow(QWidget):
         try:
             if not self.background_move_mgr.undo_last_move():
                 QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
+            else:
+                self._build_tray()
+                self._update_undo_button_tooltip()
+                self._bring_and_center()
+        finally:
+            send_character_service_command("resume")
+
+    def _on_context_undo_clicked(self):
+        send_character_service_command("pause")
+        try:
+            if not self.background_move_mgr.undo_last_move():
+                self.show_status(self.loc.get("msg_nothing_to_undo"), 5000)
             else:
                 self._build_tray()
                 self._update_undo_button_tooltip()
