@@ -30,8 +30,26 @@ class YearsTableWidget(QTableWidget):
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
 
-        self.itemSelectionChanged.connect(self._emit_year_changed)
+        self._selection_just_changed = False
+        self.itemSelectionChanged.connect(self._on_selection_changed)
+        self.itemClicked.connect(self._on_item_clicked)
         self._rebuild()
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.RightButton:
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def _on_selection_changed(self):
+        self._selection_just_changed = True
+        self._emit_year_changed()
+
+    def _on_item_clicked(self, item):
+        if self._selection_just_changed:
+            self._selection_just_changed = False
+        elif item and self.currentItem() == item:
+            self._emit_year_changed()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

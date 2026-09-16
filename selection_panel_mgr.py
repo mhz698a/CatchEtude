@@ -21,6 +21,7 @@ from utils import is_internal_available, delete_to_recycle_bin
 from years_selector import YearsTableWidget
 from episode_cache_mgr import EpisodeCacheManager
 from overworld_ipc_mgr import OverworldServiceClient
+from subfolder_queue_addmore import populate_add_to_queue_menu
 
 class SelectionPanel(QWidget):
     """
@@ -41,6 +42,7 @@ class SelectionPanel(QWidget):
     keep_action_clicked = QtCore.pyqtSignal(str)
     linear_docs_action_clicked = QtCore.pyqtSignal(str)
     undo_clicked = QtCore.pyqtSignal()
+    status_requested = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -435,6 +437,16 @@ class SelectionPanel(QWidget):
         act_move_all = menu.addAction(self.loc.get("menu_move_all_in_folder"))
         act_create = menu.addAction(self.loc.get("menu_create_folder"))
         act_rename = menu.addAction(self.loc.get("menu_rename_folder"))
+
+        state_mgr = getattr(self.window(), "state_manager", None)
+        if state_mgr:
+            populate_add_to_queue_menu(
+                self,
+                menu,
+                target_folder,
+                state_mgr,
+                status_callback=self.status_requested.emit
+            )
         
         # Only show delete if empty
         is_empty = self._is_folder_empty(target_folder)

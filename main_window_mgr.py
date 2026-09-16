@@ -210,6 +210,7 @@ class MainWindow(QWidget):
         self.selection_panel.folder_structure_changed.connect(self._on_folder_structure_changed)
         self.selection_panel.type_changed.connect(self._on_type_changed)
         self.selection_panel.year_changed.connect(self._on_year_changed)
+        self.selection_panel.status_requested.connect(lambda text: self.show_status(text, 5000))
         root.addWidget(self.selection_panel)
 
         # Action Panel
@@ -560,6 +561,27 @@ class MainWindow(QWidget):
         if self.state_manager.has_pending_work():
             self._pending_dialog.show()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._update_tray_show_hide_action()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._update_tray_show_hide_action()
+
+    def _toggle_show_hide(self):
+        if self.isVisible():
+            self._manual_hide()
+        else:
+            self._bring_and_center()
+
+    def _update_tray_show_hide_action(self):
+        if hasattr(self, 'toggle_show_hide_action'):
+            if self.isVisible():
+                self.toggle_show_hide_action.setText(self.loc.get("tray_hide"))
+            else:
+                self.toggle_show_hide_action.setText(self.loc.get("tray_show"))
+
     def _build_tray(self):
         icon = QIcon.fromTheme("folder-downloads")
         if icon.isNull(): icon = QIcon(config.ICON_PATH)
@@ -568,13 +590,11 @@ class MainWindow(QWidget):
             self.tray.setToolTip(config.APP_NAME)
             
         self.tray_menu = QMenu(self)
-        show_action = QAction(self.loc.get("tray_show"), self)
-        show_action.triggered.connect(self._bring_and_center)
-        self.tray_menu.addAction(show_action)
-        
-        hide_action = QAction(self.loc.get("tray_hide"), self)
-        hide_action.triggered.connect(self._manual_hide)
-        self.tray_menu.addAction(hide_action)
+
+        toggle_label = self.loc.get("tray_hide") if self.isVisible() else self.loc.get("tray_show")
+        self.toggle_show_hide_action = QAction(toggle_label, self)
+        self.toggle_show_hide_action.triggered.connect(self._toggle_show_hide)
+        self.tray_menu.addAction(self.toggle_show_hide_action)
 
         rescan_action = QAction(self.loc.get("tray_rescan"), self)
         rescan_action.triggered.connect(self._rescan_downloads)
