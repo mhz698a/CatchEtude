@@ -108,6 +108,7 @@ STRINGS = {
         # Safe close warning strings / Cadenas de advertencia para cierre seguro
         "msg_cannot_close_moving_title": "Operación en progreso",
         "msg_cannot_close_moving": "No se puede cerrar la aplicación mientras se realiza un movimiento de archivos. Por favor, espere a que termine.",
+        "msg_nothing_to_undo": "No hay nada que deshacer o el archivo ya no existe.",
         # Plugin Manager Strings
         "tray_plugins": "Gestionar plugins",
         "plugins_menu": "Plugins",
@@ -230,6 +231,7 @@ STRINGS = {
         "status_bulk_open_file_disabled": "'Open file after action' is not available for 'Move everything to this folder'. 'Do nothing after' will be used.",
         "msg_cannot_close_moving_title": "Operation in progress",
         "msg_cannot_close_moving": "The application cannot be closed while a file is being moved. Please wait for the operation to complete.",
+        "msg_nothing_to_undo": "Nothing to undo or file no longer exists.",
         # Plugin Manager Strings
         "tray_plugins": "Manage plugins",
         "plugins_menu": "Plugins",

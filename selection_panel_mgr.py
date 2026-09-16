@@ -40,6 +40,7 @@ class SelectionPanel(QWidget):
     year_changed = QtCore.pyqtSignal(int)
     keep_action_clicked = QtCore.pyqtSignal(str)
     linear_docs_action_clicked = QtCore.pyqtSignal(str)
+    undo_clicked = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -449,6 +450,8 @@ class SelectionPanel(QWidget):
         act_hide_temporal = menu.addAction("Hide Temporal")
         menu.addSeparator()
         act_move_and_secure = menu.addAction("Mover este archivo aqui y activar Secure")
+        menu.addSeparator()
+        act_undo = menu.addAction(self.loc.get("tray_undo"))
 
         action = menu.exec(pos)
         
@@ -472,6 +475,8 @@ class SelectionPanel(QWidget):
             self.hide_temporal_clicked.emit()
         elif action == act_move_and_secure:
             self.move_and_enable_secure_clicked.emit(name)
+        elif action == act_undo:
+            self.undo_clicked.emit()
 
     def _is_folder_empty(self, path: Path) -> bool:
         try:
