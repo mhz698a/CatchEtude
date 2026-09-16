@@ -17,7 +17,7 @@ from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QFileDialog,
     QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, 
-    QMessageBox, QStatusBar, QCheckBox, QTimeEdit
+    QMessageBox, QStatusBar, QCheckBox, QTimeEdit, QSpinBox
 )
 from pending_scheduler_mgr import PendingScheduler
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
@@ -145,6 +145,18 @@ class MainWindow(QWidget):
         self.btn_reload.setToolTip(self.loc.get("tooltip_reload"))
         self.btn_reload.clicked.connect(self._on_reload_clicked)
 
+        self.hide_secure_cb = QCheckBox(self.loc.get("btn_secure"))
+        self.hide_secure_cb.setFixedHeight(25)
+        self.hide_secure_cb.setChecked(self._hide_secure)
+        self.hide_secure_cb.stateChanged.connect(self._on_secure_changed)
+
+        self.blur_spinbox = QSpinBox()
+        self.blur_spinbox.setFixedHeight(25)
+        self.blur_spinbox.setRange(1, 255)
+        self.blur_spinbox.setValue(config.BLUR_LEVEL)
+        self.blur_spinbox.setToolTip("Nivel de difuminado (1-255)")
+        self.blur_spinbox.valueChanged.connect(self._on_blur_level_changed)
+
         self.chk_auto_run_pendings = QCheckBox()
         self.chk_auto_run_pendings.setFixedHeight(25)
         self.chk_auto_run_pendings.toggled.connect(self._on_pending_schedule_changed)
@@ -170,6 +182,8 @@ class MainWindow(QWidget):
         
         header_layout.addWidget(self.btn_reload)
         header_layout.addStretch()
+        header_layout.addWidget(self.hide_secure_cb)
+        header_layout.addWidget(self.blur_spinbox)
         header_layout.addWidget(self.chk_auto_run_pendings)
         header_layout.addWidget(self.time_auto_run_pendings)
         header_layout.addWidget(self.btn_hide)
@@ -186,6 +200,8 @@ class MainWindow(QWidget):
         self.selection_panel.move_and_open_file_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_file"))
         self.selection_panel.move_and_open_folder_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_folder"))
         self.selection_panel.move_all_and_open_folder_clicked.connect(lambda sub: self._move_all_in_this_folder(sub, post_action="open_folder"))
+        self.selection_panel.hide_temporal_clicked.connect(self._on_hide_t_clicked)
+        self.selection_panel.move_and_enable_secure_clicked.connect(self._move_and_enable_secure)
         self.selection_panel.keep_action_clicked.connect(self._on_keep_action_clicked)
         self.selection_panel.linear_docs_action_clicked.connect(self._on_linear_docs_action_clicked)
         self.selection_panel.subfolders_refreshed.connect(self._update_character_buttons)
@@ -198,8 +214,7 @@ class MainWindow(QWidget):
         # Action Panel
         self.action_panel = ActionPanel()
         self.action_panel.delete_clicked.connect(self._on_delete_clicked)
-        self.action_panel.secure_changed.connect(self._on_secure_changed)
-        self.action_panel.hide_t_clicked.connect(self._on_hide_t_clicked)
+        self.action_panel.flat_folder_clicked.connect(self._on_flat_folder_clicked)
         root.addWidget(self.action_panel)
 
         # Queue / Character Panel
@@ -318,10 +333,21 @@ class MainWindow(QWidget):
                 self._pending_auto_run_time,
             )
 
-    def _on_secure_changed(self, hide_secure):
-        self._hide_secure = hide_secure
-        self.queue_panel.set_hide_secure(hide_secure)
+    def _on_secure_changed(self, state):
+        self._hide_secure = (state == Qt.CheckState.Checked.value or state is True)
+        self.queue_panel.set_hide_secure(self._hide_secure)
+        if hasattr(self, "action_panel") and self.action_panel is not None:
+            self.action_panel._hide_secure = self._hide_secure
+            self.action_panel.load_preview()
         self._save_config()
+
+    def _on_blur_level_changed(self, value: int):
+        config.BLUR_LEVEL = value
+        if hasattr(self, "action_panel") and self.action_panel is not None:
+            self.action_panel.load_preview()
+        if hasattr(self, "queue_panel") and self.queue_panel is not None:
+            self.queue_panel.queue_list_widget.itemDelegate()._thumb_cache.clear()
+            self.queue_panel.queue_list_widget.viewport().update()
         
     def _on_post_action_changed(self, mode: str):
         self._post_action_mode = mode if mode in ("open_file", "open_folder", "none") else "none"
@@ -367,6 +393,11 @@ class MainWindow(QWidget):
             hide_secure = cmd.get("hide_secure", True)
             if path and os.path.exists(path):
                 self._hide_secure = hide_secure
+                self.hide_secure_cb.setChecked(self._hide_secure)
+                self.queue_panel.set_hide_secure(self._hide_secure)
+                if hasattr(self, "action_panel") and self.action_panel is not None:
+                    self.action_panel._hide_secure = self._hide_secure
+                    self.action_panel.load_preview()
                 self._save_config()
                 p = Path(path)
                 if p.is_dir():
@@ -392,6 +423,7 @@ class MainWindow(QWidget):
     def retranslate_ui(self):
         self.btn_reload.setText(self.loc.get("btn_reload"))
         self.btn_reload.setToolTip(self.loc.get("tooltip_reload"))
+        self.hide_secure_cb.setText(self.loc.get("btn_secure"))
         self.chk_auto_run_pendings.setText("Autoexecure Pendings")
         self.btn_hide.setText(self.loc.get("btn_hide"))
         self.btn_undo.setText(self.loc.get("btn_history"))
@@ -1236,6 +1268,11 @@ class MainWindow(QWidget):
         self._bulk_subfolder_name = sub_name
         self._move_to_subfolder(sub_name, post_action=post_action)
 
+    def _move_and_enable_secure(self, sub_name: str):
+        if not self.hide_secure_cb.isChecked():
+            self.hide_secure_cb.setChecked(True)
+        self._move_to_subfolder(sub_name)
+
     def _on_apply_custom(self, post_action: str = "none"):
         if not self.filepath or self.filepath.is_dir():
             return
@@ -1450,6 +1487,37 @@ class MainWindow(QWidget):
             )
         except Exception:
             logging.exception("Failed to show post-action reset notification")
+
+    def _on_flat_folder_clicked(self):
+        if not self.filepath:
+            self.show_status("No hay carpeta activa", 5000)
+            return
+
+        if not self.filepath.is_dir():
+            self.show_status("Es un archivo", 5000)
+            return
+
+        folder = self.filepath
+        self.action_panel.suspend_preview_loading(folder)
+        self._set_ui_enabled_for_move(False)
+
+        def flat_folder_worker():
+            moved, success = flatten_single_folder(folder)
+            if moved:
+                self.state_manager.enqueue_files(moved)
+
+            def on_flat_finish():
+                if success:
+                    self.action_panel.clear()
+                    self.filepath = None
+                    self.state_manager.discard_active_file()
+                else:
+                    self._set_ui_enabled_for_move(True)
+                    self.show_status(f"Flat folder falló para {folder.name}.", 5000)
+
+            QtCore.QTimer.singleShot(0, on_flat_finish)
+
+        run_in_threadpool(flat_folder_worker)
 
     def _on_hide_t_clicked(self):
         self._hide_t_active = True

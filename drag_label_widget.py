@@ -65,5 +65,3 @@ class DragLabel(QLabel):
             
             drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction)
             self.setCursor(Qt.CursorShape.SizeAllCursor)
-
-#
