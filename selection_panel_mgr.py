@@ -447,9 +447,9 @@ class SelectionPanel(QWidget):
         act_move_open_folder = menu.addAction(self.loc.get("menu_move_and_open_folder"))
         act_move_all_open_folder = menu.addAction(self.loc.get("menu_move_all_and_open_folder"))
         menu.addSeparator()
-        act_hide_temporal = menu.addAction("Hide Temporal")
+        act_hide_temporal = menu.addAction(self.loc.get("menu_hide_temporal"))
         menu.addSeparator()
-        act_move_and_secure = menu.addAction("Mover este archivo aqui y activar Secure")
+        act_move_and_secure = menu.addAction(self.loc.get("menu_move_and_active_secure"))
         menu.addSeparator()
         act_undo = menu.addAction(self.loc.get("tray_undo"))
 
