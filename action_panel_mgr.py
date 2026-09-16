@@ -42,6 +42,20 @@ class ActionPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 0, 0, 0)
         
+        drag_row = QHBoxLayout()
+        drag_row.setSpacing(10)
+        drag_row.setContentsMargins(0, 15, 0, 5) 
+                
+        self.drag_icon = DragLabel()
+        self.drag_icon.setEnabled(False)
+        
+        drag_row.addStretch()
+        drag_row.addWidget(self.drag_icon)
+        drag_row.addStretch()
+
+        # Añadimos el drag_row al inicio del layout principal
+        layout.addLayout(drag_row)
+        
         # Preview Section
         self.preview_label = QLabel()
         self.preview_label.setFixedSize(320, 180)
@@ -105,18 +119,7 @@ class ActionPanel(QWidget):
 
         # Buttons
         footer = QVBoxLayout()
-        footer.setSpacing(6)                        
-                                
-        # Drag row
-        drag_row = QHBoxLayout()
-        drag_row.setSpacing(10)
-                
-        self.drag_icon = DragLabel()
-        self.drag_icon.setEnabled(False)
-        drag_row.addWidget(self.drag_icon)
-        drag_row.addStretch()
-
-        footer.addLayout(drag_row)
+        footer.setSpacing(6)
         layout.addLayout(footer)
 
     def retranslate_ui(self):
