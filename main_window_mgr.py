@@ -111,11 +111,6 @@ class MainWindow(QWidget):
         self._pending_year = None
         self._char_load_generation = 0
         
-        # self._queue_maintenance_timer = QtCore.QTimer(self)
-        # self._queue_maintenance_timer.setInterval(3000)
-        # self._queue_maintenance_timer.timeout.connect(self.state_manager.maintenance_tick)
-        # self._queue_maintenance_timer.start()
-        
         self._pending_scheduler = None
         
         self._setup_settings_watcher()
