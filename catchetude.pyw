@@ -122,7 +122,7 @@ def main():
         def _refresh_plugin_actions(*_args):
             # Tray entries and contextual action buttons have independent UI
             # lifecycles; refresh both when a plugin becomes available.
-            win._build_tray()
+            win.tray_mgr.build_tray()
             win.action_panel._update_dynamic_plugin_buttons()
 
         plugin_mgr.plugin_state_changed.connect(_refresh_plugin_actions)
