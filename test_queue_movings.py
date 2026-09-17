@@ -13,8 +13,17 @@ if not hasattr(ctypes, 'windll'):
             return MockDLL()
     ctypes.windll = MockWinDLL()
     ctypes.WinDLL = lambda name: MockWinDLL()
+if not hasattr(ctypes, 'WINFUNCTYPE'):
+    ctypes.WINFUNCTYPE = lambda *args: lambda *a, **kw: 0
 
 # Dynamic mocking of Windows-specific and PyQt6 modules for headless Linux/CI environments
+# Mock shell_video_thumbnail_pyqt6 on non-Windows platforms
+if sys.platform != "win32":
+    sys.modules['shell_video_thumbnail_pyqt6'] = type('MockShellVideoThumbnail', (), {
+        'get_shell_thumbnail_pixmap': lambda *args, **kwargs: None,
+        'should_use_shell_thumbnail': lambda *args, **kwargs: False
+    })
+
 try:
     import win32file
 except ImportError:
@@ -189,6 +198,46 @@ except ImportError:
         def count(self):
             return len(self.items)
 
+    class MockQFileIconProvider:
+        def icon(self, *args, **kwargs):
+            return None
+
+    class MockQStyledItemDelegate:
+        def __init__(self, parent=None): pass
+
+    class MockQtGui:
+        class QImageReader:
+            def __init__(self, *args, **kwargs): pass
+            def setAutoTransform(self, *args): pass
+            def size(self): return MockQtCore.QSize(0, 0)
+            def read(self): return MockQtGui.QImage()
+        class QImage:
+            def isNull(self): return True
+            def width(self): return 100
+            def height(self): return 100
+            def scaled(self, *args, **kwargs): return MockQtGui.QImage()
+            def size(self): return MockQtCore.QSize(100, 100)
+            class Format:
+                Format_ARGB32 = 1
+        class QPixmap:
+            @staticmethod
+            def fromImage(*args): return MockQtGui.QPixmap()
+            def isNull(self): return True
+            def rect(self): return MockQtCore.QRect(0, 0, 0, 0)
+        class QColor:
+            def __init__(self, *args): pass
+        class QPainter:
+            def __init__(self, *args): pass
+            def save(self): pass
+            def restore(self): pass
+            def fillRect(self, *args): pass
+            def setPen(self, *args): pass
+            def drawPixmap(self, *args): pass
+            def drawText(self, *args): pass
+            def drawImage(self, *args): pass
+            def fill(self, *args): pass
+            def end(self): pass
+
     class MockQtWidgets:
         QWidget = MockQWidget
         QLabel = MockQLabel
@@ -196,6 +245,8 @@ except ImportError:
         QVBoxLayout = MockQVBoxLayout
         QListWidget = MockQListWidget
         QListWidgetItem = MockQListWidgetItem
+        QFileIconProvider = MockQFileIconProvider
+        QStyledItemDelegate = MockQStyledItemDelegate
         class QAbstractItemView:
             class ScrollMode:
                 ScrollPerPixel = 1
@@ -211,14 +262,14 @@ except ImportError:
     sys.modules['PyQt6'] = type('MockPyQt6', (), {
         'QtCore': MockQtCore,
         'QtWidgets': MockQtWidgets,
-        'QtGui': type('MockQtGui', (), {}),
+        'QtGui': MockQtGui,
         'QtNetwork': type('MockQtNetwork', (), {
             'QLocalSocket': MockQLocalSocket
         }),
     })
     sys.modules['PyQt6.QtCore'] = MockQtCore
     sys.modules['PyQt6.QtWidgets'] = MockQtWidgets
-    sys.modules['PyQt6.QtGui'] = type('MockQtGui', (), {})
+    sys.modules['PyQt6.QtGui'] = MockQtGui
     sys.modules['PyQt6.QtNetwork'] = type('MockQtNetwork', (), {
         'QLocalSocket': MockQLocalSocket
     })

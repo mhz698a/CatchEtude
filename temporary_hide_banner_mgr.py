@@ -1,6 +1,7 @@
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QLabel, QPushButton, QHBoxLayout, QSizePolicy
+from ui_utils_mgr import load_stylesheet
 
 
 class TemporaryHideBanner(QtWidgets.QWidget):
@@ -25,28 +26,7 @@ class TemporaryHideBanner(QtWidgets.QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMinimumWidth(560)
         self.setFixedHeight(66)
-        self.setStyleSheet("""
-            #TemporaryHideBanner {
-                background: #fff9c4;
-                border: 2px solid #fbc02d;
-                /*border-radius: 8px;*/
-            }
-            QLabel {
-                color: #3b2f00;
-                font-weight: 600;
-            }
-            QPushButton {
-                background: #ffeb3b;
-                border: 1px solid #c9a400;
-                border-radius: 6px;
-                padding: 6px 14px;
-                font-weight: 700;
-                color: #000;
-            }
-            QPushButton:hover {
-                background: #ffe066;
-            }
-        """)
+        self.setStyleSheet(load_stylesheet("temporary_hide_banner.css"))
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 10, 16, 10)

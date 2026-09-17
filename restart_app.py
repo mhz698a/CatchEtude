@@ -16,6 +16,7 @@ import config
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
 from service_mgr import stop_parallel_services, wait_for_services_stopped
+from ui_utils_mgr import load_stylesheet
 
 class RestartWindow(QtWidgets.QWidget):
     def __init__(self, pid, script_path):
@@ -38,47 +39,7 @@ class RestartWindow(QtWidgets.QWidget):
         # Container Widget for styling
         self.container = QtWidgets.QWidget(self)
         self.container.setObjectName("container")
-        self.container.setStyleSheet("""
-            QWidget#container {
-                background-color: #0d1b2a;
-                border: 4px solid #1d3557;
-                border-radius: 12px;
-            }
-            QLabel {
-                color: #e0e1dd;
-                font-size: 13px;
-                font-weight: bold;
-            }
-            QProgressBar {
-                border: 1px solid #457b9d;
-                border-radius: 4px;
-                background-color: #1b263b;
-                text-align: center;
-                color: white;
-                height: 18px;
-            }
-            QProgressBar::chunk {
-                background-color: #457b9d;
-                width: 15px;
-            }
-            QPushButton {
-                background-color: #1d3557;
-                color: #f1faee;
-                border: 1px solid #457b9d;
-                border-radius: 4px;
-                padding: 4px 15px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #457b9d;
-            }
-            QPlainTextEdit {
-                background-color: #1b263b;
-                color: #ff6b6b;
-                border: 1px solid #e63946;
-                border-radius: 4px;
-            }
-        """)
+        self.container.setStyleSheet(load_stylesheet("restart_app.css"))
 
         main_layout = QtWidgets.QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -155,7 +116,7 @@ class RestartWindow(QtWidgets.QWidget):
 
     def _on_error(self, err_msg):
         self.status_label.setText("Error al reiniciar CatchEtude")
-        self.status_label.setStyleSheet("color: #ff6b6b; font-weight: bold;")
+        self.status_label.setStyleSheet(load_stylesheet("restart_app_status.css"))
         self.progress_bar.setVisible(False)
         self.error_area.setPlainText(err_msg)
         self.error_area.setVisible(True)
