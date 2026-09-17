@@ -1,0 +1,20 @@
+#TemporaryHideBanner {
+    background: #fff9c4;
+    border: 2px solid #fbc02d;
+    /*border-radius: 8px;*/
+}
+QLabel {
+    color: #3b2f00;
+    font-weight: 600;
+}
+QPushButton {
+    background: #ffeb3b;
+    border: 1px solid #c9a400;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-weight: 700;
+    color: #000;
+}
+QPushButton:hover {
+    background: #ffe066;
+}

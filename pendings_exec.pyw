@@ -12,6 +12,7 @@ import sys
 import json
 from datetime import datetime
 from PyQt6.QtCore import QCoreApplication
+from ui_utils_mgr import load_stylesheet
 from PyQt6.QtNetwork import QLocalSocket
 
 TXT_PATH = (Path(__file__).resolve().parent / "pendings_hands.txt").as_posix()
@@ -116,30 +117,7 @@ def show_year_notice(year: str):
     dialog = QDialog()
     dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
 
-    dialog.setStyleSheet("""
-        QDialog {
-            border: 6px solid #d9534f;
-            background-color: #1e1e2e;
-            border-radius: 8px;
-        }
-        QLabel {
-            color: #ffffff;
-            font-size: 16px;
-            font-weight: bold;
-        }
-        QPushButton {
-            background-color: #d9534f;
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
-            padding: 8px 24px;
-            border: none;
-            border-radius: 4px;
-        }
-        QPushButton:hover {
-            background-color: #c9302c;
-        }
-    """)
+    dialog.setStyleSheet(load_stylesheet("pendings_exec.css"))
 
     layout = QVBoxLayout(dialog)
     layout.setContentsMargins(30, 30, 30, 30)

@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
 
 from localization import LocalizationManager
-from ui_utils_mgr import apply_secure_blur
+from ui_utils_mgr import apply_secure_blur, load_stylesheet
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
 
 
@@ -24,7 +24,7 @@ class DragLabel(QLabel):
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.setToolTip("Arrastrar archivo / Drag file")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("border: 1px dashed #ccc; border-radius: 4px;")
+        self.setStyleSheet(load_stylesheet("drag_label.css"))
         
         # Controladores de tiempo y estado
         self.mouse_pressed = False

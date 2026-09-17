@@ -14,7 +14,7 @@ from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
 from PyQt6.QtGui import QDrag, QPixmap
 import config
 from localization import LocalizationManager
-from ui_utils_mgr import apply_secure_blur
+from ui_utils_mgr import apply_secure_blur, load_stylesheet
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
 from drag_label_widget import DragLabel
 
@@ -111,7 +111,7 @@ class ActionPanel(QWidget):
         
         self.lbl_file_info = QLabel("")
         self.lbl_file_info.setWordWrap(True)
-        self.lbl_file_info.setStyleSheet("font-style: italic; font-size: 11px; margin-left: 5px;")
+        self.lbl_file_info.setStyleSheet(load_stylesheet("action_panel_file_info.css"))
         self.lbl_file_info.setMinimumHeight(80)
         layout.addWidget(self.lbl_file_info)
         

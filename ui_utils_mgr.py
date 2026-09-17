@@ -6,6 +6,18 @@ Componentes de utilidad de interfaz para CatchEtude.
 import os
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
+
+APP_DIR = Path(__file__).parent.resolve()
+
+def load_stylesheet(name: str) -> str:
+    """
+    Loads a stylesheet from the css/ directory.
+    Carga una hoja de estilo desde el directorio css/.
+    """
+    css_file = APP_DIR / "css" / name
+    if css_file.exists():
+        return css_file.read_text(encoding="utf-8")
+    return ""
 from PyQt6.QtWidgets import QFileIconProvider
 from PyQt6.QtCore import Qt
 import config

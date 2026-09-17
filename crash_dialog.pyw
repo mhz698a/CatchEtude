@@ -12,6 +12,7 @@ from pathlib import Path
 from PyQt6 import QtWidgets, QtCore, QtGui
 import config
 from localization import LocalizationManager
+from ui_utils_mgr import load_stylesheet
 
 class CrashDialog(QtWidgets.QDialog):
     def __init__(self, traceback_text):
@@ -35,7 +36,7 @@ class CrashDialog(QtWidgets.QDialog):
         header_layout.addWidget(icon_label)
         
         msg_label = QtWidgets.QLabel(self.loc.get("crash_msg"))
-        msg_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        msg_label.setStyleSheet(load_stylesheet("crash_dialog_msg.css"))
         msg_label.setWordWrap(True)
         header_layout.addWidget(msg_label, 1)
         layout.addLayout(header_layout)
@@ -45,7 +46,7 @@ class CrashDialog(QtWidgets.QDialog):
         self.txt_traceback = QtWidgets.QPlainTextEdit()
         self.txt_traceback.setReadOnly(True)
         self.txt_traceback.setPlainText(self.traceback_text)
-        self.txt_traceback.setStyleSheet("font-family: Consolas, monospace; font-size: 10pt;")
+        self.txt_traceback.setStyleSheet(load_stylesheet("crash_dialog_traceback.css"))
         layout.addWidget(self.txt_traceback)
         
         # Buttons

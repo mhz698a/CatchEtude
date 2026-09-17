@@ -24,6 +24,9 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from ui_utils_mgr import load_stylesheet
+
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -89,7 +92,7 @@ class FastImageViewerWindow(QMainWindow):
         # Bottom Bar
         bottom_bar = QWidget(self)
         bottom_bar.setFixedHeight(36)
-        bottom_bar.setStyleSheet("background-color: #2b2b2b; color: #ffffff;")
+        bottom_bar.setStyleSheet(load_stylesheet("fast_image_viewer_bottom_bar.css"))
 
         bottom_layout = QHBoxLayout(bottom_bar)
         bottom_layout.setContentsMargins(10, 0, 10, 0)

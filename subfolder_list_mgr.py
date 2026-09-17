@@ -5,6 +5,7 @@ Módulo para gestionar una lista de botones para el movimiento rápido de archiv
 
 from PyQt6 import QtWidgets, QtCore
 from PyQt6.QtWidgets import QScroller, QScrollerProperties
+from ui_utils_mgr import load_stylesheet
 
 class SubfolderButton(QtWidgets.QPushButton):
     """
@@ -24,25 +25,25 @@ class SubfolderButton(QtWidgets.QPushButton):
         self._layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignVCenter)
         
         self.lbl_name = QtWidgets.QLabel(name)
-        self.lbl_name.setStyleSheet("font-weight: normal; background: transparent; border: none;")
+        self.lbl_name.setStyleSheet(load_stylesheet("subfolder_list_lbl_name.css"))
         self.lbl_name.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._layout.addWidget(self.lbl_name)
         
         self.lbl_extra1 = QtWidgets.QLabel("")
-        self.lbl_extra1.setStyleSheet("font-style: italic; background: transparent; border: none;")
+        self.lbl_extra1.setStyleSheet(load_stylesheet("subfolder_list_lbl_extra1.css"))
         self.lbl_extra1.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.lbl_extra1.hide()
         self._layout.addWidget(self.lbl_extra1)
         
         self.lbl_extra2 = QtWidgets.QLabel("")
-        self.lbl_extra2.setStyleSheet("color: gray; background: transparent; border: none;")
+        self.lbl_extra2.setStyleSheet(load_stylesheet("subfolder_list_lbl_extra2.css"))
         self.lbl_extra2.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.lbl_extra2.hide()
         self._layout.addWidget(self.lbl_extra2)
         
         self._stable_height = 30
         self.setFixedHeight(30)
-        self.setStyleSheet("QPushButton { text-align: left; }")
+        self.setStyleSheet(load_stylesheet("subfolder_list.css"))
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.RightButton:
@@ -156,7 +157,7 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
 
         btn = QtWidgets.QPushButton(text)
         btn.setFixedHeight(34)
-        btn.setStyleSheet("QPushButton { text-align: left; padding: 8px; }")
+        btn.setStyleSheet(load_stylesheet("subfolder_list_item.css"))
         btn.clicked.connect(lambda checked=False: self.emptyCreateClicked.emit())
 
         self.layout.insertWidget(self.layout.count() - 1, btn)

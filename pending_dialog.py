@@ -3,6 +3,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QPushButton, QVBoxLayout, QLabel
 )
+from ui_utils_mgr import load_stylesheet
 
 class PendingDialog(QtWidgets.QDialog):
     """
@@ -17,28 +18,7 @@ class PendingDialog(QtWidgets.QDialog):
 
     def _build_ui(self):
         self.setObjectName("PendingDialog")
-        self.setStyleSheet("""
-            #PendingDialog {
-                border: 5px solid #28a745;
-                background-color: palette(window);
-            }
-            QLabel {
-                font-weight: bold;
-                font-size: 14px;
-                color: palette(windowtext);
-            }
-            QPushButton {
-                padding: 8px 16px;
-                background-color: #28a745;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-        """)
+        self.setStyleSheet(load_stylesheet("pending_dialog.css"))
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)

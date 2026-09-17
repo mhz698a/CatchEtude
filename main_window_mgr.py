@@ -33,6 +33,7 @@ from utils import (
     flatten_single_folder
 )
 from state_manager import StateManager, State, scan_existing_downloads
+from ui_utils_mgr import load_stylesheet
 from fallback_utils import compute_destination
 from file_worker_mgr import FileMoveWorker
 from app_signals_mgr import AppSignals
@@ -231,12 +232,7 @@ class MainWindow(QWidget):
         self.status_bar.setSizeGripEnabled(False)
         main_vbox.addWidget(self.status_bar)
         self.status_bar.showMessage("Listo", 2000) 
-        self.status_bar.setStyleSheet("""
-            QStatusBar {
-                border-top: 1px solid #444;
-                padding-left: 6px;
-            }
-        """)
+        self.status_bar.setStyleSheet(load_stylesheet("main_window.css"))
         
         self.retranslate_ui()
         self._update_undo_button_tooltip()

@@ -7,6 +7,7 @@ from pathlib import Path
 from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QListWidget, QListWidgetItem
 from PyQt6.QtCore import Qt
+from ui_utils_mgr import load_stylesheet
 
 class MovingItemWidget(QWidget):
     """
@@ -20,24 +21,14 @@ class MovingItemWidget(QWidget):
         layout.setSpacing(4)
 
         self.lbl_name = QLabel(filename)
-        self.lbl_name.setStyleSheet("font-weight: bold; font-size: 11px;")
+        self.lbl_name.setStyleSheet(load_stylesheet("queue_movings_name.css"))
         self.lbl_name.setWordWrap(True)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         self.progress_bar.setFixedHeight(12)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid #777;
-                border-radius: 2px;
-                text-align: center;
-                font-size: 9px;
-            }
-            QProgressBar::chunk {
-                background-color: #26a69a;
-            }
-        """)
+        self.progress_bar.setStyleSheet(load_stylesheet("queue_movings_progress.css"))
 
         layout.addWidget(self.lbl_name)
         layout.addWidget(self.progress_bar)

@@ -22,6 +22,7 @@ from years_selector import YearsTableWidget
 from episode_cache_mgr import EpisodeCacheManager
 from overworld_ipc_mgr import OverworldServiceClient
 from subfolder_queue_addmore import populate_add_to_queue_menu
+from ui_utils_mgr import load_stylesheet
 
 class SelectionPanel(QWidget):
     """
@@ -101,29 +102,7 @@ class SelectionPanel(QWidget):
         self.list_type.setFixedHeight(45)
         self._fill_type_list()
         self.list_type.currentRowChanged.connect(self._on_type_changed)
-        self.list_type.setStyleSheet("""
-            QListWidget {
-                border: none;
-                background: transparent;
-                outline: none;
-                margin-left: 5px;
-            }
-            QListWidget::item {
-                border-radius: 8px;
-                padding: 4px;
-            }
-            QListWidget::item:hover {
-                background-color: rgba(0, 120, 215, 0.1);
-            }
-            QListWidget::item:selected {
-                background-color: rgba(0, 120, 215, 0.25);
-                border: 1px solid #0078d7;
-            }
-            QListWidget::item:selected:focus {
-                background-color: rgba(0, 120, 215, 0.25);
-                border: 1px solid #0078d7;
-            }
-        """)
+        self.list_type.setStyleSheet(load_stylesheet("selection_panel_type.css"))
         
         type_decition_bar.addWidget(self.list_type, 1)
         layout.addLayout(type_decition_bar)
@@ -143,20 +122,7 @@ class SelectionPanel(QWidget):
         self.list_year = YearsTableWidget(config.YEARS, self)
         self.list_year.setMaximumHeight(430)
         self.list_year.setMaximumWidth(100)
-        self.list_year.setStyleSheet("""
-            QTableWidget {
-                border: none;
-                background: transparent;
-            }
-            QTableWidget::item {
-                border-radius: 4px;
-                padding: 4px;
-            }
-            QTableWidget::item:selected {
-                background-color: #0078d7;
-                color: white;
-            }
-        """)
+        self.list_year.setStyleSheet(load_stylesheet("selection_panel_year.css"))
         self.list_year.yearChanged.connect(self._on_year_changed)
         self.list_year.setEnabled(False)
 
