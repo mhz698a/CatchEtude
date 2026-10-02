@@ -419,8 +419,15 @@ class ActionPanel(QWidget):
 
         buttons_def = plugin_mgr.get_ui_action_buttons()
         ext = self.filepath.suffix.lower()
+        is_directory = self.filepath.is_dir()
 
         for btn_def in buttons_def:
+            btn_target = btn_def.get("target", "file")
+            if is_directory and btn_target != "directory":
+                continue
+            if not is_directory and btn_target == "directory":
+                continue
+
             exts = btn_def.get("file_extensions")
             if exts and ext not in [e.lower() for e in exts]:
                 continue
