@@ -154,7 +154,7 @@ class TestQueueAndDivisionFeatures(unittest.TestCase):
 
             results = []
             worker.finished_signal.connect(lambda ok, msg: results.append((ok, msg)))
-            worker.run()
+            worker.do_work()
 
             self.assertEqual(len(results), 1)
             self.assertTrue(results[0][0])

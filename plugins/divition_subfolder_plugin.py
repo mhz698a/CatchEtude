@@ -27,18 +27,23 @@ from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import Qt
 
 
-class SplitFolderWorker(QtCore.QThread):
-    """Worker thread that executes the folder splitting in the background."""
+class SplitFolderWorker(QtCore.QObject):
+    """Worker object that executes the folder splitting in a background QThread."""
 
     progress_changed = QtCore.pyqtSignal(int, int)  # current, total
     finished_signal = QtCore.pyqtSignal(bool, str)  # success, message
+    error_signal = QtCore.pyqtSignal(str)
 
     def __init__(self, target_folder: Path, parts_count: int, parent=None):
         super().__init__(parent)
         self.target_folder = target_folder
         self.parts_count = parts_count
+        self._is_cancelled = False
 
-    def run(self):
+    def stop(self):
+        self._is_cancelled = True
+
+    def do_work(self):
         try:
             # Gather files only (not subdirectories)
             files = [f for f in sorted(self.target_folder.iterdir()) if f.is_file()]
@@ -60,6 +65,10 @@ class SplitFolderWorker(QtCore.QThread):
             # Move files equitably
             processed = 0
             for idx, file_path in enumerate(files):
+                if self._is_cancelled:
+                    self.finished_signal.emit(False, "Operación cancelada por el usuario.")
+                    return
+
                 dest_dir = subfolders[idx % self.parts_count]
                 dest_file = dest_dir / file_path.name
                 shutil.move(str(file_path), str(dest_file))
@@ -69,6 +78,7 @@ class SplitFolderWorker(QtCore.QThread):
 
             self.finished_signal.emit(True, f"Se dividieron {total_files} archivos en {self.parts_count} carpetas.")
         except Exception as e:
+            self.error_signal.emit(str(e))
             self.finished_signal.emit(False, f"Error dividiendo la carpeta: {e}")
 
 
@@ -182,14 +192,32 @@ def run_plugin(ctx):
         progress_dlg.setAutoClose(True)
         progress_dlg.show()
 
+        thread = QtCore.QThread()
         worker = SplitFolderWorker(target_path, parts_count)
+        worker.moveToThread(thread)
 
-        if not hasattr(run_plugin, "_active_workers"):
-            run_plugin._active_workers = []
-        run_plugin._active_workers.append(worker)
+        # Retain explicit references on plugin function to avoid Python GC
+        if not hasattr(run_plugin, "_active_tasks"):
+            run_plugin._active_tasks = []
+        task_ref = (thread, worker, progress_dlg)
+        run_plugin._active_tasks.append(task_ref)
+
+        def cleanup():
+            if task_ref in getattr(run_plugin, "_active_tasks", []):
+                run_plugin._active_tasks.remove(task_ref)
+
+        thread.started.connect(worker.do_work)
 
         def on_progress(current, total):
             progress_dlg.setValue(current)
+
+        def on_canceled():
+            worker.stop()
+
+        progress_dlg.canceled.connect(on_canceled)
+
+        def on_error(err_msg):
+            ctx.log("ERROR", f"Thread error during division: {err_msg}")
 
         def on_finished(success, message):
             progress_dlg.close()
@@ -199,12 +227,19 @@ def run_plugin(ctx):
             info_box.setText(message)
             info_box.setIcon(QtWidgets.QMessageBox.Icon.Information if success else QtWidgets.QMessageBox.Icon.Warning)
             info_box.exec()
-            if worker in getattr(run_plugin, "_active_workers", []):
-                run_plugin._active_workers.remove(worker)
+
+            thread.quit()
 
         worker.progress_changed.connect(on_progress)
+        worker.error_signal.connect(on_error)
         worker.finished_signal.connect(on_finished)
-        worker.start()
+
+        # Cleanup memory on thread exit
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(cleanup)
+
+        thread.start()
 
     ctx.on_command("divide_folder", on_divide_folder)
 
