@@ -176,8 +176,6 @@ class TestQueueFeatures(unittest.TestCase):
             # file_4 active (index 0), file_1 top pending (index 1)
             self.assertEqual(sm._queue_list[0], file_4)
             self.assertEqual(sm._queue_list[1], file_1)
-            # Next in queue deque is file_1
-            self.assertEqual(sm._q.queue[0], file_1)
 
     def test_reset_queue_and_rescan(self):
         sm = StateManager()

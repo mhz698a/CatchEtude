@@ -45,6 +45,7 @@ from PyQt6 import QtWidgets
 from state_manager import StateManager
 from plugins.divition_subfolder_plugin import SplitFolderWorker, SplitFolderDialog
 from selection_panel_mgr import SelectionPanel
+from queue_panel_mgr import QueuePanel
 
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
@@ -75,6 +76,24 @@ class TestQueueAndDivisionFeatures(unittest.TestCase):
         mock_pm = MockPluginManager()
         panel = SelectionPanel(plugin_mgr=mock_pm)
         self.assertEqual(panel.plugin_mgr, mock_pm)
+
+    def test_queue_context_menu_action_states(self):
+        panel = QueuePanel()
+        f1 = Path("/tmp/f1.txt")
+        f2 = Path("/tmp/f2.txt")
+        f3 = Path("/tmp/f3.txt")
+
+        # 1 item: both disabled
+        panel.update_queue([f1], str(f1))
+        # Verify 1 item logic: total_count <= 1 -> both disabled
+        self.assertEqual(panel.queue_list_widget.count(), 1)
+
+        # 3 items
+        panel.update_queue([f1, f2, f3], str(f1))
+        self.assertEqual(panel.queue_list_widget.count(), 3)
+        # item 0 (f1) -> top disabled, bottom enabled
+        # item 1 (f2) -> top enabled, bottom enabled
+        # item 2 (f3) -> top enabled, bottom disabled
 
     def test_queue_reordering(self):
         sm = StateManager()

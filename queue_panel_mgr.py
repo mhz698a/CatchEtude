@@ -112,12 +112,23 @@ class QueuePanel(QWidget):
             act_activate.setEnabled(False)
 
         act_send_top = menu.addAction(self.loc.get("menu_queue_send_to_top"))
-        if is_active:
-            act_send_top.setEnabled(False)
-
         act_send_bottom = menu.addAction(self.loc.get("menu_queue_send_to_bottom"))
-        if is_active:
+
+        selected_index = self.queue_list_widget.row(item)
+        total_count = self.queue_list_widget.count()
+
+        if total_count <= 1:
+            act_send_top.setEnabled(False)
             act_send_bottom.setEnabled(False)
+        elif selected_index == 0:
+            act_send_top.setEnabled(False)
+            act_send_bottom.setEnabled(True)
+        elif selected_index == total_count - 1:
+            act_send_top.setEnabled(True)
+            act_send_bottom.setEnabled(False)
+        else:
+            act_send_top.setEnabled(True)
+            act_send_bottom.setEnabled(True)
 
         chosen = menu.exec(self.queue_list_widget.mapToGlobal(pos))
         if not chosen or not state_mgr:
