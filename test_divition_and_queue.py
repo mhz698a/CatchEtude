@@ -15,6 +15,8 @@ if not hasattr(ctypes, 'windll'):
             return MockDLL()
     ctypes.windll = MockWinDLL()
     ctypes.WinDLL = lambda name: MockWinDLL()
+if not hasattr(ctypes, 'WINFUNCTYPE'):
+    ctypes.WINFUNCTYPE = ctypes.CFUNCTYPE
 
 # Dynamic mocking of Windows-specific modules for headless Linux environments
 try:
@@ -22,6 +24,9 @@ try:
 except ImportError:
     sys.modules['win32file'] = type('MockWin32File', (), {})
     sys.modules['win32con'] = type('MockWin32Con', (), {})
+    sys.modules['win32event'] = type('MockWin32Event', (), {})
+    sys.modules['win32api'] = type('MockWin32Api', (), {})
+    sys.modules['win32process'] = type('MockWin32Process', (), {})
     sys.modules['pywintypes'] = type('MockPyWinTypes', (), {
         'error': Exception
     })
@@ -39,11 +44,37 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 from PyQt6 import QtWidgets
 from state_manager import StateManager
 from plugins.divition_subfolder_plugin import SplitFolderWorker, SplitFolderDialog
+from selection_panel_mgr import SelectionPanel
 
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
 
 
+class MockPluginManager:
+    def __init__(self):
+        self.invoked = []
+
+    def get_ui_action_buttons(self):
+        return [
+            {
+                "id": "btn_divide_subfolder",
+                "label": "Dividir esta carpeta",
+                "command": "divide_folder",
+                "target": "directory",
+                "plugin_id": "catchetude.divition-subfolder",
+            }
+        ]
+
+    def invoke_command(self, plugin_id, command, args=None):
+        self.invoked.append((plugin_id, command, args))
+        return True
+
+
 class TestQueueAndDivisionFeatures(unittest.TestCase):
+
+    def test_selection_panel_dependency_injection(self):
+        mock_pm = MockPluginManager()
+        panel = SelectionPanel(plugin_mgr=mock_pm)
+        self.assertEqual(panel.plugin_mgr, mock_pm)
 
     def test_queue_reordering(self):
         sm = StateManager()

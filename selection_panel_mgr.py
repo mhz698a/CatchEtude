@@ -45,8 +45,9 @@ class SelectionPanel(QWidget):
     undo_clicked = QtCore.pyqtSignal()
     status_requested = QtCore.pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, plugin_mgr=None):
         super().__init__(parent)
+        self.plugin_mgr = plugin_mgr
         self.loc = LocalizationManager()
         self._app_icon = QIcon(config.ICON_PATH)
         
@@ -403,11 +404,9 @@ class SelectionPanel(QWidget):
         act_move_all = menu.addAction(self.loc.get("menu_move_all_in_folder"))
 
         # Dynamically add plugin UI actions targeted at directories
-        import sys
         plugin_actions = []
-        plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
-        if plugin_mgr:
-            buttons_def = plugin_mgr.get_ui_action_buttons()
+        if self.plugin_mgr:
+            buttons_def = self.plugin_mgr.get_ui_action_buttons()
             for btn_def in buttons_def:
                 if btn_def.get("target") == "directory":
                     label = btn_def.get("label", "Plugin Action")
@@ -454,12 +453,6 @@ class SelectionPanel(QWidget):
             self.move_all_in_folder_clicked.emit(name)
         elif action == act_rename:
             self._handle_rename_folder(target_folder)
-        else:
-            # Check if action corresponds to a dynamic plugin action
-            for act, plugin_id, cmd in plugin_actions:
-                if action == act and cmd and plugin_mgr:
-                    plugin_mgr.invoke_command(plugin_id, cmd, {"paths": [str(target_folder)]})
-                    break
         elif action == act_delete and act_delete:
             self._handle_delete_folder(target_folder)
         elif action == act_move_open_file:
@@ -474,6 +467,12 @@ class SelectionPanel(QWidget):
             self.move_and_enable_secure_clicked.emit(name)
         elif action == act_undo:
             self.undo_clicked.emit()
+        else:
+            # Check if action corresponds to a dynamic plugin action
+            for act, plugin_id, cmd in plugin_actions:
+                if action == act and cmd and self.plugin_mgr:
+                    self.plugin_mgr.invoke_command(plugin_id, cmd, {"paths": [str(target_folder)]})
+                    break
 
     def _is_folder_empty(self, path: Path) -> bool:
         try:

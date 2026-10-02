@@ -54,10 +54,11 @@ class MainWindow(QWidget):
     Main UI window for CatchEtude.
     Ventana principal de la interfaz de CatchEtude.
     """
-    def __init__(self, state_manager: StateManager, signals: AppSignals):
+    def __init__(self, state_manager: StateManager, signals: AppSignals, plugin_mgr=None):
         super().__init__()
         self.state_manager = state_manager
         self.signals = signals
+        self.plugin_mgr = plugin_mgr
         self.loc = LocalizationManager()
         
         self.background_move_mgr = BackgroundMoveManager(self.state_manager, self)
@@ -193,7 +194,7 @@ class MainWindow(QWidget):
         root = QHBoxLayout()
         
         # Selection Panel
-        self.selection_panel = SelectionPanel()
+        self.selection_panel = SelectionPanel(plugin_mgr=self.plugin_mgr)
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
         self.selection_panel.undo_clicked.connect(self._on_context_undo_clicked)
         self.selection_panel.move_and_open_file_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_file"))
