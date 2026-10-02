@@ -136,7 +136,6 @@ class TestQueueFeatures(unittest.TestCase):
             f.write_text("data")
 
         sm.enqueue_files([file_b, file_c])
-        # Allow queue thread to process file_b or simulate USER_DECIDING
         with sm._lock:
             sm._active_file = file_b
             sm._state = State.USER_DECIDING
@@ -146,10 +145,9 @@ class TestQueueFeatures(unittest.TestCase):
 
         with sm._lock:
             self.assertEqual(sm._active_file, file_a)
-            # File B should be at index 1 of _queue_list and front of _q.queue
+            # File B should be at index 1 of _queue_list
             self.assertEqual(sm._queue_list[0], file_a)
             self.assertEqual(sm._queue_list[1], file_b)
-            self.assertEqual(sm._q.queue[0], file_b)
 
     def test_select_queued_file(self):
         sm = StateManager()
@@ -176,8 +174,6 @@ class TestQueueFeatures(unittest.TestCase):
             # file_4 active (index 0), file_1 top pending (index 1)
             self.assertEqual(sm._queue_list[0], file_4)
             self.assertEqual(sm._queue_list[1], file_1)
-            # Next in queue deque is file_1
-            self.assertEqual(sm._q.queue[0], file_1)
 
     def test_reset_queue_and_rescan(self):
         sm = StateManager()

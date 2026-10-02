@@ -472,6 +472,73 @@ class StateManager:
             self.notifier.file_detected.emit(str(target))
         return True
 
+    def move_queued_file_to_top(self, target: Path) -> bool:
+        """
+        Moves a pending file to the top of the pending queue (right after the active file).
+        """
+        with self._lock:
+            if not target.exists() or target == self._active_file or target not in self._queue_list:
+                return False
+
+            self._queue_list.remove(target)
+            insert_idx = 1 if (self._active_file and self._active_file in self._queue_list) else 0
+            self._queue_list.insert(insert_idx, target)
+
+            with self._q.mutex:
+                if target in self._q.queue:
+                    self._q.queue.remove(target)
+                    self._q.queue.appendleft(target)
+
+            self._emit_queue_update()
+            return True
+
+    def move_queued_file_to_bottom(self, target: Path) -> bool:
+        """
+        Moves a file to the end of the queue.
+        If target is the currently active file and there are other items in the queue,
+        the next item becomes active and the target is moved to the bottom.
+        """
+        with self._lock:
+            if not target.exists() or target not in self._queue_list:
+                return False
+
+            if len(self._queue_list) <= 1:
+                return False
+
+            if target == self._active_file:
+                # Active file is index 0
+                next_file = self._queue_list[1]
+
+                self._queue_list.remove(target)
+                self._queue_list.append(target)
+
+                with self._q.mutex:
+                    if target in self._q.queue:
+                        self._q.queue.remove(target)
+                    self._q.queue.append(target)
+
+                    if next_file in self._q.queue:
+                        self._q.queue.remove(next_file)
+
+                self._active_file = next_file
+                self._emit_queue_update()
+
+                self._set_state(State.FILE_DETECTED)
+                if self.notifier:
+                    self.notifier.file_detected.emit(str(next_file))
+                return True
+            else:
+                self._queue_list.remove(target)
+                self._queue_list.append(target)
+
+                with self._q.mutex:
+                    if target in self._q.queue:
+                        self._q.queue.remove(target)
+                        self._q.queue.append(target)
+
+                self._emit_queue_update()
+                return True
+
     def maintenance_tick(self):
         """
         Tareas de mantenimiento que SOLO deben correr cuando el sistema está IDLE.

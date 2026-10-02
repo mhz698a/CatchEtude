@@ -47,6 +47,8 @@ class QueuePanel(QWidget):
         self.queue_list_widget = QListWidget()
         self.queue_list_widget.setItemDelegate(QueueDelegate(self))
         self.queue_list_widget.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.queue_list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.queue_list_widget.customContextMenuRequested.connect(self._on_queue_context_menu)
         self.queue_list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.queue_list_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.queue_list_widget, 1)
@@ -88,6 +90,56 @@ class QueuePanel(QWidget):
         is_active = item.data(Qt.ItemDataRole.UserRole + 1)
         if path_str and not is_active:
             self.file_double_clicked.emit(path_str)
+
+    def _on_queue_context_menu(self, pos: QtCore.QPoint):
+        item = self.queue_list_widget.itemAt(pos)
+        if not item:
+            return
+
+        path_str = item.data(Qt.ItemDataRole.UserRole)
+        is_active = item.data(Qt.ItemDataRole.UserRole + 1)
+        if not path_str:
+            return
+
+        p = Path(path_str)
+        window = self.window()
+        state_mgr = getattr(window, "state_manager", None)
+
+        menu = QtWidgets.QMenu(self)
+
+        act_activate = menu.addAction(self.loc.get("menu_queue_activate"))
+        if is_active:
+            act_activate.setEnabled(False)
+
+        act_send_top = menu.addAction(self.loc.get("menu_queue_send_to_top"))
+        act_send_bottom = menu.addAction(self.loc.get("menu_queue_send_to_bottom"))
+
+        selected_index = self.queue_list_widget.row(item)
+        total_count = self.queue_list_widget.count()
+
+        if total_count <= 1:
+            act_send_top.setEnabled(False)
+            act_send_bottom.setEnabled(False)
+        elif selected_index == 0:
+            act_send_top.setEnabled(False)
+            act_send_bottom.setEnabled(True)
+        elif selected_index == total_count - 1:
+            act_send_top.setEnabled(True)
+            act_send_bottom.setEnabled(False)
+        else:
+            act_send_top.setEnabled(True)
+            act_send_bottom.setEnabled(True)
+
+        chosen = menu.exec(self.queue_list_widget.mapToGlobal(pos))
+        if not chosen or not state_mgr:
+            return
+
+        if chosen == act_activate:
+            state_mgr.select_queued_file(p)
+        elif chosen == act_send_top:
+            state_mgr.move_queued_file_to_top(p)
+        elif chosen == act_send_bottom:
+            state_mgr.move_queued_file_to_bottom(p)
 
     def toggle_movings_minimized(self):
         self.set_movings_minimized(not self._movings_minimized)

@@ -118,7 +118,7 @@ def main():
         run_in_threadpool(scan_existing_downloads, state_manager)
 
         # Create Main Window
-        win = MainWindow(state_manager, signals)
+        win = MainWindow(state_manager, signals, plugin_mgr=plugin_mgr)
         def _refresh_plugin_actions(*_args):
             # Tray entries and contextual action buttons have independent UI
             # lifecycles; refresh both when a plugin becomes available.

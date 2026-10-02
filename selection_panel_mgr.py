@@ -45,8 +45,9 @@ class SelectionPanel(QWidget):
     undo_clicked = QtCore.pyqtSignal()
     status_requested = QtCore.pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, plugin_mgr=None):
         super().__init__(parent)
+        self.plugin_mgr = plugin_mgr
         self.loc = LocalizationManager()
         self._app_icon = QIcon(config.ICON_PATH)
         
@@ -401,6 +402,17 @@ class SelectionPanel(QWidget):
         act_open = menu.addAction(self.loc.get("menu_open_folder"))
         menu.addSeparator()
         act_move_all = menu.addAction(self.loc.get("menu_move_all_in_folder"))
+
+        # Dynamically add plugin UI actions targeted at directories
+        plugin_actions = []
+        if self.plugin_mgr:
+            buttons_def = self.plugin_mgr.get_ui_action_buttons()
+            for btn_def in buttons_def:
+                if btn_def.get("target") == "directory":
+                    label = btn_def.get("label", "Plugin Action")
+                    act = menu.addAction(label)
+                    plugin_actions.append((act, btn_def["plugin_id"], btn_def.get("command")))
+
         act_create = menu.addAction(self.loc.get("menu_create_folder"))
         act_rename = menu.addAction(self.loc.get("menu_rename_folder"))
 
@@ -455,6 +467,12 @@ class SelectionPanel(QWidget):
             self.move_and_enable_secure_clicked.emit(name)
         elif action == act_undo:
             self.undo_clicked.emit()
+        else:
+            # Check if action corresponds to a dynamic plugin action
+            for act, plugin_id, cmd in plugin_actions:
+                if action == act and cmd and self.plugin_mgr:
+                    self.plugin_mgr.invoke_command(plugin_id, cmd, {"paths": [str(target_folder)]})
+                    break
 
     def _is_folder_empty(self, path: Path) -> bool:
         try:
