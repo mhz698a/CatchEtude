@@ -136,10 +136,13 @@ class TestQueueFeatures(unittest.TestCase):
             f.write_text("data")
 
         sm.enqueue_files([file_b, file_c])
-        # Allow queue thread to process file_b or simulate USER_DECIDING
         with sm._lock:
             sm._active_file = file_b
             sm._state = State.USER_DECIDING
+            # Ensure deque has file_c
+            with sm._q.mutex:
+                sm._q.queue.clear()
+                sm._q.queue.append(file_c)
 
         # Register undone file A
         sm.register_undone_file(file_a)

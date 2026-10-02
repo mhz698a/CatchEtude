@@ -401,6 +401,9 @@ class SelectionPanel(QWidget):
         act_open = menu.addAction(self.loc.get("menu_open_folder"))
         menu.addSeparator()
         act_move_all = menu.addAction(self.loc.get("menu_move_all_in_folder"))
+        act_divide = menu.addAction(
+            "Dividir esta carpeta" if self.loc.current_lang() == "es" else "Divide this folder"
+        )
         act_create = menu.addAction(self.loc.get("menu_create_folder"))
         act_rename = menu.addAction(self.loc.get("menu_rename_folder"))
 
@@ -439,6 +442,8 @@ class SelectionPanel(QWidget):
             self._handle_create_folder(base)
         elif action == act_move_all:
             self.move_all_in_folder_clicked.emit(name)
+        elif action == act_divide:
+            self._handle_divide_folder(target_folder)
         elif action == act_rename:
             self._handle_rename_folder(target_folder)
         elif action == act_delete and act_delete:
@@ -475,6 +480,22 @@ class SelectionPanel(QWidget):
         if hasattr(self, "list_sub"):
             self.list_sub.update_button(name, line2, line3)
         
+    def _handle_divide_folder(self, folder_path: Path):
+        import sys
+        plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
+        if plugin_mgr:
+            plugin_mgr.invoke_command(
+                "catchetude.divition-subfolder",
+                "divide_folder",
+                {"paths": [str(folder_path)]}
+            )
+            # Schedule periodic UI refreshes to display new subfolders upon completion
+            QtCore.QTimer.singleShot(1000, lambda: self.refresh_classification_ui(force=True))
+            QtCore.QTimer.singleShot(3000, lambda: self.refresh_classification_ui(force=True))
+            QtCore.QTimer.singleShot(5000, lambda: (self.refresh_classification_ui(force=True), self.folder_structure_changed.emit()))
+        else:
+            logging.warning("Plugin manager not found when calling divide_folder")
+
     def _handle_create_folder(self, base_path: Path):
         name, ok = QtWidgets.QInputDialog.getText(
             self, self.loc.get("dlg_create_title"), self.loc.get("dlg_create_label")

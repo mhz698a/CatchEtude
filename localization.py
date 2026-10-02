@@ -135,6 +135,9 @@ STRINGS = {
         "msg_trust_confirm": "ADVERTENCIA: Vas a habilitar un plugin de terceros.\n\nEl archivo '{file}' se ejecutará como un proceso independiente con tus mismos permisos de usuario en Windows y podrá acceder a tus archivos.\n\n¿Confías en la fuente de este plugin y deseas habilitarlo?",
         "msg_restart_required_title": "Reinicio requerido",
         "msg_restart_required": "El archivo del plugin '{file}' ha sido modificado en disco. Debes reiniciar el plugin explícitamente para cargar el nuevo manifiesto.",
+        "menu_queue_activate": "Activar / Activate",
+        "menu_queue_send_to_top": "Enviar al principio / Send to Top",
+        "menu_queue_send_to_bottom": "Enviar al final / Send to Bottom",
     },
     "en": {
         "btn_keep": "Keep",
@@ -259,7 +262,10 @@ STRINGS = {
         "msg_trust_title": "Security and Trust Confirmation",
         "msg_trust_confirm": "WARNING: You are about to enable a third-party plugin.\n\nThe file '{file}' will run as a child process with your Windows user permissions and will be able to access your files.\n\nDo you trust the source of this plugin and wish to enable it?",
         "msg_restart_required_title": "Restart Required",
-        "msg_restart_required": "The plugin file '{file}' has been modified on disk. You must explicitly restart the plugin to load the updated manifest."
+        "msg_restart_required": "The plugin file '{file}' has been modified on disk. You must explicitly restart the plugin to load the updated manifest.",
+        "menu_queue_activate": "Activar / Activate",
+        "menu_queue_send_to_top": "Enviar al principio / Send to Top",
+        "menu_queue_send_to_bottom": "Enviar al final / Send to Bottom",
     }
 }
 
