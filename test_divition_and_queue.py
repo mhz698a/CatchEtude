@@ -119,10 +119,16 @@ class TestQueueAndDivisionFeatures(unittest.TestCase):
             self.assertTrue(res)
             self.assertEqual(sm._queue_list, [f1, f4, f2, f3])
 
-            # Send f4 to bottom
+            # Send f4 to bottom (f4 is not active)
             res = sm.move_queued_file_to_bottom(f4)
             self.assertTrue(res)
             self.assertEqual(sm._queue_list, [f1, f2, f3, f4])
+
+            # Send active file f1 to bottom -> f2 becomes active, f1 moves to end
+            res = sm.move_queued_file_to_bottom(f1)
+            self.assertTrue(res)
+            self.assertEqual(sm._active_file, f2)
+            self.assertEqual(sm._queue_list, [f2, f3, f4, f1])
 
     def test_split_folder_dialog_calc(self):
         # < 100 files -> min 2, max 4

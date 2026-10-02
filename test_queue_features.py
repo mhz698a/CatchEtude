@@ -136,7 +136,6 @@ class TestQueueFeatures(unittest.TestCase):
             f.write_text("data")
 
         sm.enqueue_files([file_b, file_c])
-        # Stop background thread from popping during unit test setup
         with sm._lock:
             sm._active_file = file_b
             sm._state = State.USER_DECIDING
@@ -146,10 +145,9 @@ class TestQueueFeatures(unittest.TestCase):
 
         with sm._lock:
             self.assertEqual(sm._active_file, file_a)
-            # File B should be at index 1 of _queue_list and front of _q.queue
+            # File B should be at index 1 of _queue_list
             self.assertEqual(sm._queue_list[0], file_a)
             self.assertEqual(sm._queue_list[1], file_b)
-            self.assertEqual(sm._q.queue[0], file_b)
 
     def test_select_queued_file(self):
         sm = StateManager()

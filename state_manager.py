@@ -494,22 +494,50 @@ class StateManager:
 
     def move_queued_file_to_bottom(self, target: Path) -> bool:
         """
-        Moves a pending file to the end of the queue.
+        Moves a file to the end of the queue.
+        If target is the currently active file and there are other items in the queue,
+        the next item becomes active and the target is moved to the bottom.
         """
         with self._lock:
-            if not target.exists() or target == self._active_file or target not in self._queue_list:
+            if not target.exists() or target not in self._queue_list:
                 return False
 
-            self._queue_list.remove(target)
-            self._queue_list.append(target)
+            if len(self._queue_list) <= 1:
+                return False
 
-            with self._q.mutex:
-                if target in self._q.queue:
-                    self._q.queue.remove(target)
+            if target == self._active_file:
+                # Active file is index 0
+                next_file = self._queue_list[1]
+
+                self._queue_list.remove(target)
+                self._queue_list.append(target)
+
+                with self._q.mutex:
+                    if target in self._q.queue:
+                        self._q.queue.remove(target)
                     self._q.queue.append(target)
 
-            self._emit_queue_update()
-            return True
+                    if next_file in self._q.queue:
+                        self._q.queue.remove(next_file)
+
+                self._active_file = next_file
+                self._emit_queue_update()
+
+                self._set_state(State.FILE_DETECTED)
+                if self.notifier:
+                    self.notifier.file_detected.emit(str(next_file))
+                return True
+            else:
+                self._queue_list.remove(target)
+                self._queue_list.append(target)
+
+                with self._q.mutex:
+                    if target in self._q.queue:
+                        self._q.queue.remove(target)
+                        self._q.queue.append(target)
+
+                self._emit_queue_update()
+                return True
 
     def maintenance_tick(self):
         """
