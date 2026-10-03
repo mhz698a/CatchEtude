@@ -423,6 +423,8 @@ class ActionPanel(QWidget):
 
         for btn_def in buttons_def:
             btn_target = btn_def.get("target", "file")
+            if btn_target == "subfolder":
+                continue
             if is_directory and btn_target != "directory":
                 continue
             if not is_directory and btn_target == "directory":

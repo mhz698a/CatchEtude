@@ -11,7 +11,7 @@
 # id = "btn_divide_subfolder"
 # label = "Dividir esta carpeta"
 # command = "divide_folder"
-# target = "directory"
+# target = "subfolder"
 # /// end catch-etude-plugin
 
 """
