@@ -403,12 +403,12 @@ class SelectionPanel(QWidget):
         menu.addSeparator()
         act_move_all = menu.addAction(self.loc.get("menu_move_all_in_folder"))
 
-        # Dynamically add plugin UI actions targeted at directories
+        # Dynamically add plugin UI actions targeted at directories or subfolders
         plugin_actions = []
         if self.plugin_mgr:
             buttons_def = self.plugin_mgr.get_ui_action_buttons()
             for btn_def in buttons_def:
-                if btn_def.get("target") == "directory":
+                if btn_def.get("target") in ("directory", "subfolder"):
                     label = btn_def.get("label", "Plugin Action")
                     act = menu.addAction(label)
                     plugin_actions.append((act, btn_def["plugin_id"], btn_def.get("command")))

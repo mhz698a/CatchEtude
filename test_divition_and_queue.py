@@ -60,7 +60,7 @@ class MockPluginManager:
                 "id": "btn_divide_subfolder",
                 "label": "Dividir esta carpeta",
                 "command": "divide_folder",
-                "target": "directory",
+                "target": "subfolder",
                 "plugin_id": "catchetude.divition-subfolder",
             }
         ]
@@ -76,6 +76,22 @@ class TestQueueAndDivisionFeatures(unittest.TestCase):
         mock_pm = MockPluginManager()
         panel = SelectionPanel(plugin_mgr=mock_pm)
         self.assertEqual(panel.plugin_mgr, mock_pm)
+
+    def test_action_panel_ignores_subfolder_target_actions(self):
+        from action_panel_mgr import ActionPanel
+        import sys
+
+        mock_pm = MockPluginManager()
+        sys.modules["__main__"].plugin_mgr = mock_pm
+
+        action_panel = ActionPanel()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folder_path = Path(tmpdir) / "TestDirectory"
+            folder_path.mkdir()
+
+            action_panel.set_file(folder_path, hide_secure=False)
+            # ActionPanel dynamic layout should NOT contain "btn_divide_subfolder" button because target is "subfolder"
+            self.assertEqual(action_panel.dynamic_btn_layout.count(), 0)
 
     def test_queue_context_menu_action_states(self):
         panel = QueuePanel()
