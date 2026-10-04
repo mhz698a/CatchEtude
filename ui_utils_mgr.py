@@ -1,0 +1,144 @@
+"""
+UI utility components for CatchEtude.
+Componentes de utilidad de interfaz para CatchEtude.
+"""
+
+import os
+from pathlib import Path
+from PyQt6 import QtCore, QtWidgets, QtGui
+
+APP_DIR = Path(__file__).parent.resolve()
+
+def load_stylesheet(name: str) -> str:
+    """
+    Loads a stylesheet from the css/ directory.
+    Carga una hoja de estilo desde el directorio css/.
+    """
+    css_file = APP_DIR / "css" / name
+    if css_file.exists():
+        return css_file.read_text(encoding="utf-8")
+    return ""
+
+from PyQt6.QtWidgets import QFileIconProvider
+from PyQt6.QtCore import Qt
+import config
+from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
+
+def apply_secure_blur(image: QtGui.QImage) -> QtGui.QImage:
+    """
+    Applies a secure blur to the top 85% of an image.
+    Aplica un desenfoque de seguridad al 85% superior de una imagen.
+    """
+    if image.isNull(): return image
+    blur_radius = config.BLUR_LEVEL
+    small = image.scaled(image.width() // blur_radius, image.height() // blur_radius, 
+                         Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    blurred = small.scaled(image.width(), image.height(), 
+                           Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    result = QtGui.QImage(image.size(), QtGui.QImage.Format.Format_ARGB32)
+    result.fill(Qt.GlobalColor.transparent)
+    painter = QtGui.QPainter(result)
+    reveal_height = int(image.height() * 0.15)
+    blur_height = image.height() - reveal_height
+    painter.drawImage(QtCore.QRect(0, 0, image.width(), blur_height), blurred, QtCore.QRect(0, 0, image.width(), blur_height))
+    painter.drawImage(QtCore.QRect(0, blur_height, image.width(), reveal_height), image, QtCore.QRect(0, blur_height, image.width(), reveal_height))
+    painter.end()
+    return result
+
+class QueueDelegate(QtWidgets.QStyledItemDelegate):
+    """Delegate for rendering the download queue with thumbnails/icons."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._thumb_cache = {}
+        self._hide_secure = False
+
+    def set_hide_secure(self, enabled: bool):
+        if self._hide_secure != enabled:
+            self._hide_secure = enabled
+            self._thumb_cache.clear()
+
+    def paint(self, painter, option, index):
+        try:
+            painter.save()
+            
+            path_str = index.data(Qt.ItemDataRole.UserRole)
+            if not path_str:
+                painter.restore()
+                return
+
+            is_active = index.data(Qt.ItemDataRole.UserRole + 1)
+            p = Path(path_str)
+
+            rect = option.rect
+
+            if is_active:
+                # Highlight active file
+                painter.fillRect(rect, QtGui.QColor("#e1f5fe"))
+                painter.setPen(QtGui.QColor("#01579b"))
+            elif option.state & QtWidgets.QStyle.StateFlag.State_Selected:
+                painter.fillRect(rect, option.palette.highlight())
+                painter.setPen(option.palette.highlightedText().color())
+            else:
+                painter.setPen(option.palette.text().color())
+
+            # Draw icon/thumbnail
+            icon_rect = QtCore.QRect(rect.left() + 5, rect.top() + 5, 40, 40)
+
+            if path_str not in self._thumb_cache:
+                try:
+                    ext = p.suffix.lower()
+                    if not p.exists() or not os.access(p, os.R_OK):
+                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+                    elif should_use_shell_thumbnail(ext):
+                        shell_pixmap = get_shell_thumbnail_pixmap(path_str, 40)
+                        if shell_pixmap and not shell_pixmap.isNull():
+                            if self._hide_secure:
+                                img = apply_secure_blur(shell_pixmap.toImage())
+                                shell_pixmap = QtGui.QPixmap.fromImage(img)
+                            self._thumb_cache[path_str] = shell_pixmap
+                        else:
+                            self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+
+                    elif ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
+                        reader = QtGui.QImageReader(path_str)
+                        reader.setAutoTransform(True)
+                        img_size = reader.size()
+                        if img_size.isValid():
+                            reader.setScaledSize(img_size.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio))
+                        img = reader.read()
+                        if not img.isNull():
+                            if self._hide_secure:
+                                img = apply_secure_blur(img)
+                            self._thumb_cache[path_str] = QtGui.QPixmap.fromImage(img)
+                        else:
+                            self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+                    else:
+                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+                except Exception:
+                    try:
+                        self._thumb_cache[path_str] = QFileIconProvider().icon(QtCore.QFileInfo(path_str))
+                    except Exception:
+                        self._thumb_cache[path_str] = None
+
+            obj = self._thumb_cache.get(path_str)
+            if isinstance(obj, QtGui.QPixmap):
+                # Center pixmap in icon_rect
+                pix_rect = obj.rect()
+                pix_rect.moveCenter(icon_rect.center())
+                painter.drawPixmap(pix_rect.topLeft(), obj)
+            elif obj is not None:
+                obj.paint(painter, icon_rect)
+
+            # Draw text
+            text_rect = rect.adjusted(55, 0, -5, 0)
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, p.name)
+
+            painter.restore()
+        except Exception:
+            try:
+                painter.restore()
+            except Exception:
+                pass
+
+    def sizeHint(self, option, index):
+        return QtCore.QSize(200, 50)

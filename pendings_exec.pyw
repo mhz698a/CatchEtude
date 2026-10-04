@@ -1,0 +1,316 @@
+# pendings_exec.pyw
+"""
+Envía 1 carpeta por ejecución a CatchEtude desde un TXT.
+- Usa siempre la primera línea válida
+- Si la carpeta está vacía, la elimina del TXT
+- Si se envía correctamente, también se elimina
+- este modulo esta dedicado a enviar carpetas pendientes a catchetude
+"""
+import os
+from pathlib import Path
+import sys
+import json
+from datetime import datetime
+from PyQt6.QtCore import QCoreApplication
+from ui_utils_mgr import load_stylesheet
+from PyQt6.QtNetwork import QLocalSocket
+
+TXT_PATH = (Path(__file__).resolve().parent / "pendings_hands.txt").as_posix()
+SERVER_NAME = "CatchEtudeCommandServer"
+
+# ⚠️ ADVERTENCIA DE ACTIVAR ESTO --------------------------------------------------
+USE_DECK_MODE = True
+# Si usted activa esto y es viernes, sabado y domingo o lunes
+# Debera tener cuidado con el contenido que CatchEtude
+# No debe desactivar bajo ninguna circunstancia sin el hide secure
+# ----------------------------------------------------------------------------------
+
+DECK_DIR = Path(__file__).resolve().parent / "deck"
+ALARM_MP3 = Path(__file__).resolve().parent / "assets" / "alarm.mp3"
+MAX_FILES = 250
+
+def get_years_for_today():
+    """
+    Monday=0 ... Sunday=6
+    """
+    weekday = datetime.now().weekday()
+
+    mapping = {
+        0: ["2026", "2025", "2018", "2017"],  # lunes
+        1: ["2024"],                          # martes
+        2: ["2023"],                          # miércoles
+        3: ["2022"],                          # jueves
+        4: ["2021"],                          # viernes
+        5: ["2020"],                          # sábado
+        6: ["2019"],                          # domingo
+    }
+
+    return mapping[weekday]
+
+def is_dir_empty(path: str) -> bool:
+    try:
+        with os.scandir(path) as it:
+            return not any(it)
+    except FileNotFoundError:
+        return True
+
+def read_txt_lines(txt_path):
+    if not txt_path.exists():
+        return []
+
+    with open(txt_path, "r", encoding="utf-8") as f:
+        return [x.strip() for x in f if x.strip()]
+
+def find_first_valid_in_year(year):
+    txt = DECK_DIR / f"{year}.txt"
+    paths = []
+
+    for path in read_txt_lines(txt):
+        if not os.path.isdir(path):
+            continue
+        if is_dir_empty(path):
+            continue
+        paths.append(path)
+
+    if not paths:
+        return None
+
+    base_path = paths[0]
+    compact_to_70(base_path, paths[1:])
+
+    return base_path
+
+def get_pending_path():
+    years = get_years_for_today()
+
+    # Lógica especial del lunes
+    if datetime.now().weekday() == 0:
+
+        for year in ["2026", "2025"]:
+            path = find_first_valid_in_year(year)
+
+            if path:
+                return year, path
+
+        for year in ["2018", "2017"]:
+            path = find_first_valid_in_year(year)
+
+            if path:
+                return year, path
+
+        return None, None
+
+    # resto de días
+    year = years[0]
+    path = find_first_valid_in_year(year)
+
+    return year, path
+
+def show_year_notice(year: str):
+    from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QLabel, QPushButton
+    from PyQt6.QtCore import Qt
+
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+
+    dialog = QDialog()
+    dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+
+    dialog.setStyleSheet(load_stylesheet("pendings_exec.css"))
+
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(30, 30, 30, 30)
+    layout.setSpacing(20)
+
+    lbl = QLabel(f"Atención: Pendientes del año {year}")
+    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    layout.addWidget(lbl)
+
+    btn_ok = QPushButton("OK")
+    btn_ok.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn_ok.clicked.connect(dialog.accept)
+    layout.addWidget(btn_ok, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    dialog.setFixedSize(380, 180)
+
+    screen = app.primaryScreen().availableGeometry()
+    x = (screen.width() - dialog.width()) // 2
+    y = (screen.height() - dialog.height()) // 2
+    dialog.move(x, y)
+
+    dialog.exec()
+
+def list_files(path: str):
+    """
+    Retorna solo archivos (no carpetas)
+    """
+    try:
+        return [
+            os.path.join(path, x)
+            for x in os.listdir(path)
+            if os.path.isfile(os.path.join(path, x))
+        ]
+    except Exception:
+        return []
+
+
+def count_files(path: str) -> int:
+    return len(list_files(path))
+
+
+def move_files(src: str, dst: str, amount: int):
+    """
+    Mueve 'amount' archivos desde src hacia dst
+    """
+    import shutil
+
+    moved = 0
+
+    for file_path in list_files(src):
+
+        if moved >= amount:
+            break
+
+        filename = os.path.basename(file_path)
+        target = os.path.join(dst, filename)
+
+        # evitar colisiones
+        if os.path.exists(target):
+
+            stem = Path(filename).stem
+            suffix = Path(filename).suffix
+
+            i = 1
+
+            while True:
+                new_name = f"{stem}_{i}{suffix}"
+                target = os.path.join(dst, new_name)
+
+                if not os.path.exists(target):
+                    break
+
+                i += 1
+
+        shutil.move(file_path, target)
+        moved += 1
+
+    return moved
+
+def compact_to_70(base_path: str, donor_paths: list[str]):
+    current_count = count_files(base_path)
+
+    # ya cumple
+    if current_count >= MAX_FILES:
+        return base_path
+
+    needed = MAX_FILES - current_count
+
+    for donor in donor_paths:
+
+        if donor == base_path:
+            continue
+
+        donor_count = count_files(donor)
+
+        if donor_count <= 0:
+            continue
+
+        # mover solo lo necesario
+        to_move = min(needed, donor_count)
+
+        moved = move_files(donor, base_path, to_move)
+
+        current_count += moved
+        needed -= moved
+
+        print(
+            f"Movidos {moved} archivos "
+            f"desde {donor} hacia {base_path}"
+        )
+
+        # ya llegamos
+        if current_count >= MAX_FILES:
+            break
+
+    print(f"Total final en carpeta: {current_count}")
+
+    return base_path
+
+
+
+def send_command(path: str, hide_secure: bool = True) -> bool:
+    app = QCoreApplication.instance() or QCoreApplication(sys.argv)
+    socket = QLocalSocket()
+    socket.connectToServer(SERVER_NAME)
+
+    if not socket.waitForConnected(3000):
+        print(f"No se pudo conectar a {SERVER_NAME}: {socket.errorString()}")
+        return False
+
+    data = {
+        "path": path,
+        "hide_secure": hide_secure
+    }
+
+    socket.write(json.dumps(data).encode("utf-8"))
+    ok = socket.waitForBytesWritten(3000)
+    socket.disconnectFromServer()
+
+    if ok:
+        print(f"Enviado: {path}")
+    return ok
+
+
+def main():
+
+    if USE_DECK_MODE:
+
+        year, path = get_pending_path()
+
+        if not path:
+            print("No hay carpetas pendientes")
+            return
+
+        if year in {"2021", "2020", "2019", "2018", "2017"}:
+            show_year_notice(year)
+
+        send_command(path)
+
+    else:
+
+        if not os.path.isfile(TXT_PATH):
+            print("TXT no encontrado")
+            return
+
+        with open(TXT_PATH, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+
+        if not lines:
+            print("TXT vacío")
+            return
+
+        remaining = lines.copy()
+
+        for path in lines:
+            if not os.path.isdir(path):
+                print(f"Ruta inválida, eliminada: {path}")
+                remaining.remove(path)
+                continue
+
+            if is_dir_empty(path):
+                continue
+
+            if send_command(path):
+                # remaining.remove(path)
+                pass
+            break
+
+        # reescribir TXT
+        with open(TXT_PATH, "w", encoding="utf-8") as f:
+            for p in remaining:
+                f.write(p + "\n")
+
+
+if __name__ == "__main__":
+    main()

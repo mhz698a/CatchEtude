@@ -1,0 +1,134 @@
+from math import ceil
+
+from PyQt6 import QtCore, QtWidgets
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget
+from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QAbstractItemView
+
+import config
+from localization import LocalizationManager
+
+class YearsTableWidget(QTableWidget):
+    yearChanged = QtCore.pyqtSignal(int)
+
+    def __init__(self, years, parent=None):
+        super().__init__(0, 0, parent)
+        self.loc = LocalizationManager()
+        self._years = list(years)
+        self._hidden_years = config.NONCANON_YEARS
+        self._current_hidden_year = None
+        self._min_cell_w = 40
+        self._cell_h = 28
+        self._selected_year = 2004 if 2004 in self._years else (self._years[0] if self._years else None)
+
+        self.setShowGrid(False)
+        self.horizontalHeader().hide()
+        self.verticalHeader().hide()
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+
+        self._selection_just_changed = False
+        self.itemSelectionChanged.connect(self._on_selection_changed)
+        self.itemClicked.connect(self._on_item_clicked)
+        self._rebuild()
+
+    def mousePressEvent(self, event):
+        if event.button() == QtCore.Qt.MouseButton.RightButton:
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def _on_selection_changed(self):
+        self._selection_just_changed = True
+        self._emit_year_changed()
+
+    def _on_item_clicked(self, item):
+        if self._selection_just_changed:
+            self._selection_just_changed = False
+        elif item and self.currentItem() == item:
+            self._emit_year_changed()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._rebuild()
+
+    def current_year(self):
+        if self._current_hidden_year is not None:
+            return self._current_hidden_year
+        item = self.currentItem()
+        return int(item.text()) if item else None
+
+    def _emit_year_changed(self):
+        if self.currentItem() is not None:
+            self._current_hidden_year = None
+        year = self.current_year()
+        if year is not None:
+            self.yearChanged.emit(year)
+
+    def contextMenuEvent(self, event):
+        menu = QtWidgets.QMenu(self)
+        hidden_menu = menu.addMenu(self.loc.get("menu_hidden_years"))
+
+        for y in self._hidden_years:
+            action = hidden_menu.addAction(str(y))
+            action.setCheckable(True)
+            action.setChecked(y == self._current_hidden_year)
+            action.triggered.connect(lambda checked, year=y: self._select_hidden_year(year))
+
+        menu.exec(event.globalPos())
+
+    def _select_hidden_year(self, year):
+        self._current_hidden_year = year
+        self.blockSignals(True)
+        self.clearSelection()
+        self.setCurrentItem(None)
+        self.blockSignals(False)
+        self.yearChanged.emit(year)
+
+    def _rebuild(self):
+        if not self._years:
+            self.clearContents()
+            self.setRowCount(0)
+            self.setColumnCount(0)
+            return
+
+        current = self.current_year() or self._selected_year
+        width = max(1, self.viewport().width())
+
+        cols = max(1, width // self._min_cell_w)
+        cols = min(cols, len(self._years))
+        rows = ceil(len(self._years) / cols)
+
+        self.blockSignals(True)
+        self.clearContents()
+        self.setRowCount(rows)
+        self.setColumnCount(cols)
+
+        col_w = max(self._min_cell_w, width // cols)
+        for c in range(cols):
+            self.setColumnWidth(c, col_w)
+
+        for r in range(rows):
+            self.setRowHeight(r, self._cell_h)
+
+        for i, year in enumerate(self._years):
+            r, c = divmod(i, cols)
+            item = QTableWidgetItem(str(year))
+            item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            self.setItem(r, c, item)
+
+        self.blockSignals(False)
+        self._select_year(current)
+
+    def _select_year(self, year):
+        if year is None:
+            return
+        for r in range(self.rowCount()):
+            for c in range(self.columnCount()):
+                item = self.item(r, c)
+                if item and int(item.text()) == year:
+                    self.setCurrentItem(item)
+                    return
