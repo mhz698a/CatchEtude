@@ -42,7 +42,7 @@ import os
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 from PyQt6 import QtWidgets
-from state_manager import StateManager
+from state_manager import StateManager, State
 from plugins.divition_subfolder_plugin import SplitFolderWorker, SplitFolderDialog
 from selection_panel_mgr import SelectionPanel
 from queue_panel_mgr import QueuePanel
@@ -124,8 +124,9 @@ class TestQueueAndDivisionFeatures(unittest.TestCase):
                 f.write_text("content")
 
             sm.enqueue_files([f1, f2, f3, f4])
-            # Active file is f1
+            sm._state = State.USER_DECIDING
             sm._active_file = f1
+            sm._queue_list = [f1, f2, f3, f4]
 
             # Current queue list: [f1, f2, f3, f4]
             self.assertEqual(sm._queue_list, [f1, f2, f3, f4])

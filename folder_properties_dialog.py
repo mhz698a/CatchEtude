@@ -90,13 +90,37 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
 
         # Scan folder stats
         file_count, total_bytes = scan_folder_stats(self.folder_path)
-        if self.char_entry and file_count == 0:
-            if hasattr(self.char_entry, "file_count") and self.char_entry.file_count:
-                file_count = self.char_entry.file_count
-            if hasattr(self.char_entry, "total_size") and self.char_entry.total_size:
-                total_bytes = self.char_entry.total_size
-
         formatted_size = format_bytes(total_bytes)
+
+        # On-demand cache update
+        try:
+            if self.folder_path.exists():
+                mtime_ns = os.stat(self.folder_path).st_mtime_ns
+                if self.char_entry and hasattr(self.char_entry, "year") and self.char_entry.year:
+                    from character_cache_mgr import CharacterCacheManager
+                    cache_mgr = CharacterCacheManager(self.char_entry.year)
+                    mb_str = f"{total_bytes / (1024 * 1024):.1f} MB"
+                    meta = {
+                        "num": getattr(self.char_entry, "num", 0),
+                        "alter": getattr(self.char_entry, "alter", ""),
+                        "name": getattr(self.char_entry, "name", ""),
+                        "birthday_iso": getattr(self.char_entry, "birthday_iso", "1970-01-01"),
+                        "origin_age": getattr(self.char_entry, "origin_age", 0),
+                    }
+                    entry_count = sum(1 for _ in os.scandir(self.folder_path))
+                    cache_mgr.update_folder(
+                        str(self.folder_path),
+                        mtime_ns,
+                        entry_count,
+                        file_count,
+                        total_bytes,
+                        meta,
+                        getattr(self.char_entry, "age_str", ""),
+                        mb_str
+                    )
+                    cache_mgr.save()
+        except Exception:
+            pass
 
         # General properties
         form.addRow(self._make_label(self.loc.get("lbl_prop_name"), True), self._make_label(self.folder_path.name))

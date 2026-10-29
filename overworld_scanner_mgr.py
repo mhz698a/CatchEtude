@@ -71,6 +71,9 @@ class OverworldScanner(QtCore.QThread):
                 except Exception:
                     mtime_ns = None
 
+                line2 = ""
+                line3 = ""
+
                 if self.cache is not None and mtime_ns is not None:
                     cached = self.cache.get_folder_data(sub_path)
                     if cached and cached.get("mtime_ns") == mtime_ns:
@@ -80,29 +83,8 @@ class OverworldScanner(QtCore.QThread):
                         )
                         file_count = int(cached.get("file_count", 0))
                         total_size = int(cached.get("total_size", 0))
-                        line2 = f"{file_count} archivos"
-                        line3 = cached.get("size_mb_str", self._format_size_mb(total_size))
-                        self.result_ready.emit(folder_name, line2, line3)
-                        
-                        if self.cache is not None and self.cache._dirty:
-                            try:
-                                self.cache.save()
-                            except Exception:
-                                logger.exception("Incremental cache save failed")
-                                
-                        continue
-
-                file_count, total_size = self._scan_folder_stats(sub_path)
-                logger.debug(
-                    "Calculated files=%s bytes=%s",
-                    file_count,
-                    total_size,
-                )
-                line2 = f"{file_count} archivos"
-                line3 = self._format_size_mb(total_size)
-
-                if self.cache is not None and mtime_ns is not None:
-                    self.cache.update_folder(sub_path, mtime_ns, file_count, total_size, line3)
+                        line2 = f"{file_count} archivos" if file_count > 0 else ""
+                        line3 = cached.get("size_mb_str", "") if total_size > 0 else ""
 
                 self.result_ready.emit(folder_name, line2, line3)
 

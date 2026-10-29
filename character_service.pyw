@@ -283,57 +283,9 @@ class CharacterService(QtCore.QObject):
             if generation == self.active_generation:
                 self._send_update({"cmd": "batch", "generation": generation, "items": items_data})
 
-            # PASS 1 & 2: Validation
-            for idx, abs_p, entry_name in needs_validation:
-                
-                # 🔴 Si cambió generación, abortar
-                if generation != self.active_generation:
-                    return
-                
-                self._wait_if_paused()
-                
-                try:
-                    st = os.stat(abs_p)
-                    mtime_ns = st.st_mtime_ns
-                except Exception: continue
-
-                cached = cache_mgr.get_folder_data(abs_p)
-                do_full_scan = True
-                # Trusting mtime and checking existence in cache
-                if cached and cached.get("mtime_ns") == mtime_ns:
-                    do_full_scan = False
-                
-                if do_full_scan:
-                    self._log_char(f"Deep scanning: {entry_name}")
-                    count, size = self._scan_folder_scandir(abs_p, generation)
-                    
-                    if count is None:
-                        return  # cancelado
-
-                    # Note: count/size will not be None because we removed early return from scan_folder_scandir below
-
-                    try:
-                        current_entry_count = sum(1 for _ in os.scandir(abs_p))
-                    except Exception: current_entry_count = 0
-
-                    meta = self._parse_name_metadata(entry_name)
-                    age_str, size_mb_str = self._format_ui_strings(meta["birthday_iso"], size)
-                    
-                    item = items_data[idx]
-                    item["file_count"] = count
-                    item["total_size"] = size
-                    item["age_str"] = age_str
-                    item["size_mb_str"] = size_mb_str
-                    
-                    cache_mgr.update_folder(abs_p, mtime_ns, current_entry_count, count, size, meta, age_str, size_mb_str)
-                    if generation == self.active_generation:
-                        self._send_update({"cmd": "update", "generation": generation, "index": idx, "item": item})
-                else:
-                    if generation == self.active_generation:
-                        if items_data[idx]["size_mb_str"] == "...":
-                            self._send_update({"cmd": "update", "generation": generation, "index": idx, "item": items_data[idx]})
-                
-                if idx % 10 == 0: time.sleep(0.01)
+            # Save cache for active paths without deep filesystem scan on button load
+            cache_mgr.remove_stale_entries(active_paths)
+            cache_mgr.save()
 
             # Always save cache after processing all items for this year
             cache_mgr.remove_stale_entries(active_paths)
