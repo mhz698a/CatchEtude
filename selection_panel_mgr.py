@@ -63,6 +63,9 @@ class SelectionPanel(QWidget):
         }
         
         self._sub_scanner = None
+        self._sub_scanner_workers = set()
+        self._episode_list_workers = set()
+        self._sub_scan_generation = 0
         self._overworld_client = OverworldServiceClient(self)
         self._overworld_client.result_ready.connect(self._on_overworld_result)
         self._overworld_client.finished_ready.connect(
@@ -215,6 +218,8 @@ class SelectionPanel(QWidget):
         self.subfolder_clicked.emit(name)
 
     def _on_type_changed(self, idx):
+        # Never block the UI waiting for a stale episode scan to finish.
+        self._cancel_subfolder_scans()
         self.type_changed.emit(idx + 1)
         self.refresh_classification_ui()
 
@@ -267,6 +272,7 @@ class SelectionPanel(QWidget):
                 self.loc.get("save_another_folder"),
                 self.loc.get("save_another_folder_open_file"),
                 self.loc.get("save_another_folder_open_folder"),
+                self.loc.get("save_all_another_folder"),
                 self.loc.get("save_all_another_folder_open_folder"),
             ])
             self.list_sub.setEnabled(True)
@@ -295,13 +301,24 @@ class SelectionPanel(QWidget):
             self.list_sub.setEnabled(False)
             self.list_year.setEnabled(False)
 
-    def _populate_subfolders(self, base: Path):
-        self.list_sub.clear()
-        
-        if self._sub_scanner:
+    def _cancel_subfolder_scans(self):
+        """Cancel stale workers without waiting on filesystem I/O in the GUI thread."""
+        self._sub_scan_generation += 1
+
+        if self._sub_scanner is not None:
             self._sub_scanner.abort()
-            self._sub_scanner.wait()
             self._sub_scanner = None
+
+        for worker in tuple(self._episode_list_workers):
+            worker.abort()
+
+        for scanner in tuple(self._sub_scanner_workers):
+            scanner.abort()
+
+    def _populate_subfolders(self, base: Path):
+        self._cancel_subfolder_scans()
+        generation = self._sub_scan_generation
+        self.list_sub.clear()
 
         if not is_internal_available() and (self.list_type.currentRow() + 1) in (2, 3, 4, 7, 8):
             self.list_sub.setEnabled(False)
@@ -309,58 +326,122 @@ class SelectionPanel(QWidget):
 
         try:
             t = self.list_type.currentRow() + 1
-            subs = []
-            
-            if base.exists() and base.is_dir():
-                subs = [c.name for c in sorted(base.iterdir()) if c.is_dir()]
-            else:
+            year = self.list_year.current_year()
+
+            if t == 3:
+                # Enumerate episode folders in a worker first. The UI creates the buttons
+                # when that result arrives, then a second worker fills each button's line 2.
+                self.list_sub.show_loading_placeholder("Cargando...")
+                self.list_sub.setEnabled(True)
+                worker = EpisodeSubfolderListWorker(base)
+                self._episode_list_workers.add(worker)
+                worker.folders_ready.connect(
+                    lambda paths, gen=generation, folder=base, selected_year=year:
+                        self._on_episode_subfolders_ready(folder, selected_year, paths, gen)
+                )
+                worker.finished.connect(
+                    lambda current=worker: self._episode_list_workers.discard(current)
+                )
+                worker.start()
                 return
-                
+
+            if not base.is_dir():
+                if t == 8:
+                    self.list_sub.show_empty_placeholder(self.loc.get("menu_create_folder"))
+                    self.list_sub.setEnabled(True)
+                    self.subfolders_refreshed.emit()
+                else:
+                    self.list_sub.setEnabled(False)
+                return
+
+            subs = [
+                child.name
+                for child in sorted(base.iterdir(), key=lambda path: path.name.casefold())
+                if child.is_dir()
+            ]
+
             if subs:
                 self.list_sub.add_subfolders(subs)
                 self.list_sub.setEnabled(True)
 
                 if t == 2:
                     self.list_sub.set_loading_placeholder("Cargando...", None, reserve_height=45)
-                if t == 3:
-                    self.list_sub.set_loading_placeholder("Cargando...", None, reserve_height=45)
-                                
-                                
-                if t == 3: # Episodes
-                    self._sub_scanner = SubfolderScanner(base, EpisodeCacheManager(self.list_year.current_year()))
-                    self._sub_scanner.result_ready.connect(
-                        lambda name, ffile: self.list_sub.update_button(name, ffile)
-                    )
-                    self._sub_scanner.start()
-                    
-                elif t == 8:
-                    if hasattr(self, "_overworld_refresh_pending"):
-                        if self._overworld_refresh_pending:
-                            return
+
+                if t == 8:
+                    if getattr(self, "_overworld_refresh_pending", False):
+                        self.subfolders_refreshed.emit()
+                        return
 
                     self._overworld_refresh_pending = True
-
                     self._overworld_generation += 1
                     self._overworld_client.request_overworld(
-                        year=self.list_year.current_year(),
+                        year=year,
                         base_path=str(base),
                         generation=self._overworld_generation,
                     )
-                                        
+
                 self.subfolders_refreshed.emit()
                 return
-                            
+
             if t == 8:
                 self.list_sub.show_empty_placeholder(self.loc.get("menu_create_folder"))
                 self.list_sub.setEnabled(True)
                 self.subfolders_refreshed.emit()
                 return
-                
-                
+
         except Exception:
-            logging.exception(f"Failed to populate subfolders from {base}")
+            logging.exception("Failed to populate subfolders from %s", base)
 
         self.list_sub.setEnabled(False)
+
+    def _on_episode_subfolders_ready(
+        self, base: Path, year: int | None, subfolder_paths: list[str], generation: int
+    ):
+        """Populate episode buttons first, then start the metadata scanner."""
+        if generation != self._sub_scan_generation:
+            return
+        if self.list_type.currentRow() + 1 != 3 or self.list_year.current_year() != year:
+            return
+
+        if not subfolder_paths:
+            self.list_sub.clear()
+            self.list_sub.setEnabled(False)
+            self.subfolders_refreshed.emit()
+            return
+
+        names = [Path(path).name for path in subfolder_paths]
+        self.list_sub.add_subfolders(names)
+        self.list_sub.setEnabled(True)
+        self.list_sub.set_loading_placeholder("Cargando...", None, reserve_height=45)
+        self.subfolders_refreshed.emit()
+
+        scanner = SubfolderScanner(
+            base,
+            subfolders=subfolder_paths,
+            cache_year=year,
+        )
+        self._sub_scanner = scanner
+        self._sub_scanner_workers.add(scanner)
+        scanner.result_ready.connect(
+            lambda name, last_file, gen=generation:
+                self._on_episode_subfolder_result(name, last_file, gen)
+        )
+        scanner.finished.connect(
+            lambda current=scanner: self._on_episode_scanner_finished(current)
+        )
+        scanner.start()
+
+    def _on_episode_subfolder_result(self, name: str, last_file: str, generation: int):
+        if generation != self._sub_scan_generation:
+            return
+        if self.list_type.currentRow() + 1 != 3:
+            return
+        self.list_sub.update_button(name, last_file)
+
+    def _on_episode_scanner_finished(self, scanner):
+        self._sub_scanner_workers.discard(scanner)
+        if self._sub_scanner is scanner:
+            self._sub_scanner = None
 
     def _on_empty_create_folder_clicked(self):
         t = self.list_type.currentRow() + 1

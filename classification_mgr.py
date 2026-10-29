@@ -10,14 +10,64 @@ from PyQt6 import QtCore
 import config
 from episode_cache_mgr import EpisodeCacheManager
 
+class EpisodeSubfolderListWorker(QtCore.QThread):
+    """Enumerate episode subfolders off the UI thread before creating their buttons."""
+
+    folders_ready = QtCore.pyqtSignal(list)
+
+    def __init__(self, base_path: Path):
+        super().__init__()
+        self.base_path = Path(base_path)
+        self._abort = False
+
+    def abort(self):
+        self._abort = True
+
+    def run(self):
+        folders = []
+        try:
+            with os.scandir(str(self.base_path)) as entries:
+                for entry in entries:
+                    if self._abort or self.isInterruptionRequested():
+                        return
+                    try:
+                        if entry.is_dir():
+                            folders.append(entry.path)
+                    except OSError:
+                        logging.debug(
+                            "Could not inspect episode subfolder %s",
+                            entry.path,
+                            exc_info=True,
+                        )
+
+            folders.sort(key=lambda path: Path(path).name.casefold())
+        except (FileNotFoundError, NotADirectoryError):
+            logging.warning("Episode directory is no longer available: %s", self.base_path)
+        except PermissionError:
+            logging.warning("Permission denied listing episode folders: %s", self.base_path)
+        except Exception:
+            logging.exception("Could not enumerate episode folders in %s", self.base_path)
+
+        if not self._abort and not self.isInterruptionRequested():
+            self.folders_ready.emit(folders)
+
+
 class SubfolderScanner(QtCore.QThread):
     """Background scanner to find the first file in subfolders."""
     result_ready = QtCore.pyqtSignal(str, str)
 
-    def __init__(self, base_path: Path, cache: EpisodeCacheManager | None = None):
+    def __init__(
+        self,
+        base_path: Path,
+        cache: EpisodeCacheManager | None = None,
+        subfolders: list[str] | None = None,
+        cache_year: int | None = None,
+    ):
         super().__init__()
-        self.base_path = base_path
+        self.base_path = Path(base_path)
         self.cache = cache
+        self.subfolders = subfolders
+        self.cache_year = cache_year
         self._abort = False
 
     def abort(self):
@@ -28,18 +78,28 @@ class SubfolderScanner(QtCore.QThread):
             if not self.base_path.exists():
                 return
             
-            try:
-                with os.scandir(str(self.base_path)) as it:
-                    subs = sorted([e.path for e in it if e.is_dir()])
-            except FileNotFoundError:
-                logging.warning(f"Base path not found during subfolder scan: {self.base_path}")
-                return
-            except PermissionError:
-                logging.warning(f"Permission denied scanning subfolders: {self.base_path}")
-                return
-            except Exception as e:
-                logging.error(f"Error scanning base path {self.base_path}: {e}")
-                return
+            if self.cache is None and self.cache_year is not None:
+                # Loading the JSON cache can also involve disk I/O, so keep it off the UI thread.
+                self.cache = EpisodeCacheManager(self.cache_year)
+
+            if self.subfolders is None:
+                try:
+                    with os.scandir(str(self.base_path)) as entries:
+                        subs = sorted(
+                            [entry.path for entry in entries if entry.is_dir()],
+                            key=lambda path: Path(path).name.casefold(),
+                        )
+                except FileNotFoundError:
+                    logging.warning(f"Base path not found during subfolder scan: {self.base_path}")
+                    return
+                except PermissionError:
+                    logging.warning(f"Permission denied scanning subfolders: {self.base_path}")
+                    return
+                except Exception as e:
+                    logging.error(f"Error scanning base path {self.base_path}: {e}")
+                    return
+            else:
+                subs = list(self.subfolders)
 
             for sub_path in subs:
                 if self._abort:
@@ -72,6 +132,8 @@ class SubfolderScanner(QtCore.QThread):
                     try:
                         with os.scandir(sub_path) as it_f:
                             for entry in it_f:
+                                if self._abort or self.isInterruptionRequested():
+                                    break
                                 if entry.is_file():
                                     n_low = entry.name.lower()
                                     if not (n_low.endswith(".ini") or n_low.endswith(".db")):

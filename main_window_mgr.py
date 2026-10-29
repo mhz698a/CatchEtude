@@ -91,6 +91,7 @@ class MainWindow(QWidget):
         self._hide_secure = False
         self._post_action_mode = "none"
         self._pending_post_actions = {}
+        self._defer_post_actions = False
         self._post_action_consumed = False
         self._load_config()       
         self._setup_server()
@@ -915,7 +916,9 @@ class MainWindow(QWidget):
         if not self.filepath and action_name not in (
             self.loc.get("keep_all_files"),
             self.loc.get("keep_all_files_open_folder"),
+            self.loc.get("save_all_another_folder"),
             self.loc.get("save_all_another_folder_open_folder"),
+            "Save all files in another folder",
             "Keep all files in conflicts",
             "Keep all files in Conflicts and open folder",
             "Save all file in another folder and open folder"
@@ -952,7 +955,12 @@ class MainWindow(QWidget):
         elif action_name in (self.loc.get("keep_all_files"), self.loc.get("keep_all_files_open_folder"), "Keep all files in conflicts", "Keep all files in Conflicts and open folder"):
             self._keep_all_queued_files(post_action=post_action)
 
-        elif action_name in (self.loc.get("save_all_another_folder_open_folder"), "Save all file in another folder and open folder"):
+        elif action_name in (
+            self.loc.get("save_all_another_folder"),
+            self.loc.get("save_all_another_folder_open_folder"),
+            "Save all files in another folder",
+            "Save all file in another folder and open folder",
+        ):
             self._save_all_queued_files_custom(post_action=post_action)
 
         elif action_name in (
@@ -1091,6 +1099,7 @@ class MainWindow(QWidget):
             self.show_status("No se pudieron preparar archivos para conservar.", 5000)
             return
 
+        self._defer_post_actions = post_action == "open_folder"
         send_character_service_command("pause")
         for source, destination, source_meta in tasks:
             self.background_move_mgr.enqueue_move(
@@ -1140,6 +1149,7 @@ class MainWindow(QWidget):
             self.show_status("No se pudieron preparar archivos para guardar.", 5000)
             return
 
+        self._defer_post_actions = post_action == "open_folder"
         send_character_service_command("pause")
         for source, destination, source_meta in tasks:
             self.background_move_mgr.enqueue_move(
@@ -1324,6 +1334,7 @@ class MainWindow(QWidget):
     def _hide_if_idle(self):
         if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work() and self.background_move_mgr.is_idle():
             self._flush_post_actions()
+            self._defer_post_actions = False
             self._bulk_subfolder_name = None
             self.action_panel.clear()
             self.filepath = None
@@ -1348,7 +1359,7 @@ class MainWindow(QWidget):
 
         key = str(target.resolve()) if target.exists() else str(target)
 
-        if self._bulk_subfolder_name:
+        if self._bulk_subfolder_name or self._defer_post_actions:
             self._pending_post_actions[key] = (target, post_action)
             return
 
