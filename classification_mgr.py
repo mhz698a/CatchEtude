@@ -145,6 +145,9 @@ class SubfolderScanner(QtCore.QThread):
                     except Exception as e:
                         logging.warning(f"Error listing files in {sub_path}: {e}")
 
+                    if self._abort or self.isInterruptionRequested():
+                        break
+
                     if files:
                         files.sort()
                         last_file = files[-1]

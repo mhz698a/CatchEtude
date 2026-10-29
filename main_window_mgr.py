@@ -91,7 +91,8 @@ class MainWindow(QWidget):
         self._hide_secure = False
         self._post_action_mode = "none"
         self._pending_post_actions = {}
-        self._defer_post_actions = False
+        self._batch_post_action_counter = 0
+        self._batch_post_action_batches = {}
         self._post_action_consumed = False
         self._load_config()       
         self._setup_server()
@@ -1068,6 +1069,37 @@ class MainWindow(QWidget):
         for c in self.queue_panel.get_characters():
             self._on_single_character_updated(c)
 
+    def _register_batch_post_action(
+        self, target: Path, post_action: str, task_count: int
+    ) -> int | None:
+        """Register a single post-action to run when a batch's moves have all finished."""
+        if post_action != "open_folder" or task_count <= 0:
+            return None
+
+        self._batch_post_action_counter += 1
+        batch_id = self._batch_post_action_counter
+        self._batch_post_action_batches[batch_id] = {
+            "target": Path(target),
+            "remaining": task_count,
+        }
+        return batch_id
+
+    def _complete_batch_post_action(self, batch_id: int | None) -> None:
+        """Open a batch destination once, after every move in the batch has reported."""
+        if batch_id is None:
+            return
+
+        batch = self._batch_post_action_batches.get(batch_id)
+        if batch is None:
+            return
+
+        batch["remaining"] -= 1
+        if batch["remaining"] > 0:
+            return
+
+        self._batch_post_action_batches.pop(batch_id, None)
+        self._run_post_action(batch["target"], "open_folder")
+
     def _keep_all_queued_files(self, post_action: str = "none"):
         """Queue a keep operation for every file currently in the download queue."""
         sources = self.state_manager.start_all_background_moves()
@@ -1099,14 +1131,19 @@ class MainWindow(QWidget):
             self.show_status("No se pudieron preparar archivos para conservar.", 5000)
             return
 
-        self._defer_post_actions = post_action == "open_folder"
+        batch_post_action_id = self._register_batch_post_action(
+            config.CONFLICTS, post_action, len(tasks)
+        )
         send_character_service_command("pause")
         for source, destination, source_meta in tasks:
+            decision = {
+                "action": "keep",
+                "new_name": source.stem,
+                "post_action": "none" if batch_post_action_id is not None else post_action,
+                "_batch_post_action_id": batch_post_action_id,
+            }
             self.background_move_mgr.enqueue_move(
-                source,
-                destination,
-                {"action": "keep", "new_name": source.stem, "post_action": post_action},
-                source_meta,
+                source, destination, decision, source_meta
             )
 
         self.filepath = None
@@ -1149,14 +1186,20 @@ class MainWindow(QWidget):
             self.show_status("No se pudieron preparar archivos para guardar.", 5000)
             return
 
-        self._defer_post_actions = post_action == "open_folder"
+        batch_post_action_id = self._register_batch_post_action(
+            dest_dir, post_action, len(tasks)
+        )
         send_character_service_command("pause")
         for source, destination, source_meta in tasks:
+            decision = {
+                "action": "move_custom",
+                "custom_dir": str(dest_dir),
+                "new_name": source.stem,
+                "post_action": "none" if batch_post_action_id is not None else post_action,
+                "_batch_post_action_id": batch_post_action_id,
+            }
             self.background_move_mgr.enqueue_move(
-                source,
-                destination,
-                {"action": "move_custom", "custom_dir": str(dest_dir), "new_name": source.stem, "post_action": post_action},
-                source_meta,
+                source, destination, decision, source_meta
             )
 
         self.filepath = None
@@ -1289,6 +1332,7 @@ class MainWindow(QWidget):
                 self.state_manager.fail_background_move(src)
 
         self._hide_if_idle()
+        self._complete_batch_post_action(decision.get("_batch_post_action_id"))
 
     def _start_move_task(self, decision: dict, final_dest: Path):
         src = self.filepath
@@ -1334,7 +1378,6 @@ class MainWindow(QWidget):
     def _hide_if_idle(self):
         if self.state_manager.current_state() == State.IDLE and not self.state_manager.has_pending_work() and self.background_move_mgr.is_idle():
             self._flush_post_actions()
-            self._defer_post_actions = False
             self._bulk_subfolder_name = None
             self.action_panel.clear()
             self.filepath = None
@@ -1359,7 +1402,7 @@ class MainWindow(QWidget):
 
         key = str(target.resolve()) if target.exists() else str(target)
 
-        if self._bulk_subfolder_name or self._defer_post_actions:
+        if self._bulk_subfolder_name:
             self._pending_post_actions[key] = (target, post_action)
             return
 
