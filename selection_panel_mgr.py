@@ -441,6 +441,7 @@ class SelectionPanel(QWidget):
         menu.addSeparator()
         act_move_and_secure = menu.addAction(self.loc.get("menu_move_and_active_secure"))
         menu.addSeparator()
+        act_properties = menu.addAction(self.loc.get("menu_properties"))
         act_undo = menu.addAction(self.loc.get("tray_undo"))
 
         action = menu.exec(pos)
@@ -465,6 +466,8 @@ class SelectionPanel(QWidget):
             self.hide_temporal_clicked.emit()
         elif action == act_move_and_secure:
             self.move_and_enable_secure_clicked.emit(name)
+        elif action == act_properties:
+            self._show_folder_properties(target_folder, name)
         elif action == act_undo:
             self.undo_clicked.emit()
         else:
@@ -473,6 +476,19 @@ class SelectionPanel(QWidget):
                 if action == act and cmd and self.plugin_mgr:
                     self.plugin_mgr.invoke_command(plugin_id, cmd, {"paths": [str(target_folder)]})
                     break
+
+    def _show_folder_properties(self, target_folder: Path, name: str):
+        from folder_properties_dialog import FolderPropertiesDialog
+        char_entry = None
+        t = self.list_type.currentRow() + 1
+        if t == 2 and hasattr(self.window(), "queue_panel"):
+            for c in self.window().queue_panel.get_characters():
+                if Path(c.path).name == name or c.path == str(target_folder):
+                    char_entry = c
+                    break
+
+        dlg = FolderPropertiesDialog(target_folder, char_entry=char_entry, parent=self, loc=self.loc)
+        dlg.exec()
 
     def _is_folder_empty(self, path: Path) -> bool:
         try:

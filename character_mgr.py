@@ -157,13 +157,7 @@ class CharacterDelegate(QtWidgets.QStyledItemDelegate):
         distance = "" if c.origin_age == 0 else f"d: {(c.year - 2003) - c.origin_age} | "
         oring_age_fix = "" if c.origin_age == 0 else f"a: {c.origin_age} | "       
                         
-        meta = (
-            f"{real_age}"
-            f"{distance}"
-            f"{oring_age_fix}"
-            f"Files: {c.file_count} | "
-            f"{c.size_mb_str}"
-        )
+        meta = f"{real_age}{distance}{oring_age_fix}".strip().rstrip("|").strip()
         
         secondary = option.palette.color(option.palette.ColorRole.PlaceholderText)
         painter.setPen(secondary)

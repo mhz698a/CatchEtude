@@ -1053,7 +1053,7 @@ class MainWindow(QWidget):
         real_age = f"{c.age_str} | " if c.age_str else ""
         distance = "" if c.origin_age == 0 else f"d: {(c.year - 2003) - c.origin_age} | "
         oring_age_fix = "" if c.origin_age == 0 else f"a: {c.origin_age} | "
-        line3 = f"{real_age}{distance}{oring_age_fix}Files: {c.file_count} | {c.size_mb_str}"
+        line3 = f"{real_age}{distance}{oring_age_fix}".strip().rstrip("|").strip()
         self.selection_panel.update_subfolder_button(folder_name, line2, line3)
 
     def _update_character_buttons(self):
