@@ -321,11 +321,9 @@ class SelectionPanel(QWidget):
                 self.list_sub.setEnabled(True)
 
                 if t == 2:
-                    self.list_sub.set_loading_placeholder("Cargando...", "Cargando...", reserve_height=60)
+                    self.list_sub.set_loading_placeholder("Cargando...", None, reserve_height=45)
                 if t == 3:
                     self.list_sub.set_loading_placeholder("Cargando...", None, reserve_height=45)
-                elif t == 8:
-                    self.list_sub.set_loading_placeholder("Cargando...", "Cargando...", reserve_height=60)
                                 
                                 
                 if t == 3: # Episodes
@@ -343,8 +341,6 @@ class SelectionPanel(QWidget):
                     self._overworld_refresh_pending = True
 
                     self._overworld_generation += 1
-                    self.list_sub.set_loading_placeholder("Cargando...", "Cargando...", reserve_height=60)
-
                     self._overworld_client.request_overworld(
                         year=self.list_year.current_year(),
                         base_path=str(base),
