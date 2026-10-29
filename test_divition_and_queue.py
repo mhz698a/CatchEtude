@@ -111,6 +111,29 @@ class TestQueueAndDivisionFeatures(unittest.TestCase):
         # item 1 (f2) -> top enabled, bottom enabled
         # item 2 (f3) -> top enabled, bottom disabled
 
+    def test_queue_multiselection_keeps_first_selected_and_survives_refresh(self):
+        panel = QueuePanel()
+        f1 = Path("/tmp/f1.txt")
+        f2 = Path("/tmp/f2.txt")
+        f3 = Path("/tmp/f3.txt")
+
+        panel.update_queue([f1, f2, f3], str(f1))
+        self.assertEqual(
+            panel.queue_list_widget.selectionMode(),
+            QtWidgets.QAbstractItemView.SelectionMode.MultiSelection,
+        )
+        self.assertTrue(panel.queue_list_widget.item(0).isSelected())
+
+        panel.queue_list_widget.item(1).setSelected(True)
+        panel.queue_list_widget.item(0).setSelected(False)
+        self.assertTrue(panel.queue_list_widget.item(0).isSelected())
+        self.assertTrue(panel.queue_list_widget.item(1).isSelected())
+
+        # Queue refreshes must not erase the user's pending selections.
+        panel.update_queue([f1, f2, f3], str(f1))
+        self.assertEqual(panel.get_selected_paths(), [f1, f2])
+        self.assertTrue(panel.queue_list_widget.item(0).isSelected())
+
     def test_queue_reordering(self):
         sm = StateManager()
 

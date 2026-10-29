@@ -1209,10 +1209,19 @@ class MainWindow(QWidget):
     def _move_to_subfolder(self, sub_name: str, post_action: str = "none"):
         if not self.filepath or self.filepath.is_dir():
             return
-        
+
+        selected_sources = self.queue_panel.get_selected_paths()
+        if self.filepath not in selected_sources:
+            selected_sources.insert(0, self.filepath)
+
         self.selection_panel.set_subfolders_enabled(False)
+        if len(set(selected_sources)) > 1:
+            self._move_selected_queue_files_to_subfolder(
+                sub_name, selected_sources, post_action=post_action
+            )
+            return
+
         sel = self.selection_panel.get_selection()
-        
         decision = {
             'action': 'move',
             'movement_type': sel['type'],
@@ -1221,12 +1230,138 @@ class MainWindow(QWidget):
             'new_name': self.action_panel.get_new_name() or self.filepath.stem,
             'post_action': post_action,
         }
-        
+
         candidate = compute_destination(decision, self.filepath)
         action, final_dest = self._check_destination_collision(candidate)
         if action != "move" or final_dest is None:
+            self.selection_panel.set_subfolders_enabled(True)
             return
         self._start_move_task(decision, final_dest)
+
+    def _move_selected_queue_files_to_subfolder(
+        self, sub_name: str, selected_sources: list[Path], post_action: str = "none"
+    ):
+        """Move selected queue entries to a classification subfolder in parallel."""
+        active_source = self.filepath
+        sel = self.selection_panel.get_selection()
+        prepared = []
+        reserved_destinations = set()
+
+        for source in dict.fromkeys(selected_sources):
+            if not source.exists() or source.is_dir():
+                continue
+
+            if is_file_locked(source):
+                if source == active_source:
+                    self.show_status(self.loc.get("msg_file_locked"), 5000)
+                    self.selection_panel.set_subfolders_enabled(True)
+                    return
+                logging.warning("Skipping locked selected queue file: %s", source)
+                continue
+
+            try:
+                source_stat = source.stat()
+                source_meta = {
+                    "atime": source_stat.st_atime,
+                    "mtime": source_stat.st_mtime,
+                    "ctime": getattr(source_stat, "st_birthtime", source_stat.st_ctime),
+                }
+                new_name = (
+                    (self.action_panel.get_new_name() or source.stem)
+                    if source == active_source else source.stem
+                )
+                decision = {
+                    "action": "move",
+                    "movement_type": sel["type"],
+                    "year": sel["year"],
+                    "sub": sub_name,
+                    "new_name": new_name,
+                    "post_action": post_action,
+                }
+                candidate = compute_destination(decision, source)
+            except Exception:
+                logging.exception("Could not prepare selected queue file for move: %s", source)
+                if source == active_source:
+                    self.selection_panel.set_subfolders_enabled(True)
+                    self.show_status("No se pudo preparar el archivo activo para moverlo.", 5000)
+                    return
+                continue
+
+            destination = candidate
+            suffix_index = 1
+            while destination.exists() or destination in reserved_destinations:
+                destination = candidate.with_name(
+                    f"{candidate.stem}_{suffix_index}{candidate.suffix}"
+                )
+                suffix_index += 1
+            reserved_destinations.add(destination)
+            prepared.append({
+                "source": source,
+                "destination": destination,
+                "decision": decision,
+                "source_meta": source_meta,
+            })
+
+        if not prepared or active_source not in {task["source"] for task in prepared}:
+            self.selection_panel.set_subfolders_enabled(True)
+            self.show_status("No se pudieron preparar archivos seleccionados para mover.", 5000)
+            return
+
+        sources = self.state_manager.reserve_selected_background_moves(
+            [task["source"] for task in prepared]
+        )
+        if not sources:
+            self.selection_panel.set_subfolders_enabled(True)
+            self.show_status("La cola cambió; no se movió ningún archivo seleccionado.", 5000)
+            return
+
+        reserved_sources = set(sources)
+        move_tasks = [task for task in prepared if task["source"] in reserved_sources]
+        batch_post_action_id = None
+        if not self._bulk_subfolder_name and post_action == "open_folder" and move_tasks:
+            batch_post_action_id = self._register_batch_post_action(
+                move_tasks[0]["destination"].parent, post_action, len(move_tasks)
+            )
+
+        scheduled_count = 0
+        try:
+            for task in move_tasks:
+                source = task["source"]
+                decision = task["decision"]
+                if batch_post_action_id is not None:
+                    decision["post_action"] = "none"
+                    decision["_batch_post_action_id"] = batch_post_action_id
+
+                try:
+                    self.background_move_mgr.enqueue_move(
+                        source, task["destination"], decision, task["source_meta"]
+                    )
+                except Exception:
+                    logging.exception("Could not enqueue selected queue move: %s", source)
+                    self.state_manager.fail_background_move(source)
+                    if batch_post_action_id is not None:
+                        self._complete_batch_post_action(batch_post_action_id)
+                    continue
+
+                scheduled_count += 1
+                try:
+                    send_character_service_command("pause")
+                except Exception:
+                    logging.exception("Could not pause character service for selected move: %s", source)
+        finally:
+            self.filepath = None
+            self.action_panel.clear()
+            self.state_manager.finish_selected_background_moves()
+
+        if scheduled_count:
+            status = f"Moviendo {scheduled_count} archivo(s) a {sub_name}."
+            skipped_count = len(selected_sources) - scheduled_count
+            if skipped_count > 0:
+                status += f" Se omitieron {skipped_count}."
+            self.show_status(status, 5000)
+        else:
+            self.selection_panel.set_subfolders_enabled(True)
+            self.show_status("No se pudieron iniciar los movimientos seleccionados.", 5000)
 
     def _move_all_in_this_folder(self, sub_name: str, post_action: str = "none"):
         self._bulk_subfolder_name = sub_name

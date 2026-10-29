@@ -330,6 +330,54 @@ class StateManager:
         self._enqueue_allowed.set()
         return sources
 
+    def reserve_selected_background_moves(self, selected_sources: list[Path]) -> list[Path]:
+        """Reserve selected queue files for a batch move without resuming the queue yet.
+
+        The active file must be selected. The caller must enqueue a background task
+        for every returned source and then call finish_selected_background_moves().
+        """
+        if self.current_state() != State.USER_DECIDING:
+            logging.warning(
+                "reserve_selected_background_moves called in state %s",
+                self.current_state(),
+            )
+            return []
+
+        selected = set(selected_sources)
+        with self._lock:
+            active = self._active_file
+            if active is None or active not in selected:
+                return []
+
+            sources = [
+                path for path in self._queue_list
+                if path in selected and (path == active or path in self._pending)
+            ]
+            if active not in sources:
+                return []
+
+            self._background_moves.update(sources)
+            self._queue_list = [path for path in self._queue_list if path not in sources]
+            with self._q.mutex:
+                self._q.queue = deque(path for path in self._q.queue if path not in sources)
+            self._active_file = None
+            self._emit_queue_update()
+
+        return sources
+
+    def finish_selected_background_moves(self) -> bool:
+        """Resume queue processing after the selected files have been handed to workers."""
+        with self._lock:
+            if self._state != State.USER_DECIDING or self._active_file is not None:
+                logging.warning(
+                    "finish_selected_background_moves called from an unexpected queue state"
+                )
+                return False
+
+        self._set_state(State.IDLE)
+        self._enqueue_allowed.set()
+        return True
+
     def fail_background_move(self, src: Path) -> None:
         """Requeues a failed background move without dropping the next active file."""
         with self._lock:
