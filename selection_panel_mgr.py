@@ -16,7 +16,12 @@ from PyQt6.QtWidgets import QListWidgetItem
 import config
 from localization import LocalizationManager
 from subfolder_list_mgr import SubfolderButtonList
-from classification_mgr import get_base_path_for_type_year, get_base_path_for_docs, SubfolderScanner
+from classification_mgr import (
+    get_base_path_for_type_year,
+    get_base_path_for_docs,
+    EpisodeSubfolderListWorker,
+    SubfolderScanner,
+)
 from utils import is_internal_available, delete_to_recycle_bin
 from years_selector import YearsTableWidget
 from episode_cache_mgr import EpisodeCacheManager
