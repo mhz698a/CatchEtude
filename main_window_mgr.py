@@ -32,7 +32,7 @@ from utils import (
     is_file_locked, delete_to_recycle_bin, run_in_threadpool,
     flatten_single_folder
 )
-from state_manager import StateManager, State, scan_existing_downloads
+from state_manager import StateManager, State
 from ui_utils_mgr import load_stylesheet
 from fallback_utils import compute_destination
 from file_worker_mgr import FileMoveWorker
@@ -733,7 +733,7 @@ class MainWindow(QWidget):
         QApplication.quit()
 
     def _rescan_downloads(self):
-        run_in_threadpool(scan_existing_downloads, self.state_manager)
+        run_in_threadpool(self.state_manager._run_maintenance_scan)
 
     def _on_order_pending_clicked(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Process", str(config.DOWNLOADS))
@@ -1050,11 +1050,8 @@ class MainWindow(QWidget):
         num_char = f" · {c.num:02d}" if c.num != 0 else ""
         alter_sh = f"/{c.alter}" if c.name != '_' else ""
         line2 = f"{c.year}{num_char} · {c.name if c.name != '_' else c.alter}{alter_sh}{birthday_fix}"
-        real_age = f"{c.age_str} | " if c.age_str else ""
-        distance = "" if c.origin_age == 0 else f"d: {(c.year - 2003) - c.origin_age} | "
-        oring_age_fix = "" if c.origin_age == 0 else f"a: {c.origin_age} | "
-        line3 = f"{real_age}{distance}{oring_age_fix}".strip().rstrip("|").strip()
-        self.selection_panel.update_subfolder_button(folder_name, line2, line3)
+        # Character subfolder buttons intentionally use two lines: name and summary.
+        self.selection_panel.update_subfolder_button(folder_name, line2, "")
 
     def _update_character_buttons(self):
         t = self.selection_panel.get_selection()['type']

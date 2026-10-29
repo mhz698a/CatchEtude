@@ -150,6 +150,9 @@ STRINGS = {
         "lbl_prop_alter": "Alter:",
         "lbl_prop_birthday": "Fecha de nacimiento:",
         "lbl_prop_age": "Edad:",
+        "lbl_prop_calculating": "Calculando…",
+        "lbl_prop_scan_complete": "Cálculo completado.",
+        "lbl_prop_scan_error": "No se pudo completar el cálculo.",
         "btn_close": "Cerrar",
     },
     "en": {
@@ -291,6 +294,9 @@ STRINGS = {
         "lbl_prop_alter": "Alter:",
         "lbl_prop_birthday": "Birthday:",
         "lbl_prop_age": "Age:",
+        "lbl_prop_calculating": "Calculating…",
+        "lbl_prop_scan_complete": "Calculation complete.",
+        "lbl_prop_scan_error": "Unable to calculate folder statistics.",
         "btn_close": "Close",
     }
 }

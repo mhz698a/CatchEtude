@@ -479,16 +479,26 @@ class SelectionPanel(QWidget):
 
     def _show_folder_properties(self, target_folder: Path, name: str):
         from folder_properties_dialog import FolderPropertiesDialog
+
         char_entry = None
         t = self.list_type.currentRow() + 1
+        year = self.list_year.current_year()
+        overworld_year = year if t == 8 else None
+
         if t == 2 and hasattr(self.window(), "queue_panel"):
-            for c in self.window().queue_panel.get_characters():
-                if Path(c.path).name == name or c.path == str(target_folder):
-                    char_entry = c
+            for character in self.window().queue_panel.get_characters():
+                if Path(character.path).name == name or character.path == str(target_folder):
+                    char_entry = character
                     break
 
-        dlg = FolderPropertiesDialog(target_folder, char_entry=char_entry, parent=self, loc=self.loc)
-        dlg.exec()
+        dialog = FolderPropertiesDialog(
+            target_folder,
+            char_entry=char_entry,
+            parent=self,
+            loc=self.loc,
+            overworld_year=overworld_year,
+        )
+        dialog.exec()
 
     def _is_folder_empty(self, path: Path) -> bool:
         try:

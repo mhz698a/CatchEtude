@@ -1,156 +1,241 @@
 """
-Watcher module - Monitors the Downloads folder for new files.
-Módulo Watcher: monitorea la carpeta de Descargas en busca de nuevos archivos.
+Watch Downloads for newly created or renamed files and queue them once stable.
+
+The Qt application owns WatcherThread; watchdog owns its filesystem observer;
+candidate stability checks run in the shared worker pool.
 """
 
 import logging
+import threading
 import time
 from pathlib import Path
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
+
 from PyQt6 import QtCore
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 import config
-from utils import is_temporary, is_file_locked, folder_is_safe_to_flatten, run_in_threadpool
 from log_mgr import safe_thread_logger
+from utils import folder_is_safe_to_flatten, is_file_locked, is_temporary, run_in_threadpool
+
+
+logger = logging.getLogger(__name__)
+_STABILITY_INTERVAL_SECONDS = 1.0
+_OBSERVER_RETRY_SECONDS = 2.0
 
 
 class WatcherHandler(FileSystemEventHandler):
-    """
-    Event handler for watchdog that filters and processes file system events.
-    Manejador de eventos para watchdog que filtra y procesa eventos del sistema de archivos.
-    """
+    """Filter Downloads events and submit each candidate only once at a time."""
+
     def __init__(self, enqueue_callback):
         super().__init__()
         self.enqueue = enqueue_callback
-        self._monitoring = set()
-        self._lock = QtCore.QMutex() # PyQt thread-safe mutex or standard threading.Lock is fine, QMutex is great. Let's use QMutex.
+        self._monitoring: set[str] = set()
+        self._lock = threading.Lock()
 
-    def on_created(self, event):
-        """Called when a file or directory is created."""
-        self._handle(Path(event.src_path))
+    def on_created(self, event) -> None:
+        self.handle_candidate(event.src_path)
 
-    def on_moved(self, event):
-        """Called when a file or directory is moved."""
-        self._handle(Path(event.dest_path))
+    def on_moved(self, event) -> None:
+        # Downloads commonly write a temporary file and rename it to its final name.
+        self.handle_candidate(event.dest_path)
 
-    def _handle(self, p: Path):
-        """
-        Validates the file and enqueues it if it meets the criteria.
-        Schedules monitoring task on the global thread pool to wait for stability.
-        """
+    def on_modified(self, event) -> None:
+        # A later write event can recover a path after a transient access error.
+        if not event.is_directory:
+            self.handle_candidate(event.src_path)
+
+    def handle_candidate(self, path: str | Path) -> bool:
+        """Validate a path and schedule background stability checks."""
+        candidate = Path(path)
         try:
-            # Check if it's in the monitored folder (case-insensitive and resolve path comparison)
-            try:
-                if not (p.parent == config.DOWNLOADS or p.parent.resolve() == config.DOWNLOADS.resolve()):
-                    return
-            except Exception:
-                if p.parent != config.DOWNLOADS:
-                    return
+            root = Path(config.DOWNLOADS).resolve()
+            if candidate.parent.resolve() != root:
+                return False
+        except OSError:
+            logger.debug("Could not resolve candidate path %s", candidate, exc_info=True)
+            return False
 
-            # Filter temporary files
-            if is_temporary(p):
-                logging.debug(f"[Watcher] Ignored temporary file: {p.name}")
-                return
+        if is_temporary(candidate):
+            logger.debug("Ignoring temporary download candidate: %s", candidate.name)
+            return False
+        if not candidate.exists():
+            return False
 
-            # Lock monitoring set
-            locker = QtCore.QMutexLocker(self._lock)
-            if p in self._monitoring:
-                return
-            self._monitoring.add(p)
-            # Release lock
-            del locker
+        try:
+            key = str(candidate.resolve()).casefold()
+        except OSError:
+            key = str(candidate.absolute()).casefold()
 
-            # Schedule stability monitor task in global thread pool
-            run_in_threadpool(self._monitor_file, p)
+        with self._lock:
+            if key in self._monitoring:
+                return False
+            self._monitoring.add(key)
 
+        try:
+            run_in_threadpool(self._monitor_file, candidate, key)
+            return True
         except Exception:
-            logging.exception("[Watcher] Error in WatcherHandler._handle")
+            with self._lock:
+                self._monitoring.discard(key)
+            logger.exception("Could not schedule download stability check for %s", candidate)
+            return False
 
-    @safe_thread_logger("WatcherMonitor")
-    def _monitor_file(self, p: Path):
-        """Monitors a file or directory until stable and ready for enqueuing."""
+    def _monitor_file(self, candidate: Path, key: str) -> None:
+        """Wait in the worker pool until a file or safe folder is ready to enqueue."""
         try:
-            logging.info(f"[Watcher] Detected candidate path: {p.name}. Monitoring stability...")
+            logger.info("Monitoring download candidate: %s", candidate.name)
 
-            while True:
-                if not p.exists():
-                    logging.info(f"[Watcher] Path disappeared during monitoring: {p.name}")
-                    break
-
+            while candidate.exists():
                 try:
-                    if p.is_dir():
-                        time.sleep(1)
-                        if not p.exists(): break
-                        if folder_is_safe_to_flatten(p):
-                            logging.info(f"[Watcher] Directory is stable and safe: '{p.name}'")
-                            self.enqueue(p)
-                            break
+                    if candidate.is_dir():
+                        if folder_is_safe_to_flatten(candidate):
+                            self.enqueue(candidate)
+                            return
+                        time.sleep(_STABILITY_INTERVAL_SECONDS)
                         continue
 
-                    stat1 = p.stat()
-                    size1 = stat1.st_size
-                    mtime1 = stat1.st_mtime
+                    before = candidate.stat()
+                    time.sleep(_STABILITY_INTERVAL_SECONDS)
+                    if not candidate.exists():
+                        return
 
-                    time.sleep(1) # Wait 1 second
+                    after = candidate.stat()
+                    unchanged = (
+                        before.st_size == after.st_size
+                        and before.st_mtime_ns == after.st_mtime_ns
+                    )
+                    if unchanged:
+                        if is_file_locked(candidate):
+                            logger.debug(
+                                "Download is stable but still locked: %s",
+                                candidate.name,
+                            )
+                            time.sleep(_STABILITY_INTERVAL_SECONDS)
+                            continue
 
-                    if not p.exists(): break
-                    stat2 = p.stat()
-                    size2 = stat2.st_size
-                    mtime2 = stat2.st_mtime
+                        logger.info(
+                            "Download is stable and unlocked: %s (%s bytes)",
+                            candidate.name,
+                            after.st_size,
+                        )
+                        self.enqueue(candidate)
+                        return
 
-                    if size1 == size2 and mtime1 == mtime2:
-                        # File is stable, now check if locked
-                        if not is_file_locked(p):
-                            logging.info(f"[Watcher] File is stable and unlocked: '{p.name}' (Size: {size1} bytes)")
-                            self.enqueue(p)
-                            break
-                        else:
-                            logging.info(f"[Watcher] File is stable but currently locked by another process, retrying: {p.name}")
-                    else:
-                        logging.info(f"[Watcher] File is still writing: {p.name} (size: {size1}->{size2}, mtime: {mtime1}->{mtime2})")
-                except (FileNotFoundError, PermissionError) as e:
-                    logging.warning(f"[Watcher] Access error during monitoring (vanishing?): {p.name} - {e}")
-                    break
+                    logger.debug("Download is still changing: %s", candidate.name)
+
+                except FileNotFoundError:
+                    return
+                except PermissionError as exc:
+                    # Transient Windows access-denied errors must not permanently drop a download.
+                    logger.debug("Temporary access error for %s: %s", candidate, exc)
+                    time.sleep(_STABILITY_INTERVAL_SECONDS)
+                except OSError as exc:
+                    logger.warning("Filesystem error while monitoring %s: %s", candidate, exc)
+                    time.sleep(_STABILITY_INTERVAL_SECONDS)
+
         except Exception:
-            logging.exception(f"[Watcher] Error monitoring path: {p}")
+            logger.exception("Error monitoring download candidate %s", candidate)
         finally:
-            locker = QtCore.QMutexLocker(self._lock)
-            self._monitoring.discard(p)
+            with self._lock:
+                self._monitoring.discard(key)
 
 
 class WatcherThread(QtCore.QThread):
-    """
-    Background QThread that runs the watchdog observer.
-    Hilo en segundo plano que ejecuta el observador de watchdog.
-    """
+    """Keep a watchdog observer attached to Downloads, retrying if it stops."""
+
     def __init__(self, enqueue_callback, parent=None):
         super().__init__(parent)
         self.enqueue_callback = enqueue_callback
-        self.observer = Observer()
+        self.observer: Observer | None = None
+        self.handler: WatcherHandler | None = None
+        self._stop_event = threading.Event()
+        self._ready_event = threading.Event()
+        self._state_lock = threading.Lock()
+        self._pending_candidates: set[Path] = set()
+
+    @property
+    def is_watching(self) -> bool:
+        return self._ready_event.is_set()
+
+    def watch_candidate(self, path: str | Path) -> bool:
+        """Hand a scan-discovered candidate to watchdog's stability monitor."""
+        candidate = Path(path)
+        with self._state_lock:
+            handler = self.handler
+            if handler is None:
+                self._pending_candidates.add(candidate)
+                return False
+        return handler.handle_candidate(candidate)
 
     @safe_thread_logger("WatcherObserver")
-    def run(self):
-        """Starts the observer and waits."""
-        try:
-            handler = WatcherHandler(self.enqueue_callback)
-            self.observer.schedule(handler, str(config.DOWNLOADS), recursive=False)
-            self.observer.start()
-            logging.info(f"[Watcher] Observer thread successfully started on: {config.DOWNLOADS}")
+    def run(self) -> None:
+        while not self._stop_event.is_set():
+            observer = None
+            handler = None
+            try:
+                Path(config.DOWNLOADS).mkdir(parents=True, exist_ok=True)
+                observer = Observer()
+                handler = WatcherHandler(self.enqueue_callback)
+                observer.schedule(handler, str(config.DOWNLOADS), recursive=False)
+                if self._stop_event.is_set():
+                    break
+                observer.start()
 
-            # Keep the thread alive
-            while self.observer.is_alive():
-                self.msleep(1000)
+                with self._state_lock:
+                    self.observer = observer
+                    self.handler = handler
+                    pending = list(self._pending_candidates)
+                    self._pending_candidates.clear()
+                self._ready_event.set()
+
+                logger.info("Watching Downloads directory: %s", config.DOWNLOADS)
+                for candidate in pending:
+                    handler.handle_candidate(candidate)
+
+                while observer.is_alive() and not self._stop_event.wait(1.0):
+                    pass
+
+                if not self._stop_event.is_set():
+                    logger.warning("Downloads observer stopped unexpectedly; restarting it")
+
+            except Exception:
+                logger.exception("Could not start or maintain the Downloads observer")
+
+            finally:
+                self._ready_event.clear()
+                with self._state_lock:
+                    if self.observer is observer:
+                        self.observer = None
+                    if self.handler is handler:
+                        self.handler = None
+                if observer is not None and observer.ident is not None:
+                    try:
+                        observer.stop()
+                    except Exception:
+                        logger.debug("Observer stop failed during cleanup", exc_info=True)
+                    try:
+                        observer.join(timeout=3.0)
+                    except Exception:
+                        logger.debug("Observer join failed during cleanup", exc_info=True)
+
+            if not self._stop_event.is_set():
+                self._stop_event.wait(_OBSERVER_RETRY_SECONDS)
+
+    def stop(self) -> None:
+        """Request shutdown and detach the watchdog observer safely."""
+        self._stop_event.set()
+        self._ready_event.clear()
+        with self._state_lock:
+            observer = self.observer
+        if observer is None:
+            return
+        try:
+            observer.stop()
         except Exception:
-            logging.exception("[Watcher] Error in WatcherThread.run")
-        finally:
-            self.stop()
-
-    def stop(self):
-        """Stops the observer safely."""
-        try:
-            self.observer.stop()
-            self.observer.join()
-            logging.info("[Watcher] Observer thread stopped safely")
-        except Exception as e:
-            print("[Watcher] Error to stop the observer")
+            logger.debug("Observer stop request failed", exc_info=True)
+        if observer.ident is not None:
+            try:
+                observer.join(timeout=3.0)
+            except Exception:
+                logger.debug("Observer join during shutdown failed", exc_info=True)
