@@ -11,7 +11,7 @@ import threading
 import subprocess
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import (
@@ -49,6 +49,28 @@ from background_move_mgr import BackgroundMoveManager
 from tray_menu_mgr import TrayMenuManager
 
 
+class _DuplicateDeleteSignals(QtCore.QObject):
+    finished = QtCore.pyqtSignal(int, str, bool)
+
+
+class _DuplicateDeleteWorker(QtCore.QRunnable):
+    def __init__(self, operation_id: int, path: Path):
+        super().__init__()
+        self.operation_id = operation_id
+        self.path = Path(path)
+        self.signals = _DuplicateDeleteSignals()
+
+    @QtCore.pyqtSlot()
+    def run(self):
+        try:
+            success = delete_to_recycle_bin(self.path)
+        except Exception:
+            logging.exception("Failed to delete duplicate destination file: %s", self.path)
+            success = False
+
+        self.signals.finished.emit(self.operation_id, str(self.path), success)
+
+
 class MainWindow(QWidget):
     """
     Main UI window for CatchEtude.
@@ -66,6 +88,8 @@ class MainWindow(QWidget):
         self.background_move_mgr.move_progress.connect(self._on_background_move_progress)
         self.background_move_mgr.move_finished.connect(self._on_background_move_finished)
         self._closing = False
+        self._duplicate_delete_operation_counter = 0
+        self._duplicate_delete_operations: dict[int, dict] = {}
         
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
@@ -620,8 +644,105 @@ class MainWindow(QWidget):
         QMessageBox.warning(self, "Aviso", text)
     
     
-    def _check_destination_collision(self, candidate: Path, 
-                                     allow_retry: bool = False) -> tuple[str, Optional[Path]]:
+    def _add_collision_image_preview(self, box: QMessageBox, candidate: Path) -> None:
+        """Adds a thumbnail of the existing destination file, never the source file."""
+        if not candidate.is_file():
+            return
+
+        try:
+            reader = QtGui.QImageReader(str(candidate))
+            reader.setAutoTransform(True)
+            preview_size = reader.size()
+            if not preview_size.isValid():
+                return
+
+            preview_size.scale(360, 240, Qt.AspectRatioMode.KeepAspectRatio)
+            reader.setScaledSize(preview_size)
+            image = reader.read()
+            if image.isNull():
+                return
+
+            preview = QtWidgets.QLabel(box)
+            preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            preview.setPixmap(QtGui.QPixmap.fromImage(image))
+            preview.setToolTip(f"Archivo existente: {candidate.name}")
+            preview.setAccessibleName(f"Vista previa del archivo existente {candidate.name}")
+
+            layout = box.layout()
+            if isinstance(layout, QtWidgets.QGridLayout):
+                layout.addWidget(preview, layout.rowCount(), 0, 1, max(1, layout.columnCount()))
+            else:
+                layout.addWidget(preview)
+        except Exception:
+            logging.exception("Could not load duplicate destination preview: %s", candidate)
+
+    def _start_duplicate_delete(self, candidate: Path, on_success: Callable[[], None]) -> bool:
+        """Moves an existing duplicate to the Recycle Bin without blocking the UI thread."""
+        operation_id = self._duplicate_delete_operation_counter
+        self._duplicate_delete_operation_counter += 1
+
+        progress = QtWidgets.QProgressDialog(
+            f"Eliminando el archivo duplicado:\n{candidate.name}", "", 0, 0, self
+        )
+        progress.setWindowTitle("Eliminando duplicado")
+        progress.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+
+        worker = _DuplicateDeleteWorker(operation_id, candidate)
+        worker.signals.finished.connect(self._on_duplicate_delete_finished)
+        self._duplicate_delete_operations[operation_id] = {
+            "worker": worker,
+            "progress": progress,
+            "candidate": candidate,
+            "on_success": on_success,
+        }
+
+        progress.show()
+        try:
+            QtCore.QThreadPool.globalInstance().start(worker)
+        except Exception:
+            self._duplicate_delete_operations.pop(operation_id, None)
+            progress.close()
+            progress.deleteLater()
+            logging.exception("Could not start background deletion for duplicate: %s", candidate)
+            self._show_warning_message(f"No se pudo eliminar el archivo existente:\n{candidate.name}")
+            self.selection_panel.set_subfolders_enabled(True)
+            return False
+
+        return True
+
+    @QtCore.pyqtSlot(int, str, bool)
+    def _on_duplicate_delete_finished(self, operation_id: int, path_str: str, success: bool) -> None:
+        operation = self._duplicate_delete_operations.pop(operation_id, None)
+        if operation is None:
+            return
+
+        progress = operation["progress"]
+        progress.close()
+        progress.deleteLater()
+
+        candidate = Path(path_str)
+        if not success and candidate.exists():
+            self._show_warning_message(f"No se pudo eliminar el archivo existente:\n{candidate.name}")
+            self.selection_panel.set_subfolders_enabled(True)
+            return
+
+        try:
+            operation["on_success"]()
+        except Exception:
+            logging.exception("Could not continue move after deleting duplicate: %s", candidate)
+            self.selection_panel.set_subfolders_enabled(True)
+            self._show_warning_message("El duplicado se eliminó, pero no se pudo continuar con el movimiento.")
+
+    def _check_destination_collision(
+        self,
+        candidate: Path,
+        allow_retry: bool = False,
+        on_delete_complete: Optional[Callable[[], None]] = None,
+    ) -> tuple[str, Optional[Path]]:
         if not candidate.exists():
             return "move", candidate
 
@@ -630,12 +751,13 @@ class MainWindow(QWidget):
         box.setWindowTitle("Archivo con el mismo nombre")
         box.setText(f"Ya existe un archivo con el mismo nombre:\n{candidate.name}")
         box.setInformativeText("Elige qué hacer.")
+        self._add_collision_image_preview(box, candidate)
 
         btn_move = box.addButton("Mover de todas formas", QMessageBox.ButtonRole.AcceptRole)
         btn_delete = box.addButton("Eliminar duplicado", QMessageBox.ButtonRole.DestructiveRole)
         btn_open = box.addButton("Abrir archivo existente", QMessageBox.ButtonRole.ActionRole)
         btn_other = None
-        
+
         if allow_retry:
             btn_other = box.addButton("Elegir otra carpeta", QMessageBox.ButtonRole.DestructiveRole)
         btn_cancel = box.addButton(QMessageBox.StandardButton.Cancel)
@@ -646,14 +768,12 @@ class MainWindow(QWidget):
         clicked = box.clickedButton()
 
         if clicked == btn_delete:
-            self.selection_panel.set_subfolders_enabled(True)
-            try:
-                if delete_to_recycle_bin(candidate):
-                    return "move", candidate
-            except Exception:
-                logging.exception("Failed to delete existing destination file")
-
-            self._show_warning_message(f"No se pudo eliminar el archivo existente:\n{candidate.name}")
+            if on_delete_complete is None:
+                logging.error("Duplicate deletion requested without a move continuation: %s", candidate)
+                self.selection_panel.set_subfolders_enabled(True)
+                return "cancel", None
+            if self._start_duplicate_delete(candidate, on_delete_complete):
+                return "pending", None
             return "cancel", None
 
         if clicked == btn_open:
@@ -1009,7 +1129,10 @@ class MainWindow(QWidget):
             'post_action': "none",
         }
 
-        action, final_dest = self._check_destination_collision(candidate)
+        action, final_dest = self._check_destination_collision(
+            candidate,
+            on_delete_complete=lambda: self._start_move_task(decision, candidate),
+        )
         if action != "move" or final_dest is None:
             return
         self._start_move_task(decision, final_dest)
@@ -1232,7 +1355,12 @@ class MainWindow(QWidget):
         }
 
         candidate = compute_destination(decision, self.filepath)
-        action, final_dest = self._check_destination_collision(candidate)
+        action, final_dest = self._check_destination_collision(
+            candidate,
+            on_delete_complete=lambda: self._start_move_task(decision, candidate),
+        )
+        if action == "pending":
+            return
         if action != "move" or final_dest is None:
             self.selection_panel.set_subfolders_enabled(True)
             return
@@ -1392,7 +1520,14 @@ class MainWindow(QWidget):
 
         while True:
             candidate = Path(folder) / (newname + self.filepath.suffix)
-            action, final_dest = self._check_destination_collision(candidate, allow_retry=True)
+            action, final_dest = self._check_destination_collision(
+                candidate,
+                allow_retry=True,
+                on_delete_complete=lambda: self._start_move_task(decision, candidate),
+            )
+
+            if action == "pending":
+                return
 
             if action == "retry":
                 folder = QFileDialog.getExistingDirectory(self, "Select Destination Folder", str(self.filepath.parent))
