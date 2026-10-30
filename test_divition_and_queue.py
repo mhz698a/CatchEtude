@@ -134,6 +134,27 @@ class TestQueueAndDivisionFeatures(unittest.TestCase):
         self.assertEqual(panel.get_selected_paths(), [f1, f2])
         self.assertTrue(panel.queue_list_widget.item(0).isSelected())
 
+    def test_undo_queue_refresh_selects_new_active_and_deselects_previous_active(self):
+        panel = QueuePanel()
+        f1 = Path("/tmp/first.txt")
+        f2 = Path("/tmp/second.txt")
+        f3 = Path("/tmp/third.txt")
+        undo_1 = Path("/tmp/undo_1.txt")
+        undo_2 = Path("/tmp/undo_2.txt")
+
+        panel.update_queue([f1, f2, f3], str(f1))
+        panel.queue_list_widget.item(1).setSelected(True)
+
+        # First Undo puts a restored file at the head of the queue.
+        panel.update_queue([undo_1, f1, f2, f3], str(undo_1))
+        self.assertEqual(panel.get_selected_paths(), [undo_1, f2])
+        self.assertFalse(panel.queue_list_widget.item(1).isSelected())
+
+        # A second Undo selects the newly restored active file, not the prior head.
+        panel.update_queue([undo_2, undo_1, f1, f2, f3], str(undo_2))
+        self.assertEqual(panel.get_selected_paths(), [undo_2, f2])
+        self.assertFalse(panel.queue_list_widget.item(1).isSelected())
+
     def test_queue_reordering(self):
         sm = StateManager()
 

@@ -34,6 +34,7 @@ class QueuePanel(QWidget):
         self._queue_non_shown = 0
         self._movings_minimized = False
         self._queue_selection_guard = False
+        self._last_active_path_str: str | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -209,8 +210,17 @@ class QueuePanel(QWidget):
         self.queue_list_widget.viewport().update()
 
     def update_queue(self, queue_list: list[Path], active_path_str: str):
-        """Updates the queue while preserving selections for files still waiting."""
+        """Update queue selection, dropping the file that stopped being active."""
         selected_paths = {str(path) for path in self.get_selected_paths()}
+
+        # The first item is selected automatically while active. When Undo or
+        # queue activation changes the active file, don't carry the old active
+        # item's automatic selection into the new queue rendering.
+        previous_active = self._last_active_path_str
+        if previous_active and previous_active != active_path_str:
+            selected_paths.discard(previous_active)
+        self._last_active_path_str = active_path_str or None
+
         self.queue_list_widget.blockSignals(True)
         try:
             self.queue_list_widget.clear()
