@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Callable, Optional
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QFileDialog,
     QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, 
