@@ -56,6 +56,10 @@ class TrayMenuManager:
         rescan_action.triggered.connect(mw._rescan_downloads)
         self.tray_menu.addAction(rescan_action)
 
+        order_one_pending_action = QAction(loc.get("tray_order_one_pending"), mw)
+        order_one_pending_action.triggered.connect(mw._on_order_one_pending_clicked)
+        self.tray_menu.addAction(order_one_pending_action)
+
         order_pending_action = QAction(loc.get("tray_order_pending"), mw)
         order_pending_action.triggered.connect(mw._on_order_pending_clicked)
         self.tray_menu.addAction(order_pending_action)
