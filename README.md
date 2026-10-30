@@ -33,6 +33,16 @@ CatchEtude incluye un sistema de extensiones locales explícitamente confiables:
 
 Cómo encaja: al arrancar catchetude.pyw se inicializan logging y servicios (service_mgr.start_*), se crea StateManager y AppSignals, se lanza WatcherThread que usa watchdog.observers para detectar nuevos ficheros en Downloads. Las utilidades de utils.py realizan flattening, comprobación de locks y configuración DWM; los movimientos de archivos se ejecutan con workers de fondo. service_mgr gestiona IPC por QLocalSocket y mutex Win32 para coordinar servicios auxiliares.
 
+## Endpoint IPC local
+
+CatchEtude puede recibir la ruta de un archivo individual o una carpeta a través
+del socket local `CatchEtudeCommandServer`. Los archivos se agregan directamente
+a la cola; las carpetas se recorren recursivamente en segundo plano. El cliente
+incluido es `send_command.py`.
+
+La especificación del protocolo, los mensajes JSON, las respuestas, los errores
+y los ejemplos están en [docs/command-endpoint.md](docs/command-endpoint.md).
+
 ## Cómo ejecutarlo (mínimo)
 Requiere python 3.12+
 Requisitos detectados: Python en Windows, PyQt6, watchdog, pywin32, send2trash. No hay requirements.txt; conviene crear uno con versiones pinneadas.
