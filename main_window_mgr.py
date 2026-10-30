@@ -389,6 +389,9 @@ class MainWindow(QWidget):
 
     def _read_server_data(self, socket, final: bool = False):
         try:
+            if socket.property("command_processed"):
+                return
+
             buffered = socket.property("command_buffer") or b""
             data = bytes(buffered) + socket.readAll().data()
 
@@ -399,6 +402,9 @@ class MainWindow(QWidget):
             request_line = data.split(b"\n", 1)[0].strip()
             if not request_line:
                 return
+
+            socket.setProperty("command_buffer", b"")
+            socket.setProperty("command_processed", True)
 
             try:
                 command = json.loads(request_line.decode("utf-8"))
