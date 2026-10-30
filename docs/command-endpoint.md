@@ -72,6 +72,7 @@ Errors return `"ok":false` and an `error` code. Possible codes include:
 - `invalid_path` or `unsupported_path`: the path cannot be resolved or is not a regular file/directory.
 - `temporary_file`: a temporary file cannot be enqueued.
 - `invalid_hide_secure`: `hide_secure` must be a JSON boolean.
+- `internal_error`: CatchEtude encountered an unexpected processing error.
 
 ## Use the provided client
 
