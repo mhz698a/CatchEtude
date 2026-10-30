@@ -7,7 +7,6 @@ import os
 import sys
 import logging
 import json
-import threading
 import subprocess
 from pathlib import Path
 from datetime import datetime
@@ -16,12 +15,10 @@ from typing import Callable, Optional
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QFileDialog,
-    QHBoxLayout, QVBoxLayout, QSystemTrayIcon, QMenu, 
-    QMessageBox, QStatusBar, QCheckBox, QTimeEdit, QSpinBox
+    QHBoxLayout, QVBoxLayout, QMessageBox, QStatusBar, 
+    QCheckBox, QTimeEdit, QSpinBox
 )
-from pending_scheduler_mgr import PendingScheduler
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
-from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTime
 
 import config
@@ -35,10 +32,9 @@ from utils import (
 from state_manager import StateManager, State
 from ui_utils_mgr import load_stylesheet
 from fallback_utils import compute_destination
-from file_worker_mgr import FileMoveWorker
 from app_signals_mgr import AppSignals
 from localization import LocalizationManager
-
+from pending_scheduler_mgr import PendingScheduler
 from selection_panel_mgr import SelectionPanel
 from action_panel_mgr import ActionPanel
 from queue_panel_mgr import QueuePanel
@@ -47,28 +43,7 @@ from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
 from background_move_mgr import BackgroundMoveManager
 from tray_menu_mgr import TrayMenuManager
-
-
-class _DuplicateDeleteSignals(QtCore.QObject):
-    finished = QtCore.pyqtSignal(int, str, bool)
-
-
-class _DuplicateDeleteWorker(QtCore.QRunnable):
-    def __init__(self, operation_id: int, path: Path):
-        super().__init__()
-        self.operation_id = operation_id
-        self.path = Path(path)
-        self.signals = _DuplicateDeleteSignals()
-
-    @QtCore.pyqtSlot()
-    def run(self):
-        try:
-            success = delete_to_recycle_bin(self.path)
-        except Exception:
-            logging.exception("Failed to delete duplicate destination file: %s", self.path)
-            success = False
-
-        self.signals.finished.emit(self.operation_id, str(self.path), success)
+from duplication_mgr import _DuplicateDeleteWorker
 
 
 class MainWindow(QWidget):
