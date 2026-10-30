@@ -71,6 +71,34 @@ class TestTrayMenuManager(unittest.TestCase):
         mgr.tray.setContextMenu.assert_called_once_with(mgr.tray_menu)
         mgr.tray.show.assert_called_once()
 
+    def test_order_one_pending_precedes_order_pending(self):
+        mw_mock = MagicMock()
+        mw_mock.isVisible.return_value = True
+        mw_mock.loc.get.side_effect = lambda key: key
+        mw_mock.background_move_mgr._history.get_last_move.return_value = None
+
+        mgr = self.tray_menu_mgr_module.TrayMenuManager(mw_mock)
+        created_actions = []
+
+        def create_action(label, parent=None):
+            action = MagicMock()
+            action.label = label
+            created_actions.append(action)
+            return action
+
+        with patch.object(self.tray_menu_mgr_module, "QAction", side_effect=create_action):
+            with patch.object(mgr, "_build_or_update_plugins_submenu"):
+                mgr.build_tray()
+
+        labels = [action.label for action in created_actions]
+        one_pending_index = labels.index("tray_order_one_pending")
+        all_pending_index = labels.index("tray_order_pending")
+        self.assertEqual(one_pending_index + 1, all_pending_index)
+
+        created_actions[one_pending_index].triggered.connect.assert_called_once_with(
+            mw_mock._on_order_one_pending_clicked
+        )
+
     def test_on_plugin_tray_action(self):
         mw_mock = MagicMock()
         mgr = self.tray_menu_mgr_module.TrayMenuManager(mw_mock)
