@@ -392,11 +392,11 @@ class MainWindow(QWidget):
             buffered = socket.property("command_buffer") or b""
             data = bytes(buffered) + socket.readAll().data()
 
-            if b"\\n" not in data and not final:
+            if b"\n" not in data and not final:
                 socket.setProperty("command_buffer", data)
                 return
 
-            request_line = data.split(b"\\n", 1)[0].strip()
+            request_line = data.split(b"\n", 1)[0].strip()
             if not request_line:
                 return
 
@@ -421,7 +421,7 @@ class MainWindow(QWidget):
             # Legacy clients have already disconnected, but their request is still
             # processed through the final=True path above.
             if not final and socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
-                payload = (json.dumps(response, ensure_ascii=False) + "\\n").encode("utf-8")
+                payload = (json.dumps(response, ensure_ascii=False) + "\n").encode("utf-8")
                 socket.write(payload)
                 socket.flush()
                 socket.disconnectFromServer()
