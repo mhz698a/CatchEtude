@@ -35,7 +35,7 @@ file or an existing directory.
 ### Example: one file
 
 ```json
-{"cmd":"enqueue_path","path":"C:\\\\Users\\\\Example\\\\Downloads\\\\image.png","hide_secure":true}
+{"cmd":"enqueue_path","path":"C:/Users/Example/Downloads/image.png","hide_secure":true}
 ```
 
 CatchEtude adds that file to the pending queue. Temporary files are rejected.
@@ -43,7 +43,7 @@ CatchEtude adds that file to the pending queue. Temporary files are rejected.
 ### Example: one folder
 
 ```json
-{"cmd":"enqueue_path","path":"C:\\\\Users\\\\Example\\\\Downloads\\\\Incoming","hide_secure":false}
+{"cmd":"enqueue_path","path":"C:/Users/Example/Downloads/Incoming","hide_secure":false}
 ```
 
 CatchEtude scans the directory recursively in the background and enqueues its
@@ -55,7 +55,7 @@ accepted and scheduled; it does not wait for the scan to finish.
 A file request returns:
 
 ```json
-{"ok":true,"accepted":true,"kind":"file","path":"C:\\\\Users\\\\Example\\\\Downloads\\\\image.png"}
+{"ok":true,"accepted":true,"kind":"file","path":"C:/Users/Example/Downloads/image.png"}
 ```
 
 A directory request returns the same shape with `"kind":"folder"`.
@@ -82,8 +82,8 @@ code when the request is rejected.
 From PowerShell or CMD:
 
 ```powershell
-python send_command.py "C:\\Users\\Example\\Downloads\\image.png" True
-python send_command.py "C:\\Users\\Example\\Downloads\\Incoming" False
+python send_command.py "C:/Users/Example/Downloads/image.png" True
+python send_command.py "C:/Users/Example/Downloads/Incoming" False
 ```
 
 The first command enqueues only `image.png`. The second schedules a recursive
@@ -95,7 +95,7 @@ For existing integrations, the server continues to accept the former payload
 shape without a `cmd` property:
 
 ```json
-{"path":"C:\\\\Users\\\\Example\\\\Downloads\\\\image.png","hide_secure":true}
+{"path":"C:/Users/Example/Downloads/image.png","hide_secure":true}
 ```
 
 Legacy clients that do not append a newline are processed when they close the
