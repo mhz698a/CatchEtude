@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 
 from utils import run_in_threadpool
-from state_manager import StateManager, scan_existing_downloads
+from state_manager import StateManager
 from watcher_mgr import WatcherThread
 from app_signals_mgr import AppSignals
 from log_mgr import setup_logging
@@ -81,9 +81,9 @@ def main():
         signals = AppSignals()
         state_manager.notifier = signals
 
-        # # Start Watcher
+        # Defer watcher startup until the UI is connected to queue signals.
         watcher = WatcherThread(state_manager.enqueue_file)
-        watcher.start()
+        state_manager.recent_path_handler = watcher.watch_candidate
 
         def _cleanup_services():
             try:
@@ -96,6 +96,7 @@ def main():
                 logging.exception("Failed to stop parallel services during shutdown")
             try:
                 watcher.stop()
+                watcher.wait(3000)
             except Exception:
                 logging.exception("Failed to stop watcher")
 
@@ -113,9 +114,6 @@ def main():
             })
 
         signals.file_detected.connect(_on_file_detected)
-
-        # Initial scan
-        run_in_threadpool(scan_existing_downloads, state_manager)
 
         # Create Main Window
         win = MainWindow(state_manager, signals, plugin_mgr=plugin_mgr)
@@ -138,6 +136,20 @@ def main():
 
         win.background_move_mgr.move_finished.connect(_on_move_finished)
 
+        # Begin monitoring after MainWindow has connected all queue-related signals.
+        watcher.start()
+        initial_scan_timer = QtCore.QTimer(app)
+        initial_scan_timer.setInterval(100)
+
+        def _scan_downloads_when_watcher_is_ready():
+            if not watcher.is_watching:
+                return
+            initial_scan_timer.stop()
+            run_in_threadpool(state_manager._run_maintenance_scan)
+
+        initial_scan_timer.timeout.connect(_scan_downloads_when_watcher_is_ready)
+        initial_scan_timer.start()
+
         # Start Thread Reporter for Main App
         from log_mgr import start_thread_reporter
         start_thread_reporter("Main App", win)
@@ -150,7 +162,7 @@ def main():
 
         rescan_timer = QtCore.QTimer()
         rescan_timer.setInterval(30 * 60 * 1000)
-        rescan_timer.timeout.connect(lambda: run_in_threadpool(scan_existing_downloads, state_manager))
+        rescan_timer.timeout.connect(lambda: run_in_threadpool(state_manager._run_maintenance_scan))
         rescan_timer.start()
 
         # Startup registration

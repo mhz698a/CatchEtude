@@ -33,6 +33,8 @@ class QueuePanel(QWidget):
         self._queue_total = 0
         self._queue_non_shown = 0
         self._movings_minimized = False
+        self._queue_selection_guard = False
+        self._last_active_path_str: str | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -46,6 +48,12 @@ class QueuePanel(QWidget):
         
         self.queue_list_widget = QListWidget()
         self.queue_list_widget.setItemDelegate(QueueDelegate(self))
+        self.queue_list_widget.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.MultiSelection
+        )
+        self.queue_list_widget.itemSelectionChanged.connect(
+            self._ensure_first_queue_item_selected
+        )
         self.queue_list_widget.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.queue_list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.queue_list_widget.customContextMenuRequested.connect(self._on_queue_context_menu)
@@ -90,6 +98,31 @@ class QueuePanel(QWidget):
         is_active = item.data(Qt.ItemDataRole.UserRole + 1)
         if path_str and not is_active:
             self.file_double_clicked.emit(path_str)
+
+    def get_selected_paths(self) -> list[Path]:
+        """Returns selected queue paths in the same order as the visible queue."""
+        selected = []
+        for row in range(self.queue_list_widget.count()):
+            item = self.queue_list_widget.item(row)
+            path_str = item.data(Qt.ItemDataRole.UserRole)
+            if item.isSelected() and path_str:
+                selected.append(Path(path_str))
+        return selected
+
+    def _ensure_first_queue_item_selected(self):
+        """The first queue item is the active item and cannot be deselected."""
+        if self._queue_selection_guard or self.queue_list_widget.count() == 0:
+            return
+
+        first_item = self.queue_list_widget.item(0)
+        if first_item.isSelected():
+            return
+
+        self._queue_selection_guard = True
+        try:
+            first_item.setSelected(True)
+        finally:
+            self._queue_selection_guard = False
 
     def _on_queue_context_menu(self, pos: QtCore.QPoint):
         item = self.queue_list_widget.itemAt(pos)
@@ -177,19 +210,38 @@ class QueuePanel(QWidget):
         self.queue_list_widget.viewport().update()
 
     def update_queue(self, queue_list: list[Path], active_path_str: str):
-        """Updates the download queue UI list."""
-        self.queue_list_widget.clear()
-        total = len(queue_list)
-        pending = sum(1 for p in queue_list if str(p) != active_path_str)
-        visible_queue = queue_list[:MAX_VISIBLE_DOWNLOAD_QUEUE_ITEMS]
-        non_shown = max(0, total - len(visible_queue))
-        self._refresh_queue_label(pending, total, non_shown)
-        
-        for p in visible_queue:
-            item = QtWidgets.QListWidgetItem()
-            item.setData(Qt.ItemDataRole.UserRole, str(p))
-            item.setData(Qt.ItemDataRole.UserRole + 1, str(p) == active_path_str)
-            self.queue_list_widget.addItem(item)
+        """Update queue selection, dropping the file that stopped being active."""
+        selected_paths = {str(path) for path in self.get_selected_paths()}
+
+        # The first item is selected automatically while active. When Undo or
+        # queue activation changes the active file, don't carry the old active
+        # item's automatic selection into the new queue rendering.
+        previous_active = self._last_active_path_str
+        if previous_active and previous_active != active_path_str:
+            selected_paths.discard(previous_active)
+        self._last_active_path_str = active_path_str or None
+
+        self.queue_list_widget.blockSignals(True)
+        try:
+            self.queue_list_widget.clear()
+            total = len(queue_list)
+            pending = sum(1 for p in queue_list if str(p) != active_path_str)
+            visible_queue = queue_list[:MAX_VISIBLE_DOWNLOAD_QUEUE_ITEMS]
+            non_shown = max(0, total - len(visible_queue))
+            self._refresh_queue_label(pending, total, non_shown)
+
+            for row, p in enumerate(visible_queue):
+                path_str = str(p)
+                item = QtWidgets.QListWidgetItem()
+                item.setData(Qt.ItemDataRole.UserRole, path_str)
+                item.setData(Qt.ItemDataRole.UserRole + 1, path_str == active_path_str)
+                self.queue_list_widget.addItem(item)
+                if row == 0 or path_str == active_path_str or path_str in selected_paths:
+                    item.setSelected(True)
+        finally:
+            self.queue_list_widget.blockSignals(False)
+
+        self._ensure_first_queue_item_selected()
 
     def request_characters(self, year: int, generation: int):
         self.char_model.clear_data()

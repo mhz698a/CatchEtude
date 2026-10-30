@@ -42,7 +42,7 @@ import os
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 from PyQt6 import QtWidgets
-from state_manager import StateManager
+from state_manager import StateManager, State
 from plugins.divition_subfolder_plugin import SplitFolderWorker, SplitFolderDialog
 from selection_panel_mgr import SelectionPanel
 from queue_panel_mgr import QueuePanel
@@ -111,6 +111,50 @@ class TestQueueAndDivisionFeatures(unittest.TestCase):
         # item 1 (f2) -> top enabled, bottom enabled
         # item 2 (f3) -> top enabled, bottom disabled
 
+    def test_queue_multiselection_keeps_first_selected_and_survives_refresh(self):
+        panel = QueuePanel()
+        f1 = Path("/tmp/f1.txt")
+        f2 = Path("/tmp/f2.txt")
+        f3 = Path("/tmp/f3.txt")
+
+        panel.update_queue([f1, f2, f3], str(f1))
+        self.assertEqual(
+            panel.queue_list_widget.selectionMode(),
+            QtWidgets.QAbstractItemView.SelectionMode.MultiSelection,
+        )
+        self.assertTrue(panel.queue_list_widget.item(0).isSelected())
+
+        panel.queue_list_widget.item(1).setSelected(True)
+        panel.queue_list_widget.item(0).setSelected(False)
+        self.assertTrue(panel.queue_list_widget.item(0).isSelected())
+        self.assertTrue(panel.queue_list_widget.item(1).isSelected())
+
+        # Queue refreshes must not erase the user's pending selections.
+        panel.update_queue([f1, f2, f3], str(f1))
+        self.assertEqual(panel.get_selected_paths(), [f1, f2])
+        self.assertTrue(panel.queue_list_widget.item(0).isSelected())
+
+    def test_undo_queue_refresh_selects_new_active_and_deselects_previous_active(self):
+        panel = QueuePanel()
+        f1 = Path("/tmp/first.txt")
+        f2 = Path("/tmp/second.txt")
+        f3 = Path("/tmp/third.txt")
+        undo_1 = Path("/tmp/undo_1.txt")
+        undo_2 = Path("/tmp/undo_2.txt")
+
+        panel.update_queue([f1, f2, f3], str(f1))
+        panel.queue_list_widget.item(1).setSelected(True)
+
+        # First Undo puts a restored file at the head of the queue.
+        panel.update_queue([undo_1, f1, f2, f3], str(undo_1))
+        self.assertEqual(panel.get_selected_paths(), [undo_1, f2])
+        self.assertFalse(panel.queue_list_widget.item(1).isSelected())
+
+        # A second Undo selects the newly restored active file, not the prior head.
+        panel.update_queue([undo_2, undo_1, f1, f2, f3], str(undo_2))
+        self.assertEqual(panel.get_selected_paths(), [undo_2, f2])
+        self.assertFalse(panel.queue_list_widget.item(1).isSelected())
+
     def test_queue_reordering(self):
         sm = StateManager()
 
@@ -124,8 +168,9 @@ class TestQueueAndDivisionFeatures(unittest.TestCase):
                 f.write_text("content")
 
             sm.enqueue_files([f1, f2, f3, f4])
-            # Active file is f1
+            sm._state = State.USER_DECIDING
             sm._active_file = f1
+            sm._queue_list = [f1, f2, f3, f4]
 
             # Current queue list: [f1, f2, f3, f4]
             self.assertEqual(sm._queue_list, [f1, f2, f3, f4])

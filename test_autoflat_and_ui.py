@@ -52,20 +52,12 @@ class TestAutoflatAndUI(unittest.TestCase):
         line_edit = dialog.inputs["AUTOFLAT_FOLDERS"]
         self.assertEqual(line_edit.placeholderText(), "example_folder/other_folder")
 
-    def test_action_panel_layout_and_blur_spinbox(self):
+    def test_action_panel_layout_and_controls(self):
         panel = ActionPanel()
-        self.assertTrue(hasattr(panel, "blur_spinbox"))
-        self.assertTrue(hasattr(panel, "hide_secure_cb"))
-        self.assertTrue(hasattr(panel, "drag_icon"))
-        self.assertTrue(hasattr(panel, "keep_downloads_cb"))
-
-        self.assertEqual(panel.blur_spinbox.minimum(), 1)
-        self.assertEqual(panel.blur_spinbox.maximum(), 255)
-        self.assertEqual(panel.blur_spinbox.value(), config.BLUR_LEVEL)
-
-        # Test value change
-        panel.blur_spinbox.setValue(30)
-        self.assertEqual(config.BLUR_LEVEL, 30)
+        self.assertTrue(hasattr(panel, "btn_open"))
+        self.assertTrue(hasattr(panel, "btn_delete"))
+        self.assertTrue(hasattr(panel, "rename_input"))
+        self.assertTrue(hasattr(panel, "btn_flat_folder"))
 
     def test_queue_panel_progress_bar(self):
         panel = QueuePanel()

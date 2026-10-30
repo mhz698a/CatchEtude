@@ -164,6 +164,17 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
         self._empty_button = btn
         self.setEnabled(self._enabled)
 
+    def show_loading_placeholder(self, text: str):
+        """Show a non-interactive placeholder while a background scan enumerates folders."""
+        self.clear()
+        label = QtWidgets.QLabel(text)
+        label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        label.setFixedHeight(34)
+        label.setEnabled(False)
+        self.layout.insertWidget(self.layout.count() - 1, label)
+        self._empty_button = label
+        self.setEnabled(self._enabled)
+
     def update_button(self, name: str, line2=None, line3=None):
         """Updates a specific button by folder name."""
         if name in self._buttons:

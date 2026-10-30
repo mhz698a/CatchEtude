@@ -69,6 +69,8 @@ class StateManager:
         self._queue_list: list[Path] = []
         self._background_moves: set[Path] = set()
         self._is_scanning = False
+        # Optional callback installed by the Downloads watcher for unstable entries.
+        self.recent_path_handler = None
         self._last_requeue_log = None
         # notifier for UI (Qt signal) will be set externally by AppController
         self.notifier: Optional['AppSignals'] = None
@@ -327,6 +329,54 @@ class StateManager:
         self._set_state(State.IDLE)
         self._enqueue_allowed.set()
         return sources
+
+    def reserve_selected_background_moves(self, selected_sources: list[Path]) -> list[Path]:
+        """Reserve selected queue files for a batch move without resuming the queue yet.
+
+        The active file must be selected. The caller must enqueue a background task
+        for every returned source and then call finish_selected_background_moves().
+        """
+        if self.current_state() != State.USER_DECIDING:
+            logging.warning(
+                "reserve_selected_background_moves called in state %s",
+                self.current_state(),
+            )
+            return []
+
+        selected = set(selected_sources)
+        with self._lock:
+            active = self._active_file
+            if active is None or active not in selected:
+                return []
+
+            sources = [
+                path for path in self._queue_list
+                if path in selected and (path == active or path in self._pending)
+            ]
+            if active not in sources:
+                return []
+
+            self._background_moves.update(sources)
+            self._queue_list = [path for path in self._queue_list if path not in sources]
+            with self._q.mutex:
+                self._q.queue = deque(path for path in self._q.queue if path not in sources)
+            self._active_file = None
+            self._emit_queue_update()
+
+        return sources
+
+    def finish_selected_background_moves(self) -> bool:
+        """Resume queue processing after the selected files have been handed to workers."""
+        with self._lock:
+            if self._state != State.USER_DECIDING or self._active_file is not None:
+                logging.warning(
+                    "finish_selected_background_moves called from an unexpected queue state"
+                )
+                return False
+
+        self._set_state(State.IDLE)
+        self._enqueue_allowed.set()
+        return True
 
     def fail_background_move(self, src: Path) -> None:
         """Requeues a failed background move without dropping the next active file."""
@@ -617,38 +667,61 @@ class StateManager:
         self._set_state(State.IDLE)
         self._enqueue_allowed.set()
 
-        run_in_threadpool(scan_existing_downloads, self)
+        run_in_threadpool(self._run_maintenance_scan)
 
 
 def scan_existing_downloads(state_manager: StateManager):
+    """
+    Enqueue stable Downloads entries and send recent/locked candidates to the watcher.
+
+    This function runs in a worker. Recent files may still be receiving data, so
+    the watcher waits for size/mtime stability before adding them to the queue.
+    """
+    recent_path_handler = getattr(state_manager, "recent_path_handler", None)
     try:
         now = time.time()
         to_enqueue = []
-        for p in sorted(config.DOWNLOADS.iterdir()):
-            if is_temporary(p):
-                continue
 
+        for path in sorted(config.DOWNLOADS.iterdir(), key=lambda item: item.name.casefold()):
             try:
-                if p.is_dir():
-                    if folder_is_safe_to_flatten(p):
-                        to_enqueue.append(p)
+                if is_temporary(path):
                     continue
 
-                if not p.is_file():
+                if path.is_dir():
+                    if folder_is_safe_to_flatten(path):
+                        to_enqueue.append(path)
+                    elif recent_path_handler:
+                        recent_path_handler(path)
                     continue
 
-                stat = p.stat()
-                # If modified within the last 1 second, skip it (will be caught later)
-                if now - stat.st_mtime < 1:
+                if not path.is_file():
                     continue
 
-                if is_file_locked(p):
+                stat = path.stat()
+                is_recent = now - stat.st_mtime < 1
+                is_locked = is_file_locked(path)
+                if is_recent or is_locked:
+                    if recent_path_handler:
+                        recent_path_handler(path)
                     continue
 
-                to_enqueue.append(p)
-            except Exception:
+                to_enqueue.append(path)
+
+            except FileNotFoundError:
+                # Entries may be renamed, moved, or deleted while the scan is running.
                 continue
+            except PermissionError:
+                logging.debug("Temporary access error while scanning %s", path, exc_info=True)
+                if recent_path_handler:
+                    recent_path_handler(path)
+            except OSError:
+                logging.exception("Error inspecting Downloads entry %s", path)
+
         if to_enqueue:
             state_manager.enqueue_files(to_enqueue)
+            logging.info("Downloads scan queued %s stable entries", len(to_enqueue))
+
+    except FileNotFoundError:
+        logging.warning("Downloads directory does not exist: %s", config.DOWNLOADS)
     except Exception:
         logging.exception("Error during scan_existing_downloads")
