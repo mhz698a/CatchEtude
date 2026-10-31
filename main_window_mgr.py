@@ -374,36 +374,141 @@ class MainWindow(QWidget):
             logging.error(f"Server could not start: {self._server.errorString()}")
 
     def _on_new_server_connection(self):
-        client_socket = self._server.nextPendingConnection()
-        client_socket.readyRead.connect(lambda: self._read_server_data(client_socket))
+        while self._server.hasPendingConnections():
+            client_socket = self._server.nextPendingConnection()
+            client_socket.setProperty("command_buffer", b"")
+            client_socket.readyRead.connect(
+                lambda s=client_socket: self._read_server_data(s)
+            )
+            # Older clients sent a JSON object without a newline and closed the
+            # connection immediately. Process that payload on disconnect too.
+            client_socket.disconnected.connect(
+                lambda s=client_socket: self._read_server_data(s, final=True)
+            )
+            client_socket.disconnected.connect(client_socket.deleteLater)
 
-    def _read_server_data(self, socket):
-        data = socket.readAll().data().decode('utf-8')
+    def _read_server_data(self, socket, final: bool = False):
         try:
-            cmd = json.loads(data)
-            if cmd.get("cmd") == "capture_ui_render":
-                self._capture_ui_render()
-                socket.disconnectFromServer()
+            if socket.property("command_processed"):
                 return
 
-            path = cmd.get("path")
-            hide_secure = cmd.get("hide_secure", True)
-            if path and os.path.exists(path):
-                self._hide_secure = hide_secure
-                self.hide_secure_cb.setChecked(self._hide_secure)
-                self.queue_panel.set_hide_secure(self._hide_secure)
-                if hasattr(self, "action_panel") and self.action_panel is not None:
-                    self.action_panel._hide_secure = self._hide_secure
-                    self.action_panel.load_preview()
-                self._save_config()
-                p = Path(path)
-                if p.is_dir():
-                    self._process_pending_folder(p)
-                else:
-                    self.state_manager.enqueue_file(p)
+            buffered = socket.property("command_buffer") or b""
+            data = bytes(buffered) + socket.readAll().data()
+
+            if b"\n" not in data and not final:
+                socket.setProperty("command_buffer", data)
+                return
+
+            request_line = data.split(b"\n", 1)[0].strip()
+            if not request_line:
+                return
+
+            socket.setProperty("command_buffer", b"")
+            socket.setProperty("command_processed", True)
+
+            try:
+                command = json.loads(request_line.decode("utf-8"))
+                response = self._handle_server_command(command)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                response = {
+                    "ok": False,
+                    "error": "invalid_json",
+                    "message": "Request must be one UTF-8 JSON object followed by a newline.",
+                }
+            except Exception:
+                logging.exception("Failed to process server command")
+                response = {
+                    "ok": False,
+                    "error": "internal_error",
+                    "message": "CatchEtude could not process the command.",
+                }
+
+            # New clients keep the socket open until they receive this response.
+            # Legacy clients have already disconnected, but their request is still
+            # processed through the final=True path above.
+            if not final and socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
+                payload = (json.dumps(response, ensure_ascii=False) + "\n").encode("utf-8")
+                socket.write(payload)
+                socket.flush()
+                socket.disconnectFromServer()
         except Exception:
-            logging.exception("Failed to process server command")
-        socket.disconnectFromServer()
+            logging.exception("Failed while reading command endpoint data")
+            if not final:
+                socket.disconnectFromServer()
+
+    def _handle_server_command(self, command: dict) -> dict:
+        if not isinstance(command, dict):
+            return {"ok": False, "error": "invalid_request", "message": "Expected a JSON object."}
+
+        command_name = command.get("cmd")
+        if command_name == "capture_ui_render":
+            self._capture_ui_render()
+            return {"ok": True, "command": "capture_ui_render"}
+
+        # Requests without "cmd" are accepted for compatibility with older
+        # send_command.py clients, which only supplied "path" and "hide_secure".
+        if command_name not in (None, "enqueue_path"):
+            return {
+                "ok": False,
+                "error": "unknown_command",
+                "message": f"Unsupported command: {command_name}",
+            }
+
+        raw_path = command.get("path")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            return {"ok": False, "error": "missing_path", "message": "A non-empty path is required."}
+
+        try:
+            target = Path(raw_path).expanduser()
+            if not target.exists():
+                return {"ok": False, "error": "path_not_found", "message": f"Path does not exist: {raw_path}"}
+            target = target.resolve()
+        except (OSError, ValueError) as exc:
+            return {"ok": False, "error": "invalid_path", "message": str(exc)}
+
+        if not target.is_file() and not target.is_dir():
+            return {
+                "ok": False,
+                "error": "unsupported_path",
+                "message": "The path must refer to an existing file or directory.",
+            }
+        if target.is_file() and is_temporary(target):
+            return {
+                "ok": False,
+                "error": "temporary_file",
+                "message": "Temporary files cannot be added to the pending queue.",
+            }
+
+        hide_secure = command.get("hide_secure", True)
+        if not isinstance(hide_secure, bool):
+            return {
+                "ok": False,
+                "error": "invalid_hide_secure",
+                "message": "hide_secure must be a boolean.",
+            }
+
+        self._hide_secure = hide_secure
+        self.hide_secure_cb.setChecked(self._hide_secure)
+        self.queue_panel.set_hide_secure(self._hide_secure)
+        if hasattr(self, "action_panel") and self.action_panel is not None:
+            self.action_panel._hide_secure = self._hide_secure
+            self.action_panel.load_preview()
+        self._save_config()
+
+        if target.is_dir():
+            self._process_pending_folder(target)
+            kind = "folder"
+        else:
+            self.state_manager.enqueue_file(target)
+            kind = "file"
+
+        logging.info("Accepted %s from command endpoint: %s", kind, target)
+        return {
+            "ok": True,
+            "accepted": True,
+            "kind": kind,
+            "path": str(target),
+        }
 
     def _capture_ui_render(self):
         try:
@@ -831,6 +936,26 @@ class MainWindow(QWidget):
 
     def _rescan_downloads(self):
         run_in_threadpool(self.state_manager._run_maintenance_scan)
+
+    def _on_order_one_pending_clicked(self):
+        selected_file, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select File to Process",
+            str(config.DOWNLOADS),
+            "All Files (*)",
+        )
+        if not selected_file:
+            return
+
+        path = Path(selected_file)
+        if not path.is_file():
+            self.show_status("El archivo seleccionado ya no existe o no es válido.", 5000)
+            return
+        if is_temporary(path):
+            self.show_status("No se pueden ordenar archivos temporales.", 5000)
+            return
+
+        self.state_manager.enqueue_file(path)
 
     def _on_order_pending_clicked(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Process", str(config.DOWNLOADS))
