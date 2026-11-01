@@ -16,6 +16,7 @@ from localization import LocalizationManager
 from ui_utils_mgr import apply_secure_blur, load_stylesheet
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
 from drag_label_widget import DragLabel
+from rename_dialog import RenameDialog
 
 class ActionPanel(QWidget):
     """
@@ -377,19 +378,8 @@ class ActionPanel(QWidget):
             return
 
         file_key = str(self.filepath.resolve())
-        dialog = self._metadata_dialogs.get(file_key)
-        if dialog is not None:
-            try:
-                dialog.show()
-                dialog.raise_()
-                dialog.activateWindow()
-                return
-            except RuntimeError:
-                self._metadata_dialogs.pop(file_key, None)
 
         try:
-            from rename_dialog import RenameDialog
-
             dialog = RenameDialog(file_key)
             self._metadata_dialogs[file_key] = dialog
             dialog.destroyed.connect(

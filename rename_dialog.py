@@ -7,7 +7,7 @@ except ImportError:
 import re, sys, os
 from pathlib import Path
 from PyQt6 import QtWidgets, QtGui
-from PyQt6.QtCore import Qt, pyqtSignal, QBuffer, QIODevice
+from PyQt6.QtCore import Qt, pyqtSignal, QBuffer, QIODevice, QSettings
 from pyrenameutils.qss_styles import QSS
 from pyrenameutils.ng_dialog import NewgroundsDialog
 from pyrenameutils.helpers_text import sanitize_windows_filename
@@ -75,28 +75,65 @@ class RenameDialog(QtWidgets.QWidget):
         self.base_name = os.path.basename(self.file_path)
         self.name, self.ext = os.path.splitext(self.base_name)
         self.is_mp4 = self.ext.lower() in ('.mp4', '.m4a', '.m4v')
+        
+        self.settings = QSettings("EtudeTools", "RenameDialogForCatchEtude")
+        self.load_geometry()
+        
         self.init_ui()
+
+    def load_geometry(self):
+        # Intentar leer la geometría guardada bajo la clave "dialog_geometry"
+        geometria_guardada = self.settings.value("dialog_geometry")
+
+        if geometria_guardada is not None:
+            # Si existe, restauramos la posición y tamaño exactos
+            self.restoreGeometry(geometria_guardada)
+        else:
+            # Si no existe, lo centramos respecto a la ventana padre (si tiene una)
+            self.center_in_pather()
+
+    def center_in_pather(self):
+        if self.parentWidget():
+            # Si tiene ventana padre, se centra perfectamente sobre ella
+            geometria_padre = self.parentWidget().geometry()
+            geometria_dialogo = self.frameGeometry()
+            geometria_dialogo.moveCenter(geometria_padre.center())
+            self.move(geometria_dialogo.topLeft())
+        else:
+            # Si se abre de forma independiente, se centra en la pantalla actual
+            pantalla = self.screen()
+            geometria_pantalla = pantalla.availableGeometry()
+            geometria_dialogo = self.frameGeometry()
+            geometria_dialogo.moveCenter(geometria_pantalla.center())
+            self.move(geometria_dialogo.topLeft())
+
+    def closeEvent(self, event):
+        # Este evento se dispara automáticamente al cerrar el diálogo (con X, Cancelar, etc.)
+        # Guardamos la geometría actual del diálogo antes de cerrar
+        self.settings.setValue("dialog_geometry", self.saveGeometry())
+        super().closeEvent(event)
 
     def init_ui(self):
         self.setWindowTitle("Rename file")
         flags = self.windowFlags()
         flags &= ~Qt.WindowType.WindowMaximizeButtonHint
         self.setWindowFlags(flags)
-
-        self.setFixedSize(700, 920)
-        try:
-            if pywinstyles:
+        
+        if pywinstyles:
+            try:
                 pywinstyles.change_header_color(self, color="#232629")
-        except Exception:
-            pass
-
+            except Exception:
+                pass
+        
+        H_WIDGET = 28
+        
         main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(8)
         
         # Newgrounds
         self.ng_btn = QtWidgets.QPushButton("Newgrounds")
-        self.ng_btn.setFixedHeight(36)
+        self.ng_btn.setFixedHeight(H_WIDGET)
         self.ng_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.ng_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.ng_btn.clicked.connect(self.open_ng_dialog)
@@ -110,7 +147,7 @@ class RenameDialog(QtWidgets.QWidget):
         
         # File name
         self.edit = QtWidgets.QLineEdit(self.name)
-        self.edit.setPlaceholderText("File name (without extension)")
+        self.edit.setPlaceholderText("File name (Non-Ext)")
 
         # Transform buttons
         transforms_layout = QtWidgets.QHBoxLayout()
@@ -125,7 +162,7 @@ class RenameDialog(QtWidgets.QWidget):
         
         transforms = [btn_underscores, btn_guions, btn_sentence, btn_lower, btn_upper, btn_title, btn_append_eta]
         for b in transforms:
-            b.setFixedHeight(34)
+            b.setFixedHeight(H_WIDGET)
             transforms_layout.addWidget(b)
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
@@ -142,9 +179,9 @@ class RenameDialog(QtWidgets.QWidget):
         self.track_edit = QtWidgets.QLineEdit()
         self.disc_edit = QtWidgets.QLineEdit()
         self.comment_edit = QtWidgets.QTextEdit()
-        self.comment_edit.setFixedHeight(160)
+        self.comment_edit.setFixedHeight(90)
         
-        self.genre_choices = ["", "Episode", "Movie", "Short", "Soundtrack"]
+        self.genre_choices = [""]
 
         self.genre_line = QtWidgets.QLineEdit()
         self.genre_combo = QtWidgets.QComboBox()
@@ -155,18 +192,18 @@ class RenameDialog(QtWidgets.QWidget):
         self.genre_stack.addWidget(self.genre_line)   # index 0
         self.genre_stack.addWidget(self.genre_combo)  # index 1
 
-        self.genre_line.setFixedHeight(38)
-        self.genre_combo.setFixedHeight(38)
+        self.genre_line.setFixedHeight(H_WIDGET)
+        self.genre_combo.setFixedHeight(H_WIDGET)
 
         self.title_id_btn = QtWidgets.QPushButton("(ID:)")
-        self.title_id_btn.setFixedWidth(90)
-        self.title_id_btn.setFixedHeight(38)
+        self.title_id_btn.setFixedWidth(60)
+        self.title_id_btn.setFixedHeight(H_WIDGET)
         self.title_id_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.title_id_btn.setToolTip("Añadir (ID:) al final del título")
 
         self.title_paste_btn = QtWidgets.QPushButton("[ T ]")
-        self.title_paste_btn.setFixedWidth(90)
-        self.title_paste_btn.setFixedHeight(38)
+        self.title_paste_btn.setFixedWidth(60)
+        self.title_paste_btn.setFixedHeight(H_WIDGET)
         self.title_paste_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.title_paste_btn.setToolTip("Mover el título al campo de título")
 
@@ -177,8 +214,8 @@ class RenameDialog(QtWidgets.QWidget):
         title_layout.addWidget(self.title_paste_btn)
 
         self.artist_paste_btn = QtWidgets.QPushButton("[ A ]")
-        self.artist_paste_btn.setFixedWidth(90)
-        self.artist_paste_btn.setFixedHeight(38)
+        self.artist_paste_btn.setFixedWidth(60)
+        self.artist_paste_btn.setFixedHeight(H_WIDGET)
         self.artist_paste_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.artist_paste_btn.setToolTip("Mover el artista al campo de artistas")
         
@@ -191,15 +228,15 @@ class RenameDialog(QtWidgets.QWidget):
         artist_layout.addWidget(self.artist_edit)
         artist_layout.addWidget(self.artist_paste_btn)
 
-        self.album_edit.setFixedHeight(38)
-        self.year_edit.setFixedHeight(38)
-        self.date_edit.setFixedHeight(38)
-        self.track_edit.setFixedHeight(38)
-        self.disc_edit.setFixedHeight(38)
-        self.genre_line.setFixedHeight(38)
-        self.genre_combo.setFixedHeight(38)
-        self.title_edit.setFixedHeight(38)
-        self.artist_edit.setFixedHeight(38)
+        self.album_edit.setFixedHeight(H_WIDGET)
+        self.year_edit.setFixedHeight(H_WIDGET)
+        self.date_edit.setFixedHeight(H_WIDGET)
+        self.track_edit.setFixedHeight(H_WIDGET)
+        self.disc_edit.setFixedHeight(H_WIDGET)
+        self.genre_line.setFixedHeight(H_WIDGET)
+        self.genre_combo.setFixedHeight(H_WIDGET)
+        self.title_edit.setFixedHeight(H_WIDGET)
+        self.artist_edit.setFixedHeight(H_WIDGET)
 
         self.year_edit.setPlaceholderText("YYYY")
         self.date_edit.setPlaceholderText("YYYY-MM-DD o YYYY-MM-DDTHH:MM:SSZ")
@@ -238,24 +275,20 @@ class RenameDialog(QtWidgets.QWidget):
         self.always_on_top_checkbox = QtWidgets.QCheckBox("Siempre visible")
         self.always_on_top_checkbox.setChecked(True)
         self.always_on_top_checkbox.stateChanged.connect(self.on_always_on_top_changed)
+        self.always_on_top_checkbox.setHidden(True)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        
-        self.overwrite_checkbox = QtWidgets.QCheckBox("Es Sobrescritor")
-        self.overwrite_checkbox.setChecked(False)
-        self.overwrite_checkbox.stateChanged.connect(self.sync_genre_mode)
 
         footer_buttons_layout = QtWidgets.QHBoxLayout()
         footer_buttons_layout.setSpacing(6)
         
-        btn_rename = QtWidgets.QPushButton("Rename") # único botón que aplica etiquetas y renombra
-        btn_close = QtWidgets.QPushButton("Close")
-        btn_rename.setFixedWidth(140)
-        btn_close.setFixedWidth(100)
+        btn_rename = QtWidgets.QPushButton("Apply Tags") # único botón que aplica etiquetas y renombra
+        btn_close = QtWidgets.QPushButton("Cancel")
+        btn_rename.setFixedWidth(90)
+        btn_close.setFixedWidth(90)
         footer_buttons_layout.addWidget(btn_rename)
         footer_buttons_layout.addWidget(btn_close)
 
         footer_layout.addWidget(self.always_on_top_checkbox)
-        footer_layout.addWidget(self.overwrite_checkbox)
         footer_layout.addStretch()
         footer_layout.addLayout(footer_buttons_layout)
 
@@ -284,7 +317,7 @@ class RenameDialog(QtWidgets.QWidget):
         main_layout.addLayout(footer_layout)
 
         self.apply_dark_theme()
-        self.center_on_screen()
+        
 
         # Load existing tags into fields (best-effort)
         try:
@@ -304,14 +337,9 @@ class RenameDialog(QtWidgets.QWidget):
         except Exception:
             pass
 
-    def center_on_screen(self):
-        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
-        geo = self.frameGeometry()
-        geo.moveCenter(screen.center())
-        self.move(geo.topLeft())
-
     def apply_dark_theme(self):
         self.setStyleSheet(QSS)
+        pass
 
     # New functions in 2026-06-08
     def get_genre_value(self):
@@ -346,14 +374,6 @@ class RenameDialog(QtWidgets.QWidget):
         year = self.year_edit.text().strip()
         date = self.date_edit.text().strip()
         disc = self.disc_edit.text().strip()
-
-        # if date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2}Z?)?", date):
-        #     QtWidgets.QMessageBox.warning(
-        #         self,
-        #         "Fecha inválida",
-        #         "Usa YYYY-MM-DD o YYYY-MM-DDTHH:MM:SSZ."
-        #     )
-        #     return None
 
         if self.is_mp4:
             year = ""
