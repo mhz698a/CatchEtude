@@ -14,7 +14,7 @@ if not hasattr(ctypes, 'windll'):
                     return lambda *args, **kwargs: 1
             return MockDLL()
     ctypes.windll = MockWinDLL()
-    ctypes.WinDLL = lambda name: MockWinDLL()
+    ctypes.WinDLL = lambda name, **kwargs: MockWinDLL()
 
 if not hasattr(ctypes, 'WINFUNCTYPE'):
     ctypes.WINFUNCTYPE = ctypes.CFUNCTYPE
