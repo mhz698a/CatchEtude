@@ -211,6 +211,11 @@ def extract_pdf_images(
                         continue
                     seen_xrefs.add(xref)
 
+                    _report_progress(
+                        progress_cb, processed_pages, total_pages,
+                        f"Extrayendo imagen {image_counter} de {p.name}, página {page_idx + 1}/{len(doc)}…",
+                        indeterminate=True,
+                    )
                     try:
                         extracted_image = doc.extract_image(xref)
                         if not extracted_image:
@@ -226,6 +231,11 @@ def extract_pdf_images(
                         out_path = resolve_unique_output_path(output_dir, output_name)
                         out_path.write_bytes(image_bytes)
                         extracted_files.append(out_path)
+                        _report_progress(
+                            progress_cb, processed_pages, total_pages,
+                            f"Imagen extraída: {out_path.name} ({len(extracted_files)} total)",
+                            indeterminate=False,
+                        )
                         image_counter += 1
 
                     except Exception as e:
