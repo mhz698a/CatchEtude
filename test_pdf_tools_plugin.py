@@ -39,6 +39,44 @@ class TestPdfToolsPlugin(unittest.TestCase):
         self.ctx = FakeContext()
         self.module.run_plugin(self.ctx)
 
+    def test_all_new_conversion_commands_are_registered(self):
+        expected = {
+            "images_to_ico",
+            "images_to_png",
+            "images_to_jpg",
+            "svg_to_png",
+            "svg_to_ico",
+            "audio_to_mp3",
+            "word_to_pdf",
+        }
+        self.assertTrue(expected.issubset(self.ctx.handlers))
+
+    def test_contextual_audio_conversion_uses_selected_path(self):
+        selected = Path("/tmp/selected.flac")
+        with (
+            patch.object(self.module.QFileDialog, "getOpenFileNames") as file_picker,
+            patch.object(self.module, "run_pdf_task") as run_task,
+        ):
+            self.ctx.handlers["audio_to_mp3"]({"paths": [str(selected)]})
+
+        file_picker.assert_not_called()
+        run_task.assert_called_once_with(
+            None, "audio_to_mp3", [selected], "Audio a MP3"
+        )
+
+    def test_contextual_word_conversion_uses_selected_path(self):
+        selected = Path("/tmp/document.docx")
+        with (
+            patch.object(self.module.QFileDialog, "getOpenFileNames") as file_picker,
+            patch.object(self.module, "run_pdf_task") as run_task,
+        ):
+            self.ctx.handlers["word_to_pdf"]({"paths": [str(selected)]})
+
+        file_picker.assert_not_called()
+        run_task.assert_called_once_with(
+            None, "word_to_pdf", [selected], "Word a PDF"
+        )
+
     def test_contextual_pdf_action_uses_selected_path_without_file_picker(self):
         selected = Path("/tmp/selected.pdf")
         with (

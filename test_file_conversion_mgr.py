@@ -1,0 +1,72 @@
+"""Tests for the image, SVG, and dispatch helpers in file_conversion_mgr."""
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from PIL import Image
+
+import file_conversion_mgr
+
+
+class TestFileConversionManager(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        self.output = self.root / "output"
+        self.output.mkdir()
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _create_png(self, name="sample.png"):
+        path = self.root / name
+        Image.new("RGBA", (40, 24), (255, 0, 0, 128)).save(path)
+        return path
+
+    def test_raster_conversions_generate_ico_png_and_jpg(self):
+        source = self._create_png()
+        ico_files, ico_warnings = file_conversion_mgr.images_to_ico([source], self.output)
+        png_files, png_warnings = file_conversion_mgr.images_to_png([source], self.output)
+        jpg_files, jpg_warnings = file_conversion_mgr.images_to_jpg([source], self.output)
+
+        self.assertFalse(ico_warnings)
+        self.assertFalse(png_warnings)
+        self.assertFalse(jpg_warnings)
+        self.assertEqual(ico_files[0].suffix, ".ico")
+        self.assertEqual(png_files[0].suffix, ".png")
+        self.assertEqual(jpg_files[0].suffix, ".jpg")
+        self.assertTrue(all(path.exists() for path in ico_files + png_files + jpg_files))
+
+    def test_raster_conversions_avoid_name_collisions(self):
+        source = self._create_png()
+        first, _ = file_conversion_mgr.images_to_png([source], self.output)
+        second, _ = file_conversion_mgr.images_to_png([source], self.output)
+
+        self.assertEqual(first[0].name, "sample.png")
+        self.assertEqual(second[0].name, "sample_001.png")
+
+    def test_svg_conversions_generate_png_and_ico(self):
+        source = self.root / "vector.svg"
+        source.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
+            '<rect width="32" height="32" fill="#336699"/></svg>',
+            encoding="utf-8",
+        )
+        png_files, png_warnings = file_conversion_mgr.svgs_to_png([source], self.output)
+        ico_files, ico_warnings = file_conversion_mgr.svgs_to_ico([source], self.output)
+
+        self.assertFalse(png_warnings)
+        self.assertFalse(ico_warnings)
+        self.assertEqual(png_files[0].suffix, ".png")
+        self.assertEqual(ico_files[0].suffix, ".ico")
+        self.assertTrue(png_files[0].exists())
+        self.assertTrue(ico_files[0].exists())
+
+    def test_dispatch_rejects_unknown_task(self):
+        with self.assertRaises(ValueError):
+            file_conversion_mgr.run_file_conversion("unknown", [], self.output)
+
+
+if __name__ == "__main__":
+    unittest.main()

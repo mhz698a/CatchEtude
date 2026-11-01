@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
 
 import config
 import pdf_tools_mgr
+import file_conversion_mgr
 from utils import resolve_duplicate
 
 
@@ -103,6 +104,24 @@ class PDFWorkerThread(QThread):
                     progress_cb=_progress
                 )
                 produced_temp_files.append(out_file)
+
+
+            elif self.task_type in {
+                "images_to_ico",
+                "images_to_png",
+                "images_to_jpg",
+                "svg_to_png",
+                "svg_to_ico",
+                "audio_to_mp3",
+                "word_to_pdf",
+            }:
+                produced_temp_files, warnings = file_conversion_mgr.run_file_conversion(
+                    self.task_type,
+                    self.files,
+                    temp_dir,
+                    cancel_check=self._check_cancelled,
+                    progress_cb=_progress,
+                )
 
             else:
                 raise ValueError(f"Unknown PDF task type: {self.task_type}")
@@ -205,20 +224,25 @@ class PDFProgressDialog(QtWidgets.QDialog):
             self.worker.cleanup_temp()
 
         # Handle UI notifications on main thread
-        if self.task_type == "extract_images":
-            if moved_count == 0:
-                QtWidgets.QMessageBox.information(
-                    self.parentWidget(),
-                    "Extraer imágenes",
-                    "No se encontraron imágenes incrustadas en el PDF."
-                )
-            elif warnings:
-                warn_msg = "\n".join(warnings)
-                QtWidgets.QMessageBox.warning(
-                    self.parentWidget(),
-                    "Extraer imágenes",
-                    f"Imágenes extraídas con algunas advertencias:\n{warn_msg}"
-                )
+        if self.task_type == "extract_images" and moved_count == 0 and not warnings:
+            QtWidgets.QMessageBox.information(
+                self.parentWidget(),
+                "Extraer imágenes",
+                "No se encontraron imágenes incrustadas en el PDF."
+            )
+        elif warnings:
+            warn_msg = "\n".join(warnings)
+            QtWidgets.QMessageBox.warning(
+                self.parentWidget(),
+                "Conversión finalizada con advertencias",
+                f"Archivos guardados en Descargas: {moved_count}\n\n{warn_msg}"
+            )
+        elif moved_count == 0:
+            QtWidgets.QMessageBox.information(
+                self.parentWidget(),
+                "Conversión",
+                "No se generaron archivos."
+            )
 
         self._close_when_worker_has_stopped()
 
