@@ -45,8 +45,8 @@ class PluginManager(QObject):
 
     def discover(self) -> List[DiscoveredPlugin]:
         """Scans plugin directory while preserving the runtime instances used by processes."""
-        previous_mtimes = {
-            plugin_id: proc.plugin.file_mtime
+        previous_sources = {
+            plugin_id: (proc.plugin.file_path, proc.plugin.file_mtime)
             for plugin_id, proc in self.processes.items()
         }
         discovered = self.registry.discover()
@@ -63,8 +63,9 @@ class PluginManager(QObject):
             # PluginRegistry refreshes metadata in-place, so PluginProcess keeps a
             # valid reference to the same object. Compare against the pre-scan mtime
             # (not the already-refreshed value) to detect source updates.
-            previous_mtime = previous_mtimes.get(plugin.plugin_id)
-            if previous_mtime is not None and previous_mtime != plugin.file_mtime:
+            previous_source = previous_sources.get(plugin.plugin_id)
+            current_source = (plugin.file_path, plugin.file_mtime)
+            if previous_source is not None and previous_source != current_source:
                 existing_proc.requires_restart = True
 
         self.plugins_reloaded.emit()
