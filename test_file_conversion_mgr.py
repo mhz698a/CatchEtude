@@ -63,6 +63,26 @@ class TestFileConversionManager(unittest.TestCase):
         self.assertEqual(jpg_files[0].suffix, ".jpg")
         self.assertTrue(all(path.exists() for path in ico_files + png_files + jpg_files))
 
+    def test_ico_keeps_original_dimensions_without_small_variants(self):
+        source = self._create_png()
+        ico_files, warnings = file_conversion_mgr.images_to_ico([source], self.output)
+
+        self.assertFalse(warnings)
+        with Image.open(ico_files[0]) as converted:
+            self.assertEqual(converted.size, (40, 24))
+            self.assertEqual(converted.ico.sizes(), {(40, 24)})
+
+    def test_ico_caps_large_images_at_256_preserving_aspect_ratio(self):
+        source = self.root / "large.png"
+        Image.new("RGBA", (512, 300), (0, 128, 255, 255)).save(source)
+
+        ico_files, warnings = file_conversion_mgr.images_to_ico([source], self.output)
+
+        self.assertFalse(warnings)
+        with Image.open(ico_files[0]) as converted:
+            self.assertEqual(converted.size, (256, 150))
+            self.assertEqual(converted.ico.sizes(), {(256, 150)})
+
     def test_raster_conversions_avoid_name_collisions(self):
         source = self._create_png()
         first, _ = file_conversion_mgr.images_to_png([source], self.output)
