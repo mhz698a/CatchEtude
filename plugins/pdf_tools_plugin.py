@@ -84,11 +84,11 @@
 # [[action_buttons]]
 # id = "btn_convert_raster_images"
 # label = "Convertir imagen"
-# file_extensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".ico", ".avif", ".heic", ".jp2", ".j2k", ".dds", ".pcx", ".tga", ".ppm", ".pbm", ".pgm", ".psd"]
+# file_extensions = [".png", ".apng", ".jpg", ".jpeg", ".jpe", ".jfif", ".webp", ".bmp", ".dib", ".tif", ".tiff", ".gif", ".ico", ".icns", ".cur", ".avif", ".heic", ".jp2", ".j2k", ".dds", ".pcx", ".tga", ".ppm", ".pbm", ".pgm", ".pnm", ".psd", ".eps", ".ps", ".xbm", ".xpm", ".sgi", ".ras", ".fli", ".flc"]
 # menu_items = [
-#     { label = "Image a ICO", command = "images_to_ico" },
-#     { label = "Image a PNG", command = "images_to_png" },
-#     { label = "Image a JPG", command = "images_to_jpg" },
+#     { label = "Imagen a ICO", command = "images_to_ico" },
+#     { label = "Imagen a PNG", command = "images_to_png" },
+#     { label = "Imagen a JPG", command = "images_to_jpg" },
 # ]
 #
 # [[action_buttons]]
