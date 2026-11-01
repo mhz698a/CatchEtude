@@ -84,7 +84,7 @@
 # [[action_buttons]]
 # id = "btn_convert_raster_images"
 # label = "Convertir imagen"
-# file_extensions = [".png", ".apng", ".jpg", ".jpeg", ".jpe", ".jfif", ".webp", ".bmp", ".dib", ".tif", ".tiff", ".gif", ".ico", ".icns", ".cur", ".avif", ".heic", ".jp2", ".j2k", ".dds", ".pcx", ".tga", ".ppm", ".pbm", ".pgm", ".pnm", ".psd", ".eps", ".ps", ".xbm", ".xpm", ".sgi", ".ras", ".fli", ".flc"]
+# file_extensions = [".png", ".apng", ".jpg", ".jpeg", ".jpe", ".jfif", ".webp", ".bmp", ".dib", ".tif", ".tiff", ".gif", ".ico", ".icns", ".cur", ".avif", ".heic", ".heif", ".jp2", ".j2k", ".j2c", ".jpc", ".jpf", ".jpx", ".dds", ".pcx", ".msp", ".tga", ".ppm", ".pbm", ".pgm", ".pnm", ".psd", ".eps", ".ps", ".xbm", ".xpm", ".sgi", ".ras", ".rgb", ".rgba", ".bw", ".im", ".fli", ".flc", ".qoi"]
 # menu_items = [
 #     { label = "Imagen a ICO", command = "images_to_ico" },
 #     { label = "Imagen a PNG", command = "images_to_png" },
@@ -103,7 +103,7 @@
 # [[action_buttons]]
 # id = "btn_convert_audio"
 # label = "Convertir audio"
-# file_extensions = [".mp3", ".wav", ".flac", ".ogg", ".oga", ".opus", ".m4a", ".aac", ".wma", ".aiff", ".aif", ".ape", ".mpc", ".wv", ".tta", ".mka", ".3gp"]
+# file_extensions = [".mp3", ".wav", ".wave", ".flac", ".ogg", ".oga", ".opus", ".spx", ".m4a", ".m4b", ".m4p", ".aac", ".wma", ".aiff", ".aif", ".aifc", ".ape", ".mpc", ".wv", ".tta", ".mka", ".3gp", ".amr", ".ac3", ".dts", ".au", ".snd", ".caf", ".ra", ".rm", ".voc", ".tak", ".dsf", ".dff"]
 # menu_items = [
 #     { label = "Audio a MP3", command = "audio_to_mp3" },
 # ]
