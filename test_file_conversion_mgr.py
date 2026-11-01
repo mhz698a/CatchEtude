@@ -4,6 +4,8 @@ import os
 import sys
 import tempfile
 import types
+import importlib.util
+from importlib.machinery import SourceFileLoader
 import unittest
 from unittest.mock import Mock, patch
 from pathlib import Path
@@ -16,7 +18,14 @@ from mutagen.id3 import ID3, TIT2, TXXX
 
 _APP = QApplication.instance() or QApplication([])
 
-import file_conversion_mgr
+_CONVERSION_PATH = Path(__file__).parent / "plugins" / "file_conversion_mgr.pylib"
+_CONVERSION_NAME = "catchetude_test_file_conversion_mgr"
+_CONVERSION_SPEC = importlib.util.spec_from_loader(
+    _CONVERSION_NAME, SourceFileLoader(_CONVERSION_NAME, str(_CONVERSION_PATH))
+)
+file_conversion_mgr = importlib.util.module_from_spec(_CONVERSION_SPEC)
+sys.modules[_CONVERSION_NAME] = file_conversion_mgr
+_CONVERSION_SPEC.loader.exec_module(file_conversion_mgr)
 
 
 class TestFileConversionManager(unittest.TestCase):
@@ -99,6 +108,7 @@ class TestFileConversionManager(unittest.TestCase):
         source = self.root / "document.docx"
         source.write_bytes(b"word document")
 
+        progress_events = []
         document = types.SimpleNamespace()
         document.SaveAs2 = lambda path, FileFormat: Path(path).write_bytes(b"%PDF")
         document.Close = Mock()
@@ -124,13 +134,18 @@ class TestFileConversionManager(unittest.TestCase):
             "win32com": win32com,
             "win32com.client": client,
         }):
-            generated, warnings = file_conversion_mgr.words_to_pdf([source], self.output)
+            generated, warnings = file_conversion_mgr.words_to_pdf(
+                [source], self.output,
+                progress_cb=lambda cur, total, message, busy: progress_events.append((message, busy)),
+            )
 
         self.assertFalse(warnings)
         self.assertEqual(generated[0].suffix, ".pdf")
         self.assertEqual(generated[0].read_bytes(), b"%PDF")
         client.DispatchEx.assert_called_once_with("Word.Application")
         document.Close.assert_called_once()
+        self.assertTrue(any("Microsoft Word está exportando" in message and busy for message, busy in progress_events))
+        self.assertTrue(any("PDF generado" in message and not busy for message, busy in progress_events))
     def test_dispatch_rejects_unknown_task(self):
         with self.assertRaises(ValueError):
             file_conversion_mgr.run_file_conversion("unknown", [], self.output)
