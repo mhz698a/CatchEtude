@@ -77,39 +77,41 @@ class ActionPanel(QWidget):
         self.dynamic_btn_layout.setColumnStretch(1, 1)
         layout.addLayout(self.dynamic_btn_layout)
 
-        open_row = QHBoxLayout()
-        open_row.setSpacing(8)
-        open_row.addStretch()
+        self.open_row = QtWidgets.QGridLayout()
+        self.open_row.setContentsMargins(0, 0, 0, 0)
+        self.open_row.setHorizontalSpacing(8)
+        self.open_row.setVerticalSpacing(6)
+        self.open_row.setColumnStretch(0, 1)
+        self.open_row.setColumnStretch(1, 1)
 
         self.btn_open = QPushButton(self.loc.get("btn_open"))
         self.btn_open.clicked.connect(self._open_file)
         self.btn_open.setFixedHeight(30)
-        self.btn_open.setFixedWidth(90)
-        open_row.addWidget(self.btn_open)
-
-        self.btn_flat_folder = QPushButton("Flat Folder")
-        self.btn_flat_folder.setFixedHeight(30)
-        self.btn_flat_folder.setFixedWidth(100)
-        self.btn_flat_folder.setVisible(False)
-        self.btn_flat_folder.clicked.connect(self.flat_folder_clicked.emit)
-        open_row.addWidget(self.btn_flat_folder)
-
+        self.btn_open.setFixedWidth(110)
+        self.open_row.addWidget(self.btn_open, 0, 0)
+        
         self.btn_delete = QPushButton(self.loc.get("btn_header_delete"))
         self.btn_delete.clicked.connect(self._show_delete_menu)
         self.btn_delete.setFixedHeight(30)
-        self.btn_delete.setFixedWidth(100)
-        self.btn_delete.setEnabled(False)
-        open_row.addWidget(self.btn_delete)
-
+        self.btn_delete.setFixedWidth(110)
+        self.btn_delete.setHidden(False)
+        self.open_row.addWidget(self.btn_delete, 0, 1)
+        
+        self.btn_flat_folder = QPushButton("Flat Folder")
+        self.btn_flat_folder.setFixedHeight(30)
+        self.btn_flat_folder.setFixedWidth(110)
+        self.btn_flat_folder.setHidden(True)
+        self.btn_flat_folder.clicked.connect(self.flat_folder_clicked.emit)
+        self.open_row.addWidget(self.btn_flat_folder, 1, 0)
+        
         self.btn_edit_metadata = QPushButton("Edit metadata")
         self.btn_edit_metadata.clicked.connect(self._open_metadata_editor)
         self.btn_edit_metadata.setFixedHeight(30)
         self.btn_edit_metadata.setFixedWidth(110)
-        self.btn_edit_metadata.setVisible(False)
-        open_row.addWidget(self.btn_edit_metadata)
+        self.btn_edit_metadata.setHidden(True)
+        self.open_row.addWidget(self.btn_edit_metadata, 1, 1)
 
-        open_row.addStretch()
-        layout.addLayout(open_row)
+        layout.addLayout(self.open_row)
 
         # Rename Section
         self.lbl_name = QLabel(self.loc.get("lbl_new_name"))
