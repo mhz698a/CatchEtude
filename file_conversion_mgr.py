@@ -299,6 +299,16 @@ def _copy_audio_tags(source_path: Path, output_path: Path) -> None:
             normalised = key.lower()
             values = _id3_text_values(raw_value)
 
+            # MP4 stores track/disc numbers as (number, total) tuples.
+            if normalised in {"trkn", "disk"}:
+                entries = raw_value if isinstance(raw_value, (list, tuple)) else [raw_value]
+                values = []
+                for entry in entries:
+                    if isinstance(entry, (list, tuple)) and entry:
+                        number = entry[0]
+                        total = entry[1] if len(entry) > 1 else 0
+                        values.append(f"{number}/{total}" if total else str(number))
+
             if normalised == "metadata_block_picture":
                 # FLAC picture blocks are copied below using Mutagen picture objects.
                 continue
