@@ -3,7 +3,6 @@ Tray menu manager for CatchEtude.
 Gestor del menú de la bandeja del sistema para CatchEtude.
 """
 
-import sys
 import logging
 from pathlib import Path
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
