@@ -212,6 +212,15 @@ print('hello plugin')
         self.assertTrue(plugin.is_enabled)
         self.assertEqual(plugin.state, PluginState.RUNNING)
 
+        # Renaming the source file must not break the PluginProcess reference.
+        renamed_path = self.plugins_dir / "renamed_runtime.py"
+        (self.plugins_dir / "runtime.py").rename(renamed_path)
+        refreshed_after_rename = registry.discover()
+        self.assertIs(refreshed_after_rename[0], plugin)
+        self.assertIs(registry.plugins_by_id["test.runtime"], plugin)
+        self.assertEqual(plugin.file_path, renamed_path.resolve())
+        self.assertEqual(plugin.state, PluginState.RUNNING)
+
         # Disabling must also survive the next table/menu refresh.
         self.assertTrue(registry.set_enabled("test.runtime", False))
         refreshed_after_disable = registry.discover()
