@@ -9,6 +9,7 @@ __docs__/
 deck/
 pendings_init.txt
 pendings_hands.txt
+__sandbox__/
 
 # === Entornos Virtuales ===
 # Ignora las carpetas más comunes donde se configuran los entornos locales

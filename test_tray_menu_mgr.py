@@ -99,14 +99,55 @@ class TestTrayMenuManager(unittest.TestCase):
             mw_mock._on_order_one_pending_clicked
         )
 
-    def test_on_plugin_tray_action(self):
+    def test_on_plugin_tray_action_uses_main_window_manager(self):
         mw_mock = MagicMock()
+        plugin_mgr_mock = MagicMock()
+        mw_mock.plugin_mgr = plugin_mgr_mock
         mgr = self.tray_menu_mgr_module.TrayMenuManager(mw_mock)
 
+        mgr._on_plugin_tray_action("plugin.id", "do_something")
+        plugin_mgr_mock.invoke_command.assert_called_once_with("plugin.id", "do_something")
+
+    def test_plugin_tray_actions_are_read_from_main_window_manager(self):
+        mw_mock = MagicMock()
         plugin_mgr_mock = MagicMock()
-        with patch.dict("sys.modules", {"__main__": MagicMock(plugin_mgr=plugin_mgr_mock)}):
-            mgr._on_plugin_tray_action("plugin.id", "do_something")
-            plugin_mgr_mock.invoke_command.assert_called_once_with("plugin.id", "do_something")
+        expected_actions = [
+            {
+                "plugin_id": "plugin.id",
+                "label": "Convert",
+                "command": "convert",
+                "group": "File tools",
+            }
+        ]
+        plugin_mgr_mock.get_tray_actions.return_value = expected_actions
+        mw_mock.plugin_mgr = plugin_mgr_mock
+        mgr = self.tray_menu_mgr_module.TrayMenuManager(mw_mock)
+
+        self.assertEqual(mgr._get_plugin_tray_actions(), expected_actions)
+
+    def test_plugin_group_is_added_as_tray_submenu(self):
+        mw_mock = MagicMock()
+        plugin_mgr_mock = MagicMock()
+        plugin_mgr_mock.get_tray_actions.return_value = [
+            {
+                "plugin_id": "plugin.id",
+                "label": "Convert",
+                "command": "convert",
+                "group": "File tools",
+            }
+        ]
+        mw_mock.plugin_mgr = plugin_mgr_mock
+        mgr = self.tray_menu_mgr_module.TrayMenuManager(mw_mock)
+        mgr.tray_menu = MagicMock()
+        group_menu = MagicMock()
+        action = MagicMock()
+
+        with patch.object(self.tray_menu_mgr_module, "QMenu", return_value=group_menu):
+            with patch.object(self.tray_menu_mgr_module, "QAction", return_value=action):
+                mgr._build_or_update_plugins_submenu()
+
+        group_menu.addAction.assert_called_once_with(action)
+        mgr.tray_menu.addMenu.assert_called_once_with(group_menu)
 
 
 if __name__ == "__main__":

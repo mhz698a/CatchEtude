@@ -3,9 +3,13 @@ GUI Runner and Non-Modal Progress Dialog for PDF Operations in CatchEtude.
 Ejecutor GUI y diálogo de progreso no modal para operaciones de PDF en CatchEtude.
 """
 
+import importlib.util
 import logging
 import shutil
+import sys
 import tempfile
+import time
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from typing import List, Optional
 
@@ -13,8 +17,37 @@ from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
 
 import config
-import pdf_tools_mgr
 from utils import resolve_duplicate
+
+
+def _load_private_library(module_name: str, filename: str):
+    """Load a plugin-private helper from this directory without adding root modules."""
+    existing = sys.modules.get(module_name)
+    if existing is not None:
+        return existing
+
+    library_path = Path(__file__).with_name(filename)
+    loader = SourceFileLoader(module_name, str(library_path))
+    spec = importlib.util.spec_from_loader(module_name, loader)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load plugin library: {library_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+pdf_tools_mgr = _load_private_library(
+    "catchetude_pdf_tools_mgr", "pdf_tools_mgr.pylib"
+)
+file_conversion_mgr = _load_private_library(
+    "catchetude_file_conversion_mgr", "file_conversion_mgr.pylib"
+)
 
 
 # A non-modal QDialog is not kept alive by Qt after the local Python reference
@@ -26,7 +59,7 @@ class PDFWorkerThread(QThread):
     """
     Background worker thread executing PDF tasks without freezing the GUI.
     """
-    progress_updated = pyqtSignal(int, int)  # current, total
+    progress_updated = pyqtSignal(int, int, str, bool)  # current, total, detail, indeterminate
     finished_success = pyqtSignal(list, list)  # produced_files in temp, warning_messages
     finished_error = pyqtSignal(str)
     cancelled = pyqtSignal()
@@ -66,8 +99,24 @@ class PDFWorkerThread(QThread):
             warnings: List[str] = []
             produced_temp_files: List[Path] = []
 
-            def _progress(cur, tot):
-                self.progress_updated.emit(cur, tot)
+            def _progress(cur, tot, message=None, indeterminate=False):
+                detail = message or f"Procesando {self.task_type}…"
+                self.progress_updated.emit(int(cur), int(tot), str(detail), bool(indeterminate))
+
+            task_labels = {
+                "imgs_to_pdf": "Preparando imágenes para PDF…",
+                "pdf_to_jpeg": "Preparando renderizado de páginas PDF…",
+                "extract_images": "Analizando imágenes incrustadas en PDF…",
+                "merge_pdfs": "Preparando unión de documentos PDF…",
+                "images_to_ico": "Convirtiendo imágenes a ICO…",
+                "images_to_png": "Convirtiendo imágenes a PNG…",
+                "images_to_jpg": "Convirtiendo imágenes a JPG…",
+                "svg_to_png": "Renderizando SVG como PNG…",
+                "svg_to_ico": "Renderizando SVG como ICO…",
+                "audio_to_mp3": "Preparando conversión de audio a MP3…",
+                "word_to_pdf": "Iniciando conversión de Word a PDF en segundo plano…",
+            }
+            _progress(0, max(1, len(self.files)), task_labels.get(self.task_type, "Preparando conversión…"), True)
 
             if self.task_type == "imgs_to_pdf":
                 out_file = pdf_tools_mgr.images_to_pdf(
@@ -103,6 +152,24 @@ class PDFWorkerThread(QThread):
                     progress_cb=_progress
                 )
                 produced_temp_files.append(out_file)
+
+
+            elif self.task_type in {
+                "images_to_ico",
+                "images_to_png",
+                "images_to_jpg",
+                "svg_to_png",
+                "svg_to_ico",
+                "audio_to_mp3",
+                "word_to_pdf",
+            }:
+                produced_temp_files, warnings = file_conversion_mgr.run_file_conversion(
+                    self.task_type,
+                    self.files,
+                    temp_dir,
+                    cancel_check=self._check_cancelled,
+                    progress_cb=_progress,
+                )
 
             else:
                 raise ValueError(f"Unknown PDF task type: {self.task_type}")
@@ -141,14 +208,24 @@ class PDFProgressDialog(QtWidgets.QDialog):
         self.files = files
         self.worker: Optional[PDFWorkerThread] = None
         self._close_after_worker_stops = False
+        self._started_at = None
 
         self._build_ui()
 
     def _build_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
 
-        self.lbl_status = QtWidgets.QLabel("Procesando...")
+        self.lbl_status = QtWidgets.QLabel("Preparando conversión…")
+        self.lbl_status.setWordWrap(True)
         layout.addWidget(self.lbl_status)
+
+        self.lbl_elapsed = QtWidgets.QLabel("Tiempo transcurrido: 0 s")
+        self.lbl_elapsed.setAlignment(Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.lbl_elapsed)
+
+        self._elapsed_timer = QtCore.QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(self._update_elapsed_time)
 
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -164,6 +241,16 @@ class PDFProgressDialog(QtWidgets.QDialog):
         layout.addLayout(btn_layout)
 
     def start_task(self, dpi: int = 150):
+        self._started_at = time.monotonic()
+        self._elapsed_timer.start()
+        self._update_elapsed_time()
+        self._on_progress_updated(
+            0,
+            max(1, len(self.files)),
+            "Preparando el trabajo en el hilo secundario…",
+            True,
+        )
+
         self.worker = PDFWorkerThread(self.task_type, self.files, dpi=dpi, parent=self)
         self.worker.progress_updated.connect(self._on_progress_updated)
         self.worker.finished_success.connect(self._on_finished_success)
@@ -177,12 +264,31 @@ class PDFProgressDialog(QtWidgets.QDialog):
         self.show()
         self.worker.start()
 
-    @pyqtSlot(int, int)
-    def _on_progress_updated(self, cur: int, tot: int):
+    def _update_elapsed_time(self):
+        if self._started_at is None:
+            return
+        elapsed = max(0, int(time.monotonic() - self._started_at))
+        minutes, seconds = divmod(elapsed, 60)
+        display = f"{minutes} min {seconds} s" if minutes else f"{seconds} s"
+        self.lbl_elapsed.setText(f"Tiempo transcurrido: {display}")
+
+    @pyqtSlot(int, int, str, bool)
+    def _on_progress_updated(
+        self,
+        cur: int,
+        tot: int,
+        message: str,
+        indeterminate: bool = False,
+    ):
+        self.lbl_status.setText(message)
+        if indeterminate:
+            self.progress_bar.setRange(0, 0)
+            return
+
+        self.progress_bar.setRange(0, 100)
         if tot > 0:
-            val = int((cur / tot) * 100)
-            self.progress_bar.setValue(val)
-            self.lbl_status.setText(f"Procesando ({cur}/{tot})...")
+            value = max(0, min(100, int((cur / tot) * 100)))
+            self.progress_bar.setValue(value)
 
     @pyqtSlot(list, list)
     def _on_finished_success(self, temp_files: List[Path], warnings: List[str]):
@@ -205,36 +311,44 @@ class PDFProgressDialog(QtWidgets.QDialog):
             self.worker.cleanup_temp()
 
         # Handle UI notifications on main thread
-        if self.task_type == "extract_images":
-            if moved_count == 0:
-                QtWidgets.QMessageBox.information(
-                    self.parentWidget(),
-                    "Extraer imágenes",
-                    "No se encontraron imágenes incrustadas en el PDF."
-                )
-            elif warnings:
-                warn_msg = "\n".join(warnings)
-                QtWidgets.QMessageBox.warning(
-                    self.parentWidget(),
-                    "Extraer imágenes",
-                    f"Imágenes extraídas con algunas advertencias:\n{warn_msg}"
-                )
+        if self.task_type == "extract_images" and moved_count == 0 and not warnings:
+            QtWidgets.QMessageBox.information(
+                self.parentWidget(),
+                "Extraer imágenes",
+                "No se encontraron imágenes incrustadas en el PDF."
+            )
+        elif warnings:
+            warn_msg = "\n".join(warnings)
+            QtWidgets.QMessageBox.warning(
+                self.parentWidget(),
+                "Conversión finalizada con advertencias",
+                f"Archivos guardados en Descargas: {moved_count}\n\n{warn_msg}"
+            )
+        elif moved_count == 0:
+            QtWidgets.QMessageBox.information(
+                self.parentWidget(),
+                "Conversión",
+                "No se generaron archivos."
+            )
 
+        self._elapsed_timer.stop()
         self._close_when_worker_has_stopped()
 
     @pyqtSlot(str)
     def _on_finished_error(self, err_msg: str):
+        self._elapsed_timer.stop()
         if self.worker:
             self.worker.cleanup_temp()
         QtWidgets.QMessageBox.critical(
             self.parentWidget(),
-            "Error en PDF",
-            f"Ocurrió un error al procesar el archivo PDF:\n{err_msg}"
+            "Error en conversión",
+            f"No se pudo completar la operación:\n{err_msg}"
         )
         self._close_when_worker_has_stopped()
 
     @pyqtSlot()
     def _on_cancelled(self):
+        self._elapsed_timer.stop()
         if self.worker:
             self.worker.cleanup_temp()
         self._close_when_worker_has_stopped()
@@ -252,14 +366,30 @@ class PDFProgressDialog(QtWidgets.QDialog):
 
     def _on_cancel_clicked(self):
         if self.worker and self.worker.isRunning():
-            self.lbl_status.setText("Cancelando...")
+            self.lbl_status.setText(
+                "Cancelación solicitada. Se está esperando a que termine la fase "
+                "actual; Microsoft Word/FFmpeg pueden necesitar unos segundos para cerrarse…"
+            )
+            self.progress_bar.setRange(0, 0)
             self.btn_cancel.setEnabled(False)
             self.worker.request_cancellation()
 
     def closeEvent(self, event):
         if self.worker and self.worker.isRunning():
+            # Do not destroy a QThread child while COM or FFmpeg is still running.
+            # Word's synchronous SaveAs2 call cannot be interrupted safely mid-call.
+            self._close_after_worker_stops = True
             self.worker.request_cancellation()
-            self.worker.wait(3000)
+            self.btn_cancel.setEnabled(False)
+            self.lbl_status.setText(
+                "Cierre solicitado. La operación finalizará o cancelará su fase activa "
+                "antes de cerrar esta ventana…"
+            )
+            self._elapsed_timer.start()
+            event.ignore()
+            return
+
+        self._elapsed_timer.stop()
         event.accept()
 
 

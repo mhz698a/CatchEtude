@@ -183,6 +183,51 @@ print('hello plugin')
         self.assertEqual(valid_count, 1)
         self.assertEqual(invalid_count, 1)
 
+    def test_discovery_preserves_runtime_plugin_object(self):
+        code = """# /// catch-etude-plugin
+# [plugin]
+# id = "test.runtime"
+# name = "Runtime"
+# version = "1.0.0"
+# api_version = 1
+# capabilities = ["tray_action"]
+# events = []
+# [[tray_actions]]
+# id = "run"
+# label = "Run"
+# command = "run"
+# /// end catch-etude-plugin
+"""
+        self._create_plugin_file("runtime.py", code)
+
+        registry = PluginRegistry(self.plugins_dir, self.state_path, self.config_dir)
+        first_discovery = registry.discover()
+        plugin = first_discovery[0]
+        self.assertTrue(registry.set_enabled("test.runtime", True))
+        plugin.state = PluginState.RUNNING
+
+        refreshed = registry.discover()
+        self.assertIs(refreshed[0], plugin)
+        self.assertIs(registry.plugins_by_id["test.runtime"], plugin)
+        self.assertTrue(plugin.is_enabled)
+        self.assertEqual(plugin.state, PluginState.RUNNING)
+
+        # Renaming the source file must not break the PluginProcess reference.
+        renamed_path = self.plugins_dir / "renamed_runtime.py"
+        (self.plugins_dir / "runtime.py").rename(renamed_path)
+        refreshed_after_rename = registry.discover()
+        self.assertIs(refreshed_after_rename[0], plugin)
+        self.assertIs(registry.plugins_by_id["test.runtime"], plugin)
+        self.assertEqual(plugin.file_path, renamed_path.resolve())
+        self.assertEqual(plugin.state, PluginState.RUNNING)
+
+        # Disabling must also survive the next table/menu refresh.
+        self.assertTrue(registry.set_enabled("test.runtime", False))
+        refreshed_after_disable = registry.discover()
+        self.assertIs(refreshed_after_disable[0], plugin)
+        self.assertFalse(plugin.is_enabled)
+        self.assertEqual(plugin.state, PluginState.DISABLED)
+
     def test_state_persistence_and_config(self):
         code = """# /// catch-etude-plugin
 # [plugin]

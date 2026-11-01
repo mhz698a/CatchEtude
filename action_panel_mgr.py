@@ -5,7 +5,6 @@ Componente del panel de acción para CatchEtude.
 
 import os
 import logging
-import subprocess
 from pathlib import Path
 from datetime import datetime
 from PyQt6 import QtCore, QtWidgets, QtGui
@@ -17,6 +16,7 @@ from localization import LocalizationManager
 from ui_utils_mgr import apply_secure_blur, load_stylesheet
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
 from drag_label_widget import DragLabel
+from rename_dialog import RenameDialog
 
 class ActionPanel(QWidget):
     """
@@ -30,6 +30,7 @@ class ActionPanel(QWidget):
         super().__init__(parent)
         self.loc = LocalizationManager()
         self.filepath = None
+        self._metadata_dialogs = {}
         self.preview_hidden = False
         self._hide_secure = False
         self._preview_generation = 0
@@ -65,13 +66,20 @@ class ActionPanel(QWidget):
         self.preview_label.mousePressEvent = self._toggle_preview
         layout.addWidget(self.preview_label, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
 
+        # Contextual plugin actions use their own two-column grid. Keeping
+        # them separate from Open/Delete prevents three or more buttons from
+        # competing for the narrow width of the action panel.
+        self.dynamic_btn_layout = QtWidgets.QGridLayout()
+        self.dynamic_btn_layout.setContentsMargins(0, 0, 0, 0)
+        self.dynamic_btn_layout.setHorizontalSpacing(8)
+        self.dynamic_btn_layout.setVerticalSpacing(6)
+        self.dynamic_btn_layout.setColumnStretch(0, 1)
+        self.dynamic_btn_layout.setColumnStretch(1, 1)
+        layout.addLayout(self.dynamic_btn_layout)
+
         open_row = QHBoxLayout()
         open_row.setSpacing(8)
         open_row.addStretch()
-
-        self.dynamic_btn_layout = QHBoxLayout()
-        self.dynamic_btn_layout.setSpacing(8)
-        open_row.addLayout(self.dynamic_btn_layout)
 
         self.btn_open = QPushButton(self.loc.get("btn_open"))
         self.btn_open.clicked.connect(self._open_file)
@@ -376,13 +384,20 @@ class ActionPanel(QWidget):
         if not self._is_metadata_editable():
             return
 
+        file_key = str(self.filepath.resolve())
+
         try:
-            subprocess.Popen(
-                ["pythonw", str(config.METADATA_EDIT_SCRIPT_PATH), str(self.filepath)],
-                close_fds=True,
+            dialog = RenameDialog(file_key)
+            self._metadata_dialogs[file_key] = dialog
+            dialog.destroyed.connect(
+                lambda *_args, key=file_key: self._metadata_dialogs.pop(key, None)
             )
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
         except Exception:
-            logging.exception("Error launching metadata editor")
+            self._metadata_dialogs.pop(file_key, None)
+            logging.exception("Error opening embedded metadata editor")
 
 
     def get_new_name(self):
@@ -421,6 +436,8 @@ class ActionPanel(QWidget):
         ext = self.filepath.suffix.lower()
         is_directory = self.filepath.is_dir()
 
+        visible_buttons = []
+
         for btn_def in buttons_def:
             btn_target = btn_def.get("target", "file")
             if btn_target == "subfolder":
@@ -451,7 +468,24 @@ class ActionPanel(QWidget):
                     )
                 )
 
-            self.dynamic_btn_layout.addWidget(btn)
+            visible_buttons.append(btn)
+
+        # Use at most two buttons per row. A final unpaired button spans the
+        # whole row so it remains centered instead of leaving an empty column.
+        for index, btn in enumerate(visible_buttons):
+            row, column = divmod(index, 2)
+            is_unpaired_last = (
+                len(visible_buttons) % 2 == 1
+                and index == len(visible_buttons) - 1
+            )
+            if is_unpaired_last:
+                self.dynamic_btn_layout.addWidget(
+                    btn, row, 0, 1, 2, Qt.AlignmentFlag.AlignCenter
+                )
+            else:
+                self.dynamic_btn_layout.addWidget(
+                    btn, row, column, Qt.AlignmentFlag.AlignCenter
+                )
 
     def _show_dynamic_button_menu(self, button, plugin_id: str, items: list):
         import sys

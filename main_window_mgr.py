@@ -962,12 +962,30 @@ class MainWindow(QWidget):
         if folder: self._process_pending_folder(Path(folder))
 
     def _run_pendings(self):
+        CREATE_NO_WINDOW = 0x08000000
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
         try:
             pendings_script = str(Path(__file__).resolve().parent / "pendings_exec.pyw")
             python_exe = sys.executable
+            
             if python_exe.lower().endswith("python.exe"):
                 python_exe = python_exe[:-10] + "pythonw.exe"
-            subprocess.Popen([python_exe, pendings_script], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+                
+            subprocess.Popen([python_exe, pendings_script], creationflags=flags)
+        except Exception:
+            logging.exception("Failed to run pendings script")
+    
+    def _run_download_cmd_builder(self):
+        CREATE_NO_WINDOW = 0x08000000
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+        try:
+            pendings_script = str(Path(__file__).resolve().parent / "cmd_builder.py")
+            python_exe = sys.executable
+            
+            if python_exe.lower().endswith("python.exe"):
+                python_exe = python_exe[:-10] + "pythonw.exe"
+            
+            subprocess.Popen([python_exe, pendings_script], creationflags=flags)
         except Exception:
             logging.exception("Failed to run pendings script")
 

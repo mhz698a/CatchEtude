@@ -14,7 +14,7 @@ if not hasattr(ctypes, 'windll'):
                     return lambda *args, **kwargs: 1
             return MockDLL()
     ctypes.windll = MockWinDLL()
-    ctypes.WinDLL = lambda name: MockWinDLL()
+    ctypes.WinDLL = lambda name, **kwargs: MockWinDLL()
 
 if not hasattr(ctypes, 'WINFUNCTYPE'):
     ctypes.WINFUNCTYPE = ctypes.CFUNCTYPE
@@ -51,6 +51,21 @@ class TestAutoflatAndUI(unittest.TestCase):
         self.assertIn("AUTOFLAT_FOLDERS", dialog.inputs)
         line_edit = dialog.inputs["AUTOFLAT_FOLDERS"]
         self.assertEqual(line_edit.placeholderText(), "example_folder/other_folder")
+
+    def test_galleryanuary_setting_and_metadata_editor_migration(self):
+        self.assertIn("GALLERYANUARY_PATH", config.DEFAULT_SETTINGS)
+        self.assertNotIn("METADATA_EDIT_SCRIPT_PATH", config.DEFAULT_SETTINGS)
+
+        dialog = SettingsDialog()
+        self.assertIn("GALLERYANUARY_PATH", dialog.inputs)
+        self.assertEqual(
+            dialog.inputs["GALLERYANUARY_PATH"].placeholderText(),
+            "Path to GalleryAnuary executable or main script",
+        )
+
+    def test_rename_dialog_imports_with_pyqt6(self):
+        from rename_dialog import RenameDialog
+        self.assertTrue(issubclass(RenameDialog, QtWidgets.QWidget))
 
     def test_action_panel_layout_and_controls(self):
         panel = ActionPanel()

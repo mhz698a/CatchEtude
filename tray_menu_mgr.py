@@ -3,7 +3,6 @@ Tray menu manager for CatchEtude.
 Gestor del menú de la bandeja del sistema para CatchEtude.
 """
 
-import sys
 import logging
 from pathlib import Path
 from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
@@ -45,6 +44,7 @@ class TrayMenuManager:
             self.tray = QSystemTrayIcon(icon, mw)
             self.tray.setToolTip(config.APP_NAME)
 
+        previous_menu = self.tray_menu
         self.tray_menu = QMenu(mw)
 
         toggle_label = loc.get("tray_hide") if mw.isVisible() else loc.get("tray_show")
@@ -67,6 +67,10 @@ class TrayMenuManager:
         run_pendings_action = QAction(loc.get("tray_run_pendings"), mw)
         run_pendings_action.triggered.connect(mw._run_pendings)
         self.tray_menu.addAction(run_pendings_action)
+        
+        run_cmd_download = QAction(loc.get("run_cmd_builder"), mw)
+        run_cmd_download.triggered.connect(mw._run_download_cmd_builder)
+        self.tray_menu.addAction(run_cmd_download)
 
         open_last_action = QAction(loc.get("tray_open_last"), mw)
         last_move = mw.background_move_mgr._history.get_last_move()
@@ -116,6 +120,11 @@ class TrayMenuManager:
         self.tray.setContextMenu(self.tray_menu)
         self.tray.show()
 
+        # Plugin state changes rebuild the tray menu. Dispose of the previous
+        # menu after the tray icon has been pointed at the replacement.
+        if previous_menu is not None:
+            previous_menu.deleteLater()
+
     def _build_or_update_plugins_submenu(self):
         plugin_actions = self._get_plugin_tray_actions()
         if not plugin_actions:
@@ -142,7 +151,10 @@ class TrayMenuManager:
 
     def _get_plugin_tray_actions(self):
         try:
-            plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
+            # MainWindow owns the manager reference. Avoid relying on the
+            # executable module being named "__main__" (frozen/embedded runs
+            # and tests can expose a different module layout).
+            plugin_mgr = self.main_window.plugin_mgr
             if plugin_mgr:
                 return plugin_mgr.get_tray_actions()
         except Exception:
@@ -151,7 +163,7 @@ class TrayMenuManager:
 
     def _on_plugin_tray_action(self, plugin_id: str, command: str):
         try:
-            plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
+            plugin_mgr = self.main_window.plugin_mgr
             if plugin_mgr:
                 plugin_mgr.invoke_command(plugin_id, command)
         except Exception:

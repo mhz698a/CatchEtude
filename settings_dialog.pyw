@@ -36,6 +36,9 @@ class SettingsDialog(QDialog):
             if key == "AUTOFLAT_FOLDERS":
                 label_text = "Autoflat folders with this words"
                 line_edit.setPlaceholderText("example_folder/other_folder")
+            elif key == "GALLERYANUARY_PATH":
+                label_text = "Open with GalleryAnuary"
+                line_edit.setPlaceholderText("Path to GalleryAnuary executable or main script")
             form_layout.addRow(QLabel(label_text), line_edit)
             self.inputs[key] = line_edit
             

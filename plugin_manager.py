@@ -31,29 +31,42 @@ class PluginManager(QObject):
         self.registry = PluginRegistry(plugins_dir=plugins_dir)
         self.processes: Dict[str, PluginProcess] = {}  # plugin_id -> PluginProcess
 
+    def _create_process(self, plugin: DiscoveredPlugin) -> PluginProcess:
+        """Creates a process host and wires its lifecycle signals."""
+        proc = PluginProcess(plugin, self.registry, self)
+        proc.state_changed.connect(
+            lambda state, p_id=plugin.plugin_id: self.plugin_state_changed.emit(p_id, state)
+        )
+        for svc_id, svc_proc in proc.services.items():
+            svc_proc.state_changed.connect(
+                lambda state, p_id=plugin.plugin_id, s_id=svc_id: self.service_state_changed.emit(p_id, s_id, state)
+            )
+        return proc
+
     def discover(self) -> List[DiscoveredPlugin]:
-        """Scans plugin directory and updates processes."""
+        """Scans plugin directory while preserving the runtime instances used by processes."""
+        previous_sources = {
+            plugin_id: (proc.plugin.file_path, proc.plugin.file_mtime)
+            for plugin_id, proc in self.processes.items()
+        }
         discovered = self.registry.discover()
 
         for plugin in discovered:
             if not plugin.plugin_id or plugin.state == PluginState.INVALID:
                 continue
 
-            if plugin.plugin_id not in self.processes:
-                proc = PluginProcess(plugin, self.registry, self)
-                proc.state_changed.connect(
-                    lambda state, p_id=plugin.plugin_id: self.plugin_state_changed.emit(p_id, state)
-                )
-                for svc_id, svc_proc in proc.services.items():
-                    svc_proc.state_changed.connect(
-                        lambda state, p_id=plugin.plugin_id, s_id=svc_id: self.service_state_changed.emit(p_id, s_id, state)
-                    )
-                self.processes[plugin.plugin_id] = proc
-            else:
-                existing_proc = self.processes[plugin.plugin_id]
-                # Check if file mtime changed on disk
-                if existing_proc.plugin.file_mtime != plugin.file_mtime:
-                    existing_proc.requires_restart = True
+            existing_proc = self.processes.get(plugin.plugin_id)
+            if existing_proc is None:
+                self.processes[plugin.plugin_id] = self._create_process(plugin)
+                continue
+
+            # PluginRegistry refreshes metadata in-place, so PluginProcess keeps a
+            # valid reference to the same object. Compare against the pre-scan mtime
+            # (not the already-refreshed value) to detect source updates.
+            previous_source = previous_sources.get(plugin.plugin_id)
+            current_source = (plugin.file_path, plugin.file_mtime)
+            if previous_source is not None and previous_source != current_source:
+                existing_proc.requires_restart = True
 
         self.plugins_reloaded.emit()
         return discovered
@@ -66,14 +79,31 @@ class PluginManager(QObject):
                 proc.start()
 
     def start_plugin(self, plugin_id: str) -> bool:
-        """Starts a specific plugin."""
+        """Starts a specific enabled plugin without restarting the application."""
         proc = self.processes.get(plugin_id)
-        if not proc:
+        if proc is None:
+            self.discover()
+            proc = self.processes.get(plugin_id)
+        if proc is None or not proc.plugin.is_enabled:
             return False
-        if not proc.plugin.is_enabled:
-            return False
+
+        if proc.plugin.state in (PluginState.RUNNING, PluginState.STARTING):
+            return True
+
+        if proc.requires_restart:
+            proc = self._replace_process(plugin_id, proc)
+
         proc.start()
         return True
+
+    def _replace_process(self, plugin_id: str, old_proc: PluginProcess) -> PluginProcess:
+        """Rebuilds the host so changed plugin code and service declarations are loaded."""
+        plugin = old_proc.plugin
+        new_proc = self._create_process(plugin)
+        new_proc.requires_restart = False
+        self.processes[plugin_id] = new_proc
+        old_proc.deleteLater()
+        return new_proc
 
     def stop_plugin(self, plugin_id: str) -> bool:
         """Stops a specific plugin."""
@@ -84,28 +114,41 @@ class PluginManager(QObject):
         return True
 
     def restart_plugin(self, plugin_id: str) -> bool:
-        """Restops and restarts a plugin and its services if enabled."""
+        """Restarts a plugin process and reloads changed code/services when needed."""
         proc = self.processes.get(plugin_id)
-        if not proc:
+        if proc is None:
             return False
 
+        was_enabled = proc.plugin.is_enabled
         proc.stop()
-        proc.requires_restart = False
-        if proc.plugin.is_enabled:
+        if proc.requires_restart:
+            proc = self._replace_process(plugin_id, proc)
+
+        if was_enabled:
+            proc.requires_restart = False
             proc.start()
             return True
         return False
 
     def enable_plugin(self, plugin_id: str) -> bool:
-        """Enables a plugin and starts it."""
-        if self.registry.set_enabled(plugin_id, True):
-            return self.start_plugin(plugin_id)
-        return False
+        """Enables a plugin and starts it immediately."""
+        if plugin_id not in self.registry.plugins_by_id:
+            self.discover()
+        if not self.registry.set_enabled(plugin_id, True):
+            return False
+        return self.start_plugin(plugin_id)
 
     def disable_plugin(self, plugin_id: str) -> bool:
-        """Disables a plugin and stops it."""
-        self.stop_plugin(plugin_id)
-        return self.registry.set_enabled(plugin_id, False)
+        """Disables a plugin and stops its process immediately."""
+        if not self.registry.set_enabled(plugin_id, False):
+            return False
+
+        proc = self.processes.get(plugin_id)
+        if proc is not None:
+            proc.stop()
+            if proc.plugin.state != PluginState.DISABLED:
+                proc.set_state(PluginState.DISABLED)
+        return True
 
     def publish_event(self, event_name: str, data: Dict[str, Any]) -> None:
         """Publishes an event to all running plugins that declared it."""

@@ -2,7 +2,7 @@ QSS = """
 QWidget {
     background-color: #1e1e1e;
     color: #dddddd;
-    font-size: 11pt;
+    font-size: 9pt;
 }
 QLineEdit, QComboBox {
     background-color: #2b2b2b;

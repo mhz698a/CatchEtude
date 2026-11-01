@@ -156,6 +156,7 @@ STRINGS = {
         "lbl_prop_scan_complete": "Cálculo completado.",
         "lbl_prop_scan_error": "No se pudo completar el cálculo.",
         "btn_close": "Cerrar",
+        "run_cmd_builder": "Descargar Video/Galeria",
     },
     "en": {
         "btn_keep": "Keep",
@@ -302,6 +303,7 @@ STRINGS = {
         "lbl_prop_scan_complete": "Calculation complete.",
         "lbl_prop_scan_error": "Unable to calculate folder statistics.",
         "btn_close": "Close",
+        "run_cmd_builder": "Download Video/Gallery",
     }
 }
 
