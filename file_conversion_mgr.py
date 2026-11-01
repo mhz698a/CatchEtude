@@ -97,7 +97,9 @@ def _convert_raster_to_png(source: Path, output_dir: Path) -> Path:
     try:
         output = _unique_output_path(output_dir, source, ".png")
         if image.mode not in ("1", "L", "LA", "P", "RGB", "RGBA", "I", "I;16"):
-            image = image.convert("RGBA" if "transparency" in info else "RGB")
+            converted = image.convert("RGBA" if "transparency" in info else "RGB")
+            image.close()
+            image = converted
         save_options = {}
         if info.get("icc_profile"):
             save_options["icc_profile"] = info["icc_profile"]
@@ -151,7 +153,7 @@ def _svg_to_image(source: Path, max_dimension: Optional[int] = None) -> QImage:
         width = max(1, round(width * scale))
         height = max(1, round(height * scale))
 
-    image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
+    image = QImage(width, height, QImage.Format.Format_RGBA8888)
     image.fill(Qt.GlobalColor.transparent)
     painter = QPainter(image)
     try:
@@ -182,7 +184,7 @@ def _convert_svg_to_ico(source: Path, output_dir: Path) -> Path:
             (rendered.width(), rendered.height()),
             bytes(buffer),
             "raw",
-            "BGRA",
+            "RGBA",
             0,
             1,
         ).copy()
@@ -297,7 +299,11 @@ def _copy_audio_tags(source_path: Path, output_path: Path) -> None:
             normalised = key.lower()
             values = _id3_text_values(raw_value)
 
-            if normalised in {"covr", "metadata_block_picture"}:
+            if normalised == "metadata_block_picture":
+                # FLAC picture blocks are copied below using Mutagen picture objects.
+                continue
+
+            if normalised == "covr":
                 covers = raw_value if isinstance(raw_value, (list, tuple)) else [raw_value]
                 for index, cover in enumerate(covers):
                     cover_bytes = bytes(cover) if isinstance(cover, (bytes, bytearray, memoryview)) else None
@@ -355,7 +361,7 @@ def _convert_audio_to_mp3(source: Path, output_dir: Path) -> Path:
         "-vn",
         "-codec:a", "libmp3lame",
         "-q:a", "2",
-        "-map_metadata", "-1",
+        "-map_metadata", "0",
         "-id3v2_version", "3",
         str(output),
     ]
