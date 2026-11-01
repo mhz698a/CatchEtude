@@ -67,6 +67,10 @@ class TrayMenuManager:
         run_pendings_action = QAction(loc.get("tray_run_pendings"), mw)
         run_pendings_action.triggered.connect(mw._run_pendings)
         self.tray_menu.addAction(run_pendings_action)
+        
+        run_cmd_download = QAction(loc.get("run_cmd_builder"), mw)
+        run_cmd_download.triggered.connect(mw._run_download_cmd_builder)
+        self.tray_menu.addAction(run_cmd_download)
 
         open_last_action = QAction(loc.get("tray_open_last"), mw)
         last_move = mw.background_move_mgr._history.get_last_move()
