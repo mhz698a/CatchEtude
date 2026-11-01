@@ -157,8 +157,13 @@ class PluginRegistry:
         Scans PLUGINS_DIR for regular .py and .pyw files, parses manifests, checks duplicates,
         and updates active plugins list.
         """
-        self.plugins.clear()
-        self.plugins_by_id.clear()
+        # Keep the previous objects alive while rescanning. PluginProcess holds a
+        # direct reference to its DiscoveredPlugin; replacing these objects on every
+        # refresh desynchronizes the registry from the running process and makes
+        # enable/start operations appear to succeed without actually starting it.
+        previous_plugins = self.plugins.copy()
+        self.plugins = {}
+        self.plugins_by_id = {}
 
         if not self.plugins_dir.exists():
             self.plugins_dir.mkdir(parents=True, exist_ok=True)
@@ -178,9 +183,11 @@ class PluginRegistry:
                 continue
 
             entry_mtime = entry.stat().st_mtime if entry.exists() else 0.0
-            existing_by_path = self.plugins.get(entry.resolve())
+            existing_by_path = previous_plugins.get(entry.resolve())
 
-            # If plugin is already loaded and active, check if mtime changed
+            # Parse into a temporary object, then refresh the existing object in
+            # place when this file still represents the same plugin. This preserves
+            # object identity for PluginProcess and every UI reference.
             plugin = DiscoveredPlugin(entry)
             is_valid = plugin.parse()
 
@@ -192,11 +199,36 @@ class PluginRegistry:
                     plugin.error_message = f"Duplicate plugin ID '{plugin.plugin_id}' (first seen in '{first_file.name}')"
                 else:
                     seen_ids[plugin.plugin_id] = entry
-                    # Load saved enabled state
                     saved = saved_states.get(plugin.plugin_id, {})
-                    plugin.is_enabled = saved.get("enabled", False)
-                    if not plugin.is_enabled:
-                        plugin.state = PluginState.DISABLED
+
+                    if existing_by_path and existing_by_path.plugin_id == plugin.plugin_id:
+                        runtime_state = existing_by_path.state
+                        runtime_error = existing_by_path.error_message
+                        runtime_enabled = existing_by_path.is_enabled
+
+                        # Refresh parsed metadata without invalidating the live
+                        # PluginProcess reference.
+                        existing_by_path.__dict__.update(plugin.__dict__)
+                        existing_by_path.is_enabled = saved.get("enabled", runtime_enabled)
+
+                        if not existing_by_path.is_enabled:
+                            existing_by_path.state = PluginState.DISABLED
+                        elif runtime_state in (PluginState.DISABLED, PluginState.INVALID):
+                            existing_by_path.state = PluginState.DISCOVERED
+                        else:
+                            existing_by_path.state = runtime_state
+
+                        existing_by_path.error_message = (
+                            runtime_error
+                            if existing_by_path.state == PluginState.FAILED
+                            else None
+                        )
+                        plugin = existing_by_path
+                    else:
+                        plugin.is_enabled = saved.get("enabled", False)
+                        if not plugin.is_enabled:
+                            plugin.state = PluginState.DISABLED
+
                     self.plugins_by_id[plugin.plugin_id] = plugin
 
             self.plugins[entry.resolve()] = plugin
