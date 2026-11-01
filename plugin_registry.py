@@ -192,6 +192,19 @@ class PluginRegistry:
             is_valid = plugin.parse()
 
             if is_valid and plugin.plugin_id:
+                # Preserve the live object even when the plugin file was renamed
+                # but retained its manifest ID. PluginManager indexes processes by
+                # ID, not by file path.
+                if existing_by_path is None:
+                    existing_by_path = next(
+                        (
+                            old_plugin
+                            for old_plugin in previous_plugins.values()
+                            if old_plugin.plugin_id == plugin.plugin_id
+                        ),
+                        None,
+                    )
+
                 if plugin.plugin_id in seen_ids:
                     # Duplicate ID! Mark invalid
                     first_file = seen_ids[plugin.plugin_id]
