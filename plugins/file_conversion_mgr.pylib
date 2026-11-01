@@ -91,12 +91,34 @@ def _load_raster_image(source: Path) -> Tuple[Image.Image, dict]:
 
 def _write_ico(image: Image.Image, output_path: Path) -> Path:
     rgba = image.convert("RGBA")
-    rgba.thumbnail((256, 256), Image.Resampling.LANCZOS)
+    width, height = rgba.size
 
-    canvas = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
-    offset = ((256 - rgba.width) // 2, (256 - rgba.height) // 2)
-    canvas.alpha_composite(rgba, offset)
-    canvas.save(output_path, format="ICO", sizes=ICO_SIZES)
+    # 1. Si la imagen es mayor a 256x256, la reducimos como límite máximo a 256x256
+    if width > 256 or height > 256:
+        rgba.thumbnail((256, 256), Image.Resampling.LANCZOS)
+        width, height = rgba.size
+
+    max_dim = max(width, height)
+
+    # 2. Tamaños estándar de iconos de Windows hacia abajo
+    standard_sizes = [16, 24, 32, 48, 64, 96, 128, 256]
+    
+    # 3. Filtrar y calcular las variantes menores o iguales al tamaño máximo actual
+    ico_sizes = []
+    for s in standard_sizes:
+        if s <= max_dim:
+            if width == height:
+                ico_sizes.append((s, s))
+            else:
+                scale = s / max_dim
+                ico_sizes.append((max(1, round(width * scale)), max(1, round(height * scale))))
+
+    # Asegurarnos de incluir el tamaño exacto actual si no está en la lista estándar
+    if (width, height) not in ico_sizes:
+        ico_sizes.append((width, height))
+
+    # Guardar directamente el archivo ICO con las variantes calculadas (sin lienzo transparente forzado)
+    rgba.save(output_path, format="ICO", sizes=ico_sizes)
     return output_path
 
 
