@@ -61,7 +61,6 @@ DWMWA_DISALLOW_PEEK = 11
 
 # Default values for configurable settings
 DEFAULT_SETTINGS = {
-    "METADATA_EDIT_SCRIPT_PATH": (USER_HOME / "OneDrive" / "foobar2000" / "profile" / "ActivityBar" / "rename_dialog.py").as_posix(),
     "CONFLICTS": (USER_HOME / "Documents" / "_conflicts").as_posix(),
     "BASE_INTERNAL": r"E:\_Internal",
     "ONEDRIVE_DOCS": (USER_HOME / "OneDrive" / "Documentos").as_posix(),
@@ -76,10 +75,10 @@ DEFAULT_SETTINGS = {
     "MAX_CONCURRENT_MOVES": 1,
     "PDF_DPI": 150,
     "AUTOFLAT_FOLDERS": "",
+    "GALLERYANUARY_PATH": "",
 }
 
 # Declarar variables iniciales con sus valores por defecto
-METADATA_EDIT_SCRIPT_PATH = Path(DEFAULT_SETTINGS["METADATA_EDIT_SCRIPT_PATH"])
 CONFLICTS = Path(DEFAULT_SETTINGS["CONFLICTS"])
 BASE_INTERNAL = Path(DEFAULT_SETTINGS["BASE_INTERNAL"])
 ONEDRIVE_DOCS = Path(DEFAULT_SETTINGS["ONEDRIVE_DOCS"])
@@ -94,6 +93,7 @@ TIMER_GC = DEFAULT_SETTINGS["TIMER_GC"]
 MAX_CONCURRENT_MOVES = DEFAULT_SETTINGS["MAX_CONCURRENT_MOVES"]
 PDF_DPI = DEFAULT_SETTINGS["PDF_DPI"]
 AUTOFLAT_FOLDERS = DEFAULT_SETTINGS["AUTOFLAT_FOLDERS"]
+GALLERYANUARY_PATH = DEFAULT_SETTINGS["GALLERYANUARY_PATH"]
 
 
 # Functions
@@ -139,8 +139,11 @@ def apply_settings():
 
     changed_keys = []
     for key, value in settings.items():
+        # Ignore legacy or unknown settings; only declared settings are applied.
+        if key not in DEFAULT_SETTINGS:
+            continue
         # Convertir a Path solo las llaves que corresponden a rutas de archivos
-        if key in ["METADATA_EDIT_SCRIPT_PATH", "CONFLICTS", "BASE_INTERNAL", "ONEDRIVE_DOCS", "ONEDRIVE_DOCTOS_FAMILIA"]:
+        if key in ["CONFLICTS", "BASE_INTERNAL", "ONEDRIVE_DOCS", "ONEDRIVE_DOCTOS_FAMILIA"]:
             value = Path(value)
 
         old_value = getattr(module, key, None)

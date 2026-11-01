@@ -1,10 +1,13 @@
 # rename_dialog.py
 import ctypes
-import pywinstyles
+try:
+    import pywinstyles
+except ImportError:
+    pywinstyles = None
 import re, sys, os
 from pathlib import Path
-from PyQt5 import QtWidgets, QtGui
-from PyQt5.QtCore import Qt, pyqtSignal, QBuffer, QIODevice
+from PyQt6 import QtWidgets, QtGui
+from PyQt6.QtCore import Qt, pyqtSignal, QBuffer, QIODevice
 from pyrenameutils.qss_styles import QSS
 from pyrenameutils.ng_dialog import NewgroundsDialog
 from pyrenameutils.helpers_text import sanitize_windows_filename
@@ -16,7 +19,10 @@ from pyrenameutils.helpers_cover import read_cover_art, write_cover_art, write_c
 APP_DIR = Path(__file__).resolve().parent.as_posix()
 ICON_WIN = f"{APP_DIR}/assets/catchetude-icon.png"
 myappid = 'etudetools.files_mgr.rename_dialog.1.0'
-ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+try:
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+except Exception:
+    pass
 
 class CoverLabel(QtWidgets.QLabel):
     clicked = pyqtSignal()
@@ -25,8 +31,8 @@ class CoverLabel(QtWidgets.QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._has_cover = False
-        self.setAlignment(Qt.AlignCenter)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMinimumSize(180, 180)
         self.setFixedSize(180, 180)
         self.setStyleSheet("""
@@ -54,15 +60,16 @@ class CoverLabel(QtWidgets.QLabel):
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
-        elif event.button() == Qt.RightButton:
-            self.rightClicked.emit(event.globalPos())
+        elif event.button() == Qt.MouseButton.RightButton:
+            self.rightClicked.emit(event.globalPosition().toPoint())
         super().mousePressEvent(event)
 
 class RenameDialog(QtWidgets.QWidget):
-    def __init__(self, file_path):
-        super().__init__()
+    def __init__(self, file_path, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.file_path = os.path.abspath(file_path)
         self.dir_path = os.path.dirname(self.file_path)
         self.base_name = os.path.basename(self.file_path)
@@ -73,12 +80,13 @@ class RenameDialog(QtWidgets.QWidget):
     def init_ui(self):
         self.setWindowTitle("Rename file")
         flags = self.windowFlags()
-        flags &= ~Qt.WindowMaximizeButtonHint
+        flags &= ~Qt.WindowType.WindowMaximizeButtonHint
         self.setWindowFlags(flags)
 
         self.setFixedSize(700, 920)
         try:
-            pywinstyles.change_header_color(self, color="#232629")
+            if pywinstyles:
+                pywinstyles.change_header_color(self, color="#232629")
         except Exception:
             pass
 
@@ -89,8 +97,8 @@ class RenameDialog(QtWidgets.QWidget):
         # Newgrounds
         self.ng_btn = QtWidgets.QPushButton("Newgrounds")
         self.ng_btn.setFixedHeight(36)
-        self.ng_btn.setCursor(Qt.PointingHandCursor)
-        self.ng_btn.setFocusPolicy(Qt.NoFocus)
+        self.ng_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.ng_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.ng_btn.clicked.connect(self.open_ng_dialog)
 
         header_layout = QtWidgets.QHBoxLayout()
@@ -119,7 +127,7 @@ class RenameDialog(QtWidgets.QWidget):
         for b in transforms:
             b.setFixedHeight(34)
             transforms_layout.addWidget(b)
-            b.setFocusPolicy(Qt.NoFocus)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         # Metadata fields
         meta_layout = QtWidgets.QFormLayout()
@@ -153,13 +161,13 @@ class RenameDialog(QtWidgets.QWidget):
         self.title_id_btn = QtWidgets.QPushButton("(ID:)")
         self.title_id_btn.setFixedWidth(90)
         self.title_id_btn.setFixedHeight(38)
-        self.title_id_btn.setFocusPolicy(Qt.NoFocus)
+        self.title_id_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.title_id_btn.setToolTip("Añadir (ID:) al final del título")
 
         self.title_paste_btn = QtWidgets.QPushButton("[ T ]")
         self.title_paste_btn.setFixedWidth(90)
         self.title_paste_btn.setFixedHeight(38)
-        self.title_paste_btn.setFocusPolicy(Qt.NoFocus)
+        self.title_paste_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.title_paste_btn.setToolTip("Mover el título al campo de título")
 
         title_layout = QtWidgets.QHBoxLayout()
@@ -171,7 +179,7 @@ class RenameDialog(QtWidgets.QWidget):
         self.artist_paste_btn = QtWidgets.QPushButton("[ A ]")
         self.artist_paste_btn.setFixedWidth(90)
         self.artist_paste_btn.setFixedHeight(38)
-        self.artist_paste_btn.setFocusPolicy(Qt.NoFocus)
+        self.artist_paste_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.artist_paste_btn.setToolTip("Mover el artista al campo de artistas")
         
         self.cover_label = CoverLabel()
@@ -230,7 +238,7 @@ class RenameDialog(QtWidgets.QWidget):
         self.always_on_top_checkbox = QtWidgets.QCheckBox("Siempre visible")
         self.always_on_top_checkbox.setChecked(True)
         self.always_on_top_checkbox.stateChanged.connect(self.on_always_on_top_changed)
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         
         self.overwrite_checkbox = QtWidgets.QCheckBox("Es Sobrescritor")
         self.overwrite_checkbox.setChecked(False)
@@ -410,10 +418,10 @@ class RenameDialog(QtWidgets.QWidget):
         self.edit.setText(text + " (η)")
 
     def on_always_on_top_changed(self, state):
-        checked = state == Qt.Checked
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, checked)
+        checked = self.always_on_top_checkbox.isChecked()
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, checked)
         flags = self.windowFlags()
-        flags &= ~Qt.WindowMaximizeButtonHint
+        flags &= ~Qt.WindowType.WindowMaximizeButtonHint
         self.setWindowFlags(flags)
         self.show()
         
@@ -460,7 +468,7 @@ class RenameDialog(QtWidgets.QWidget):
     # newgrounds dialog
     def open_ng_dialog(self):
         dlg = NewgroundsDialog(idsong=self.edit.selectedText() or self.title_edit.selectedText(), parent=self)
-        if dlg.exec_() != QtWidgets.QDialog.Accepted:
+        if dlg.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 
         data = dlg.result_data
@@ -671,8 +679,8 @@ class RenameDialog(QtWidgets.QWidget):
             pixmap.scaled(
                 self.cover_label.width(),
                 self.cover_label.height(),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
             )
         )
 
@@ -720,7 +728,7 @@ class RenameDialog(QtWidgets.QWidget):
         act_copy = menu.addAction("Copiar imagen al portapapeles")
         act_paste = menu.addAction("Pegar imagen del portapapeles")
 
-        action = menu.exec_(pos)
+        action = menu.exec(pos)
         if action == act_export:
             self.export_cover_from_dialog()
         elif action == act_replace:
@@ -763,7 +771,7 @@ class RenameDialog(QtWidgets.QWidget):
             return
 
         buffer = QBuffer()
-        buffer.open(QIODevice.WriteOnly)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
         if not image.save(buffer, "PNG"):
             QtWidgets.QMessageBox.warning(self, "Carátula", "No se pudo leer la imagen del portapapeles.")
             return
@@ -811,7 +819,7 @@ def main():
 
     dlg = RenameDialog(sys.argv[1])
     dlg.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()

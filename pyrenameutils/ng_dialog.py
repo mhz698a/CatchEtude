@@ -1,7 +1,10 @@
 # NG: Newgrounds dialog para obtener informacion segun el ID 
-import pywinstyles
+try:
+    import pywinstyles
+except ImportError:
+    pywinstyles = None
 import webbrowser
-from PyQt5 import QtWidgets, QtGui
+from PyQt6 import QtWidgets, QtGui
 from pyrenameutils.ng_extract import extract_ng, NGError
 
 class NewgroundsDialog(QtWidgets.QDialog):
@@ -13,7 +16,8 @@ class NewgroundsDialog(QtWidgets.QDialog):
 
     def init_ui(self):
         try:
-            pywinstyles.change_header_color(self, color="#232629")
+            if pywinstyles:
+                pywinstyles.change_header_color(self, color="#232629")
         except Exception:
             pass
         

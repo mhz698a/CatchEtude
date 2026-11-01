@@ -5,7 +5,6 @@ Componente del panel de acción para CatchEtude.
 
 import os
 import logging
-import subprocess
 from pathlib import Path
 from datetime import datetime
 from PyQt6 import QtCore, QtWidgets, QtGui
@@ -30,6 +29,7 @@ class ActionPanel(QWidget):
         super().__init__(parent)
         self.loc = LocalizationManager()
         self.filepath = None
+        self._metadata_dialogs = {}
         self.preview_hidden = False
         self._hide_secure = False
         self._preview_generation = 0
@@ -376,13 +376,31 @@ class ActionPanel(QWidget):
         if not self._is_metadata_editable():
             return
 
+        file_key = str(self.filepath.resolve())
+        dialog = self._metadata_dialogs.get(file_key)
+        if dialog is not None:
+            try:
+                dialog.show()
+                dialog.raise_()
+                dialog.activateWindow()
+                return
+            except RuntimeError:
+                self._metadata_dialogs.pop(file_key, None)
+
         try:
-            subprocess.Popen(
-                ["pythonw", str(config.METADATA_EDIT_SCRIPT_PATH), str(self.filepath)],
-                close_fds=True,
+            from rename_dialog import RenameDialog
+
+            dialog = RenameDialog(file_key)
+            self._metadata_dialogs[file_key] = dialog
+            dialog.destroyed.connect(
+                lambda *_args, key=file_key: self._metadata_dialogs.pop(key, None)
             )
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
         except Exception:
-            logging.exception("Error launching metadata editor")
+            self._metadata_dialogs.pop(file_key, None)
+            logging.exception("Error opening embedded metadata editor")
 
 
     def get_new_name(self):

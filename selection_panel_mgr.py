@@ -6,6 +6,8 @@ Componente del panel de selección para CatchEtude.
 import os
 import shutil
 import logging
+import subprocess
+import sys
 from pathlib import Path
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QListWidget, QHBoxLayout
@@ -482,6 +484,10 @@ class SelectionPanel(QWidget):
         menu = QtWidgets.QMenu(self)
         
         act_open = menu.addAction(self.loc.get("menu_open_folder"))
+        galleryanuary_path = str(getattr(config, "GALLERYANUARY_PATH", "") or "").strip()
+        act_galleryanuary = None
+        if galleryanuary_path:
+            act_galleryanuary = menu.addAction("Abrir con GalleryAnuary")
         menu.addSeparator()
         act_move_all = menu.addAction(self.loc.get("menu_move_all_in_folder"))
 
@@ -530,6 +536,8 @@ class SelectionPanel(QWidget):
         
         if action == act_open:
             os.startfile(target_folder)
+        elif act_galleryanuary is not None and action == act_galleryanuary:
+            self._open_with_galleryanuary(target_folder)
         elif action == act_create:
             self._handle_create_folder(base)
         elif action == act_move_all:
@@ -558,6 +566,34 @@ class SelectionPanel(QWidget):
                 if action == act and cmd and self.plugin_mgr:
                     self.plugin_mgr.invoke_command(plugin_id, cmd, {"paths": [str(target_folder)]})
                     break
+
+    def _open_with_galleryanuary(self, target_folder: Path):
+        configured_path = str(getattr(config, "GALLERYANUARY_PATH", "") or "").strip()
+        if not configured_path:
+            return
+
+        executable = Path(os.path.expandvars(configured_path)).expanduser()
+        if not executable.is_file():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "GalleryAnuary",
+                f"No se encontró el ejecutable o script configurado:\\n{executable}",
+            )
+            return
+
+        command = [str(executable), str(target_folder.resolve())]
+        if executable.suffix.lower() in {".py", ".pyw"}:
+            command.insert(0, sys.executable)
+
+        try:
+            subprocess.Popen(command, cwd=str(executable.parent), close_fds=True)
+        except Exception as exc:
+            logging.exception("Error opening folder with GalleryAnuary")
+            QtWidgets.QMessageBox.critical(
+                self,
+                "GalleryAnuary",
+                f"No se pudo iniciar GalleryAnuary:\\n{exc}",
+            )
 
     def _show_folder_properties(self, target_folder: Path, name: str):
         from folder_properties_dialog import FolderPropertiesDialog
