@@ -9,9 +9,10 @@ PyQt6==6.6.1
 pymupdf
 
 # Image, audio, and document conversions
-Pillow>=10.0
+Pillow>=11.3.0
 imageio-ffmpeg>=0.6
 mutagen>=1.47
+pillow-heif>=1.0
 
 # File monitoring
 watchdog==3.0.0
