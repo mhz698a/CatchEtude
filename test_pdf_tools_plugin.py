@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from plugin_api import parse_and_validate_plugin_file
+
 
 PLUGIN_PATH = Path(__file__).parent / "plugins" / "pdf_tools_plugin.py"
 
@@ -38,6 +40,27 @@ class TestPdfToolsPlugin(unittest.TestCase):
         self.module = load_pdf_plugin()
         self.ctx = FakeContext()
         self.module.run_plugin(self.ctx)
+
+    def test_manifest_version_and_conversion_actions_are_valid(self):
+        manifest, error = parse_and_validate_plugin_file(str(PLUGIN_PATH))
+        self.assertIsNone(error)
+        self.assertEqual(manifest["plugin"]["version"], "1.1.0")
+
+        tray_commands = {item["command"] for item in manifest.get("tray_actions", [])}
+        self.assertTrue({
+            "images_to_ico", "images_to_png", "images_to_jpg",
+            "svg_to_png", "svg_to_ico", "audio_to_mp3", "word_to_pdf",
+        }.issubset(tray_commands))
+
+        button_commands = {
+            item["command"]
+            for button in manifest.get("action_buttons", [])
+            for item in button.get("menu_items", [])
+        }
+        self.assertTrue({
+            "images_to_ico", "images_to_png", "images_to_jpg",
+            "svg_to_png", "svg_to_ico", "audio_to_mp3", "word_to_pdf",
+        }.issubset(button_commands))
 
     def test_all_new_conversion_commands_are_registered(self):
         expected = {
