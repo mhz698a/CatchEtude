@@ -129,6 +129,11 @@ def pdf_to_jpeg(
                 if cancel_check and cancel_check():
                     raise InterruptedError("Operation cancelled")
 
+                _report_progress(
+                    progress_cb, processed_pages, total_pages,
+                    f"Renderizando {p.name}: página {page_idx + 1}/{len(doc)}…",
+                    indeterminate=True,
+                )
                 page = doc.load_page(page_idx)
                 pix = page.get_pixmap(matrix=mat, alpha=False)
 
@@ -189,6 +194,11 @@ def extract_pdf_images(
                 if cancel_check and cancel_check():
                     raise InterruptedError("Operation cancelled")
 
+                _report_progress(
+                    progress_cb, processed_pages, total_pages,
+                    f"Analizando {p.name}: página {page_idx + 1}/{len(doc)}…",
+                    indeterminate=True,
+                )
                 page = doc.load_page(page_idx)
                 image_info_list = page.get_images(full=True)
 
