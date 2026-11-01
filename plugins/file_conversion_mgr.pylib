@@ -590,6 +590,8 @@ def words_to_pdf(
                     indeterminate=True,
                 )
                 document.SaveAs2(str(output), FileFormat=17)
+                if cancel_check and cancel_check():
+                    raise InterruptedError("Operation cancelled")
                 if not output.is_file() or output.stat().st_size == 0:
                     raise RuntimeError("Word terminó la exportación sin generar un PDF válido.")
 
