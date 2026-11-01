@@ -43,6 +43,12 @@ class TestFileConversionManager(unittest.TestCase):
         Image.new("RGBA", (40, 24), (255, 0, 0, 128)).save(path)
         return path
 
+    def test_heif_and_avif_formats_are_registered(self):
+        extensions = Image.registered_extensions()
+        self.assertIn(".heic", extensions)
+        self.assertIn(".heif", extensions)
+        self.assertIn(".avif", extensions)
+
     def test_raster_conversions_generate_ico_png_and_jpg(self):
         source = self._create_png()
         ico_files, ico_warnings = file_conversion_mgr.images_to_ico([source], self.output)
