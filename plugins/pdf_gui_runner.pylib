@@ -341,8 +341,8 @@ class PDFProgressDialog(QtWidgets.QDialog):
             self.worker.cleanup_temp()
         QtWidgets.QMessageBox.critical(
             self.parentWidget(),
-            "Error en PDF",
-            f"Ocurrió un error al procesar el archivo PDF:\n{err_msg}"
+            "Error en conversión",
+            f"No se pudo completar la operación:\n{err_msg}"
         )
         self._close_when_worker_has_stopped()
 
