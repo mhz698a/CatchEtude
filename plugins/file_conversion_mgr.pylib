@@ -27,9 +27,6 @@ def _report_progress(callback, current, total, message, indeterminate=False):
     if callback:
         callback(int(current), int(total), str(message), bool(indeterminate))
 
-ICO_SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-
-
 def _unique_output_path(output_dir: Path, source_path: Path, extension: str) -> Path:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -90,36 +87,23 @@ def _load_raster_image(source: Path) -> Tuple[Image.Image, dict]:
 
 
 def _write_ico(image: Image.Image, output_path: Path) -> Path:
+    """Write one ICO image at the source dimensions, capped at 256 px.
+
+    Small source images are never enlarged and are not replaced by a bundle
+    containing only conventional tiny icon variants. Larger images are reduced
+    proportionally so their longest side is exactly 256 px.
+    """
     rgba = image.convert("RGBA")
-    width, height = rgba.size
+    try:
+        if rgba.width > 256 or rgba.height > 256:
+            rgba.thumbnail((256, 256), Image.Resampling.LANCZOS)
 
-    # 1. Si la imagen es mayor a 256x256, la reducimos como límite máximo a 256x256
-    if width > 256 or height > 256:
-        rgba.thumbnail((256, 256), Image.Resampling.LANCZOS)
-        width, height = rgba.size
-
-    max_dim = max(width, height)
-
-    # 2. Tamaños estándar de iconos de Windows hacia abajo
-    standard_sizes = [16, 24, 32, 48, 64, 96, 128, 256]
-    
-    # 3. Filtrar y calcular las variantes menores o iguales al tamaño máximo actual
-    ico_sizes = []
-    for s in standard_sizes:
-        if s <= max_dim:
-            if width == height:
-                ico_sizes.append((s, s))
-            else:
-                scale = s / max_dim
-                ico_sizes.append((max(1, round(width * scale)), max(1, round(height * scale))))
-
-    # Asegurarnos de incluir el tamaño exacto actual si no está en la lista estándar
-    if (width, height) not in ico_sizes:
-        ico_sizes.append((width, height))
-
-    # Guardar directamente el archivo ICO con las variantes calculadas (sin lienzo transparente forzado)
-    rgba.save(output_path, format="ICO", sizes=ico_sizes)
-    return output_path
+        # A single native-size frame preserves the original dimensions (or the
+        # proportional 256 px maximum) instead of exposing smaller variants.
+        rgba.save(output_path, format="ICO", sizes=[rgba.size])
+        return output_path
+    finally:
+        rgba.close()
 
 
 def _convert_raster_to_ico(source: Path, output_dir: Path) -> Path:
