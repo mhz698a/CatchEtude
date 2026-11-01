@@ -45,6 +45,7 @@ class TrayMenuManager:
             self.tray = QSystemTrayIcon(icon, mw)
             self.tray.setToolTip(config.APP_NAME)
 
+        previous_menu = self.tray_menu
         self.tray_menu = QMenu(mw)
 
         toggle_label = loc.get("tray_hide") if mw.isVisible() else loc.get("tray_show")
@@ -116,6 +117,11 @@ class TrayMenuManager:
         self.tray.setContextMenu(self.tray_menu)
         self.tray.show()
 
+        # Plugin state changes rebuild the tray menu. Dispose of the previous
+        # menu after the tray icon has been pointed at the replacement.
+        if previous_menu is not None:
+            previous_menu.deleteLater()
+
     def _build_or_update_plugins_submenu(self):
         plugin_actions = self._get_plugin_tray_actions()
         if not plugin_actions:
@@ -142,7 +148,10 @@ class TrayMenuManager:
 
     def _get_plugin_tray_actions(self):
         try:
-            plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
+            # MainWindow owns the manager reference. Avoid relying on the
+            # executable module being named "__main__" (frozen/embedded runs
+            # and tests can expose a different module layout).
+            plugin_mgr = self.main_window.plugin_mgr
             if plugin_mgr:
                 return plugin_mgr.get_tray_actions()
         except Exception:
@@ -151,7 +160,7 @@ class TrayMenuManager:
 
     def _on_plugin_tray_action(self, plugin_id: str, command: str):
         try:
-            plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
+            plugin_mgr = self.main_window.plugin_mgr
             if plugin_mgr:
                 plugin_mgr.invoke_command(plugin_id, command)
         except Exception:
