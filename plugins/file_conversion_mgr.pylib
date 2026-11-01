@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Callable, Optional, List, Tuple
 
 from PIL import Image, ImageOps
+from pillow_heif import register_heif_opener
+
+# Register HEIC/HEIF decoders for the same Pillow conversion pipeline.
+register_heif_opener(thumbnails=False)
 from PyQt6.QtCore import QRectF, QSize, Qt
 from PyQt6.QtGui import QImage, QPainter
 from PyQt6.QtSvg import QSvgRenderer
