@@ -37,6 +37,7 @@ class SelectionPanel(QWidget):
     Panel para seleccionar el tipo de clasificación, año y subcarpeta.
     """
     subfolder_clicked = QtCore.pyqtSignal(str)
+    copy_to_subfolder_clicked = QtCore.pyqtSignal(str)
     subfolders_refreshed = QtCore.pyqtSignal()
     folder_structure_changed = QtCore.pyqtSignal()
     move_all_in_folder_clicked = QtCore.pyqtSignal(str)
@@ -490,6 +491,7 @@ class SelectionPanel(QWidget):
             act_galleryanuary = menu.addAction("Abrir con GalleryAnuary")
         menu.addSeparator()
         act_move_all = menu.addAction(self.loc.get("menu_move_all_in_folder"))
+        act_copy_to_folder = menu.addAction("Crear una copia para esta carpeta")
 
         # Dynamically add plugin UI actions targeted at directories or subfolders
         plugin_actions = []
@@ -542,6 +544,8 @@ class SelectionPanel(QWidget):
             self._handle_create_folder(base)
         elif action == act_move_all:
             self.move_all_in_folder_clicked.emit(name)
+        elif action == act_copy_to_folder:
+            self.copy_to_subfolder_clicked.emit(str(target_folder))
         elif action == act_rename:
             self._handle_rename_folder(target_folder)
         elif action == act_delete and act_delete:

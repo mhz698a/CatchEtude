@@ -43,7 +43,7 @@ from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
 from background_move_mgr import BackgroundMoveManager
 from tray_menu_mgr import TrayMenuManager
-from duplication_mgr import _DuplicateDeleteWorker
+from duplication_mgr import _DuplicateDeleteWorker, _QueueFileCopyWorker
 
 
 class MainWindow(QWidget):
@@ -65,6 +65,8 @@ class MainWindow(QWidget):
         self._closing = False
         self._duplicate_delete_operation_counter = 0
         self._duplicate_delete_operations: dict[int, dict] = {}
+        self._queue_copy_operation_counter = 0
+        self._queue_copy_operations: dict[int, dict] = {}
         
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
@@ -198,6 +200,9 @@ class MainWindow(QWidget):
         # Selection Panel
         self.selection_panel = SelectionPanel(plugin_mgr=self.plugin_mgr)
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
+        self.selection_panel.copy_to_subfolder_clicked.connect(
+            self._copy_selected_queue_files_to_subfolder
+        )
         self.selection_panel.undo_clicked.connect(self._on_context_undo_clicked)
         self.selection_panel.move_and_open_file_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_file"))
         self.selection_panel.move_and_open_folder_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_folder"))
@@ -662,21 +667,57 @@ class MainWindow(QWidget):
         if not self.filepath or self.filepath.is_dir():
             return
 
+        active_source = self.filepath
+        selected_sources = self.queue_panel.get_selected_paths()
+        if active_source not in selected_sources:
+            selected_sources.insert(0, active_source)
+
+        discarded_sources = []
+        deleted_count = 0
+        missing_count = 0
+        failed_sources = []
+
         send_character_service_command("pause")
         try:
-            if not self.filepath.exists():
-                self.state_manager.discard_missing_active_file(
-                    f"Archivo ya no existe: {self.filepath.name}"
-                )
-                self.queue_panel.set_progress(0)
-                self.show_status(f"Archivo ya no existe: {self.filepath.name}", 5000)
+            for source in dict.fromkeys(selected_sources):
+                if source.is_dir():
+                    continue
+
+                if not source.exists():
+                    discarded_sources.append(source)
+                    missing_count += 1
+                    continue
+
+                if delete_to_recycle_bin(source):
+                    discarded_sources.append(source)
+                    deleted_count += 1
+                else:
+                    failed_sources.append(source)
+
+            if not discarded_sources:
+                self.show_status("No se pudo eliminar ningún archivo seleccionado.", 5000)
                 return
 
-            if delete_to_recycle_bin(self.filepath):
-                self.state_manager.discard_active_file()
+            active_removed = active_source in discarded_sources
+            if active_removed:
+                self.filepath = None
+                self.action_panel.clear()
                 self.queue_panel.set_progress(0)
-            else:
-                self.show_status("No se pudo eliminar el archivo.", 5000)
+
+            self.state_manager.discard_queued_files(discarded_sources)
+
+            status_parts = []
+            if deleted_count:
+                status_parts.append(f"Eliminados {deleted_count} archivo(s) de la cola.")
+            if missing_count:
+                status_parts.append(
+                    f"Se retiraron {missing_count} archivo(s) que ya no existían."
+                )
+            if failed_sources:
+                status_parts.append(
+                    f"No se pudieron eliminar {len(failed_sources)} archivo(s)."
+                )
+            self.show_status(" ".join(status_parts), 6000)
 
         finally:
             send_character_service_command("resume")
@@ -1562,6 +1603,72 @@ class MainWindow(QWidget):
         self.filepath = None
         self.action_panel.clear()
         self.show_status(f"Guardando {len(tasks)} archivos en {dest_dir.name}.", 5000)
+
+    def _copy_selected_queue_files_to_subfolder(self, target_folder_path: str):
+        """Copy the active file and any other selected queue entries to a subfolder."""
+        if not self.filepath or self.filepath.is_dir():
+            return
+
+        target_folder = Path(target_folder_path)
+        if not target_folder.is_dir():
+            self.show_status("La carpeta de destino ya no existe.", 5000)
+            return
+
+        selected_sources = self.queue_panel.get_selected_paths()
+        if self.filepath not in selected_sources:
+            selected_sources.insert(0, self.filepath)
+
+        valid_sources = []
+        skipped_count = 0
+        for source in dict.fromkeys(selected_sources):
+            try:
+                if not source.is_file() or is_file_locked(source):
+                    skipped_count += 1
+                    continue
+            except OSError:
+                skipped_count += 1
+                continue
+            valid_sources.append(source)
+
+        if not valid_sources:
+            self.show_status("No hay archivos seleccionados disponibles para copiar.", 5000)
+            return
+
+        operation_id = self._queue_copy_operation_counter
+        self._queue_copy_operation_counter += 1
+
+        worker = _QueueFileCopyWorker(operation_id, target_folder, valid_sources)
+        worker.signals.finished.connect(self._on_queue_file_copy_finished)
+        self._queue_copy_operations[operation_id] = {
+            "worker": worker,
+            "target_name": target_folder.name,
+            "skipped_count": skipped_count,
+        }
+        QtCore.QThreadPool.globalInstance().start(worker)
+
+        self.show_status(
+            f"Copiando {len(valid_sources)} archivo(s) a {target_folder.name}.",
+            5000,
+        )
+
+    @QtCore.pyqtSlot(int, object, object)
+    def _on_queue_file_copy_finished(self, operation_id: int, copied, failed):
+        operation = self._queue_copy_operations.pop(operation_id, None)
+        if operation is None:
+            return
+
+        copied_count = len(copied)
+        skipped_count = operation["skipped_count"] + len(failed)
+        status_parts = []
+        if copied_count:
+            status_parts.append(
+                f"Copiados {copied_count} archivo(s) en {operation['target_name']}."
+            )
+        if skipped_count:
+            status_parts.append(f"No se pudieron copiar {skipped_count} archivo(s).")
+        if not status_parts:
+            status_parts.append("No se pudo copiar ningún archivo.")
+        self.show_status(" ".join(status_parts), 6000)
 
     def _move_to_subfolder(self, sub_name: str, post_action: str = "none"):
         if not self.filepath or self.filepath.is_dir():
