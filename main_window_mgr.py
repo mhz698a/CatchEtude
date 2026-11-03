@@ -43,7 +43,7 @@ from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
 from background_move_mgr import BackgroundMoveManager
 from tray_menu_mgr import TrayMenuManager
-from duplication_mgr import _DuplicateDeleteWorker
+from duplication_mgr import _DuplicateDeleteWorker, _QueueFileCopyWorker
 
 
 class MainWindow(QWidget):
@@ -65,6 +65,8 @@ class MainWindow(QWidget):
         self._closing = False
         self._duplicate_delete_operation_counter = 0
         self._duplicate_delete_operations: dict[int, dict] = {}
+        self._queue_copy_operation_counter = 0
+        self._queue_copy_operations: dict[int, dict] = {}
         
         self.signals.file_detected.connect(self.on_file_detected)
         self.signals.queue_empty.connect(self._hide_if_idle)
@@ -93,6 +95,7 @@ class MainWindow(QWidget):
         self._batch_post_action_counter = 0
         self._batch_post_action_batches = {}
         self._post_action_consumed = False
+        self._gallery_notification_targets: dict[str, set[str]] = {}
         self._load_config()       
         self._setup_server()
         
@@ -197,6 +200,9 @@ class MainWindow(QWidget):
         # Selection Panel
         self.selection_panel = SelectionPanel(plugin_mgr=self.plugin_mgr)
         self.selection_panel.subfolder_clicked.connect(self._move_to_subfolder)
+        self.selection_panel.copy_to_subfolder_clicked.connect(
+            self._copy_selected_queue_files_to_subfolder
+        )
         self.selection_panel.undo_clicked.connect(self._on_context_undo_clicked)
         self.selection_panel.move_and_open_file_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_file"))
         self.selection_panel.move_and_open_folder_clicked.connect(lambda sub: self._move_to_subfolder(sub, post_action="open_folder"))
@@ -487,6 +493,23 @@ class MainWindow(QWidget):
                 "message": "hide_secure must be a boolean.",
             }
 
+        notify_server = command.get("notify_server")
+        if notify_server is not None:
+            valid_server_name = (
+                isinstance(notify_server, str)
+                and 1 <= len(notify_server) <= 128
+                and all(
+                    char.isalnum() or char in "._-"
+                    for char in notify_server
+                )
+            )
+            if not valid_server_name:
+                return {
+                    "ok": False,
+                    "error": "invalid_notify_server",
+                    "message": "notify_server must be a valid local socket name.",
+                }
+
         self._hide_secure = hide_secure
         self.hide_secure_cb.setChecked(self._hide_secure)
         self.queue_panel.set_hide_secure(self._hide_secure)
@@ -499,6 +522,16 @@ class MainWindow(QWidget):
             self._process_pending_folder(target)
             kind = "folder"
         else:
+            if notify_server:
+                source_key = os.path.normcase(os.path.abspath(str(target)))
+                self._gallery_notification_targets.setdefault(
+                    source_key, set()
+                ).add(notify_server)
+                logging.info(
+                    "Registered GalleryAnuary move notifications for %s via %s",
+                    target,
+                    notify_server,
+                )
             self.state_manager.enqueue_file(target)
             kind = "file"
 
@@ -509,6 +542,94 @@ class MainWindow(QWidget):
             "kind": kind,
             "path": str(target),
         }
+
+    def _notify_gallery_file_moved(self, src: Path, dst: Path) -> None:
+        """Notifica a GalleryAnuary si registró el archivo original."""
+        try:
+            if not dst.exists() or src.exists():
+                return
+
+            source_key = os.path.normcase(os.path.abspath(str(src)))
+            servers = self._gallery_notification_targets.pop(
+                source_key, set()
+            )
+            if not servers:
+                return
+
+            source_folder = os.path.normcase(
+                os.path.abspath(str(src.parent))
+            )
+            destination_folder = os.path.normcase(
+                os.path.abspath(str(dst.parent))
+            )
+            if source_folder == destination_folder:
+                return
+
+            payload = (
+                json.dumps(
+                    {
+                        "event": "file_moved",
+                        "src": str(src),
+                        "dst": str(dst),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+
+            for server_name in servers:
+                client = QLocalSocket(self)
+                timeout = QtCore.QTimer(client)
+                timeout.setSingleShot(True)
+                timeout.timeout.connect(client.abort)
+                client.connected.connect(
+                    lambda sock=client, data=payload:
+                    self._send_gallery_move_event(sock, data)
+                )
+                client.bytesWritten.connect(
+                    lambda _count, sock=client:
+                    sock.disconnectFromServer()
+                    if sock.bytesToWrite() == 0
+                    else None
+                )
+                client.disconnected.connect(timeout.stop)
+                client.disconnected.connect(client.deleteLater)
+                client.errorOccurred.connect(
+                    lambda error, sock=client, endpoint=server_name:
+                    self._on_gallery_notification_error(
+                        sock, endpoint, error
+                    )
+                )
+                timeout.start(2500)
+                client.connectToServer(server_name)
+        except Exception:
+            logging.exception(
+                "Could not notify GalleryAnuary about moved file %s -> %s",
+                src,
+                dst,
+            )
+
+    @staticmethod
+    def _send_gallery_move_event(socket, payload: bytes) -> None:
+        if socket.write(payload) < 0:
+            logging.warning(
+                "GalleryAnuary move event could not be queued: %s",
+                socket.errorString(),
+            )
+            socket.abort()
+            socket.deleteLater()
+            return
+        socket.flush()
+
+    @staticmethod
+    def _on_gallery_notification_error(socket, endpoint: str, error) -> None:
+        logging.warning(
+            "GalleryAnuary notification endpoint %s is unavailable: %s",
+            endpoint,
+            socket.errorString(),
+        )
+        socket.abort()
+        socket.deleteLater()
 
     def _capture_ui_render(self):
         try:
@@ -546,21 +667,57 @@ class MainWindow(QWidget):
         if not self.filepath or self.filepath.is_dir():
             return
 
+        active_source = self.filepath
+        selected_sources = self.queue_panel.get_selected_paths()
+        if active_source not in selected_sources:
+            selected_sources.insert(0, active_source)
+
+        discarded_sources = []
+        deleted_count = 0
+        missing_count = 0
+        failed_sources = []
+
         send_character_service_command("pause")
         try:
-            if not self.filepath.exists():
-                self.state_manager.discard_missing_active_file(
-                    f"Archivo ya no existe: {self.filepath.name}"
-                )
-                self.queue_panel.set_progress(0)
-                self.show_status(f"Archivo ya no existe: {self.filepath.name}", 5000)
+            for source in dict.fromkeys(selected_sources):
+                if source.is_dir():
+                    continue
+
+                if not source.exists():
+                    discarded_sources.append(source)
+                    missing_count += 1
+                    continue
+
+                if delete_to_recycle_bin(source):
+                    discarded_sources.append(source)
+                    deleted_count += 1
+                else:
+                    failed_sources.append(source)
+
+            if not discarded_sources:
+                self.show_status("No se pudo eliminar ningún archivo seleccionado.", 5000)
                 return
 
-            if delete_to_recycle_bin(self.filepath):
-                self.state_manager.discard_active_file()
+            active_removed = active_source in discarded_sources
+            if active_removed:
+                self.filepath = None
+                self.action_panel.clear()
                 self.queue_panel.set_progress(0)
-            else:
-                self.show_status("No se pudo eliminar el archivo.", 5000)
+
+            self.state_manager.discard_queued_files(discarded_sources)
+
+            status_parts = []
+            if deleted_count:
+                status_parts.append(f"Eliminados {deleted_count} archivo(s) de la cola.")
+            if missing_count:
+                status_parts.append(
+                    f"Se retiraron {missing_count} archivo(s) que ya no existían."
+                )
+            if failed_sources:
+                status_parts.append(
+                    f"No se pudieron eliminar {len(failed_sources)} archivo(s)."
+                )
+            self.show_status(" ".join(status_parts), 6000)
 
         finally:
             send_character_service_command("resume")
@@ -1447,6 +1604,72 @@ class MainWindow(QWidget):
         self.action_panel.clear()
         self.show_status(f"Guardando {len(tasks)} archivos en {dest_dir.name}.", 5000)
 
+    def _copy_selected_queue_files_to_subfolder(self, target_folder_path: str):
+        """Copy the active file and any other selected queue entries to a subfolder."""
+        if not self.filepath or self.filepath.is_dir():
+            return
+
+        target_folder = Path(target_folder_path)
+        if not target_folder.is_dir():
+            self.show_status("La carpeta de destino ya no existe.", 5000)
+            return
+
+        selected_sources = self.queue_panel.get_selected_paths()
+        if self.filepath not in selected_sources:
+            selected_sources.insert(0, self.filepath)
+
+        valid_sources = []
+        skipped_count = 0
+        for source in dict.fromkeys(selected_sources):
+            try:
+                if not source.is_file() or is_file_locked(source):
+                    skipped_count += 1
+                    continue
+            except OSError:
+                skipped_count += 1
+                continue
+            valid_sources.append(source)
+
+        if not valid_sources:
+            self.show_status("No hay archivos seleccionados disponibles para copiar.", 5000)
+            return
+
+        operation_id = self._queue_copy_operation_counter
+        self._queue_copy_operation_counter += 1
+
+        worker = _QueueFileCopyWorker(operation_id, target_folder, valid_sources)
+        worker.signals.finished.connect(self._on_queue_file_copy_finished)
+        self._queue_copy_operations[operation_id] = {
+            "worker": worker,
+            "target_name": target_folder.name,
+            "skipped_count": skipped_count,
+        }
+        QtCore.QThreadPool.globalInstance().start(worker)
+
+        self.show_status(
+            f"Copiando {len(valid_sources)} archivo(s) a {target_folder.name}.",
+            5000,
+        )
+
+    @QtCore.pyqtSlot(int, object, object)
+    def _on_queue_file_copy_finished(self, operation_id: int, copied, failed):
+        operation = self._queue_copy_operations.pop(operation_id, None)
+        if operation is None:
+            return
+
+        copied_count = len(copied)
+        skipped_count = operation["skipped_count"] + len(failed)
+        status_parts = []
+        if copied_count:
+            status_parts.append(
+                f"Copiados {copied_count} archivo(s) en {operation['target_name']}."
+            )
+        if skipped_count:
+            status_parts.append(f"No se pudieron copiar {skipped_count} archivo(s).")
+        if not status_parts:
+            status_parts.append("No se pudo copiar ningún archivo.")
+        self.show_status(" ".join(status_parts), 6000)
+
     def _move_to_subfolder(self, sub_name: str, post_action: str = "none"):
         if not self.filepath or self.filepath.is_dir():
             return
@@ -1689,6 +1912,7 @@ class MainWindow(QWidget):
             logging.info(f"[MainWindow][finish-boundary] finalize ok move start: {src}")
             self.background_move_mgr.finalize_move(src, dst, src_meta, decision.get("post_action", "none"))
             logging.info(f"[MainWindow][finish-boundary] finalize ok move done: {src}")
+            self._notify_gallery_file_moved(src, dst)
             self._build_tray()
         else:
             if msg == "TIMESTAMP_RESTORE_FAILED":
@@ -1712,6 +1936,7 @@ class MainWindow(QWidget):
                 logging.info(f"[MainWindow][finish-boundary] finalize timestamp-failed move start: {src}")
                 self.background_move_mgr.finalize_move(src, dst, src_meta, decision.get("post_action", "none"))
                 logging.info(f"[MainWindow][finish-boundary] finalize timestamp-failed move done: {src}")
+                self._notify_gallery_file_moved(src, dst)
                 self._build_tray()
             elif msg == "FILE_LOCKED":
                 self.show_status(self.loc.get("msg_file_locked"), 5000)

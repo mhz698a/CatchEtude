@@ -31,6 +31,7 @@ file or an existing directory.
 | `cmd` | string | yes | Must be `enqueue_path`. |
 | `path` | string | yes | Absolute path to one file or one directory. |
 | `hide_secure` | boolean | no | Sets CatchEtude's Hide Secure option. Defaults to `true`. |
+| `notify_server` | string | no | Optional name of a local `QLocalServer` endpoint that receives a `file_moved` event after CatchEtude moves this file to another folder.
 
 ### Example: one file
 
@@ -89,6 +90,26 @@ python send_command.py "C:/Users/Example/Downloads/Incoming" False
 
 The first command enqueues only `image.png`. The second schedules a recursive
 scan of the `Incoming` folder.
+
+## Optional move notifications for GalleryAnuary
+
+A client may include `notify_server` when enqueueing one file. Its value is the
+name of a local Qt `QLocalServer` already listening in the client process.
+CatchEtude stores that subscription for the exact source file and sends one
+notification only after a successful move to a different parent folder.
+
+The notification is one UTF-8 JSON object followed by a newline:
+
+```json
+{"event":"file_moved","src":"C:/Users/Example/Downloads/image.png","dst":"C:/Users/Example/Pictures/image.png"}
+```
+
+The client should remove the original path from its current view and its local
+cache. CatchEtude sends no event for failed moves or moves that remain in the
+same folder. If the callback endpoint is no longer listening, the notification
+is discarded and the move itself remains successful.
+
+Clients that omit `notify_server` retain the existing enqueue-only behavior.
 
 ## Compatibility
 

@@ -403,6 +403,59 @@ class StateManager:
         if is_empty and self.notifier:
             self.notifier.queue_empty.emit()
 
+    def discard_queued_files(self, sources: list[Path]) -> bool:
+        """Remove deleted files from the queue, including the active item when selected."""
+        if self.current_state() != State.USER_DECIDING:
+            logging.warning(
+                "discard_queued_files called in state %s", self.current_state()
+            )
+            return False
+
+        selected = set(sources)
+        if not selected:
+            return False
+
+        with self._lock:
+            active = self._active_file
+            removable = {
+                path for path in selected
+                if path == active or path in self._pending
+            }
+            if not removable:
+                return False
+
+            self._pending.difference_update(removable)
+            self._queue_list = [
+                path for path in self._queue_list if path not in removable
+            ]
+            with self._q.mutex:
+                self._q.queue = deque(
+                    path for path in self._q.queue if path not in removable
+                )
+
+            active_removed = active in removable
+            if active_removed:
+                self._active_file = None
+
+            self._emit_queue_update()
+
+        if active_removed:
+            self._set_state(State.RESUME_WATCHER)
+            self._set_state(State.IDLE)
+            self._enqueue_allowed.set()
+
+        with self._lock:
+            is_empty = (
+                not self._pending
+                and not self._background_moves
+                and self._active_file is None
+            )
+
+        if is_empty and self.notifier:
+            self.notifier.queue_empty.emit()
+
+        return active_removed
+
     def discard_active_file(self):
         """
         Used when a file is deleted or explicitly removed without a move task.
