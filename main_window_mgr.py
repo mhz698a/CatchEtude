@@ -93,6 +93,7 @@ class MainWindow(QWidget):
         self._batch_post_action_counter = 0
         self._batch_post_action_batches = {}
         self._post_action_consumed = False
+        self._gallery_notification_targets: dict[str, set[str]] = {}
         self._load_config()       
         self._setup_server()
         
@@ -487,6 +488,23 @@ class MainWindow(QWidget):
                 "message": "hide_secure must be a boolean.",
             }
 
+        notify_server = command.get("notify_server")
+        if notify_server is not None:
+            valid_server_name = (
+                isinstance(notify_server, str)
+                and 1 <= len(notify_server) <= 128
+                and all(
+                    char.isalnum() or char in "._-"
+                    for char in notify_server
+                )
+            )
+            if not valid_server_name:
+                return {
+                    "ok": False,
+                    "error": "invalid_notify_server",
+                    "message": "notify_server must be a valid local socket name.",
+                }
+
         self._hide_secure = hide_secure
         self.hide_secure_cb.setChecked(self._hide_secure)
         self.queue_panel.set_hide_secure(self._hide_secure)
@@ -499,6 +517,16 @@ class MainWindow(QWidget):
             self._process_pending_folder(target)
             kind = "folder"
         else:
+            if notify_server:
+                source_key = os.path.normcase(os.path.abspath(str(target)))
+                self._gallery_notification_targets.setdefault(
+                    source_key, set()
+                ).add(notify_server)
+                logging.info(
+                    "Registered GalleryAnuary move notifications for %s via %s",
+                    target,
+                    notify_server,
+                )
             self.state_manager.enqueue_file(target)
             kind = "file"
 
@@ -509,6 +537,94 @@ class MainWindow(QWidget):
             "kind": kind,
             "path": str(target),
         }
+
+    def _notify_gallery_file_moved(self, src: Path, dst: Path) -> None:
+        """Notifica a GalleryAnuary si registró el archivo original."""
+        try:
+            if not dst.exists() or src.exists():
+                return
+
+            source_key = os.path.normcase(os.path.abspath(str(src)))
+            servers = self._gallery_notification_targets.pop(
+                source_key, set()
+            )
+            if not servers:
+                return
+
+            source_folder = os.path.normcase(
+                os.path.abspath(str(src.parent))
+            )
+            destination_folder = os.path.normcase(
+                os.path.abspath(str(dst.parent))
+            )
+            if source_folder == destination_folder:
+                return
+
+            payload = (
+                json.dumps(
+                    {
+                        "event": "file_moved",
+                        "src": str(src),
+                        "dst": str(dst),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+
+            for server_name in servers:
+                client = QLocalSocket(self)
+                timeout = QtCore.QTimer(client)
+                timeout.setSingleShot(True)
+                timeout.timeout.connect(client.abort)
+                client.connected.connect(
+                    lambda sock=client, data=payload:
+                    self._send_gallery_move_event(sock, data)
+                )
+                client.bytesWritten.connect(
+                    lambda _count, sock=client:
+                    sock.disconnectFromServer()
+                    if sock.bytesToWrite() == 0
+                    else None
+                )
+                client.disconnected.connect(timeout.stop)
+                client.disconnected.connect(client.deleteLater)
+                client.errorOccurred.connect(
+                    lambda error, sock=client, endpoint=server_name:
+                    self._on_gallery_notification_error(
+                        sock, endpoint, error
+                    )
+                )
+                timeout.start(2500)
+                client.connectToServer(server_name)
+        except Exception:
+            logging.exception(
+                "Could not notify GalleryAnuary about moved file %s -> %s",
+                src,
+                dst,
+            )
+
+    @staticmethod
+    def _send_gallery_move_event(socket, payload: bytes) -> None:
+        if socket.write(payload) < 0:
+            logging.warning(
+                "GalleryAnuary move event could not be queued: %s",
+                socket.errorString(),
+            )
+            socket.abort()
+            socket.deleteLater()
+            return
+        socket.flush()
+
+    @staticmethod
+    def _on_gallery_notification_error(socket, endpoint: str, error) -> None:
+        logging.warning(
+            "GalleryAnuary notification endpoint %s is unavailable: %s",
+            endpoint,
+            socket.errorString(),
+        )
+        socket.abort()
+        socket.deleteLater()
 
     def _capture_ui_render(self):
         try:
@@ -1689,6 +1805,7 @@ class MainWindow(QWidget):
             logging.info(f"[MainWindow][finish-boundary] finalize ok move start: {src}")
             self.background_move_mgr.finalize_move(src, dst, src_meta, decision.get("post_action", "none"))
             logging.info(f"[MainWindow][finish-boundary] finalize ok move done: {src}")
+            self._notify_gallery_file_moved(src, dst)
             self._build_tray()
         else:
             if msg == "TIMESTAMP_RESTORE_FAILED":
@@ -1712,6 +1829,7 @@ class MainWindow(QWidget):
                 logging.info(f"[MainWindow][finish-boundary] finalize timestamp-failed move start: {src}")
                 self.background_move_mgr.finalize_move(src, dst, src_meta, decision.get("post_action", "none"))
                 logging.info(f"[MainWindow][finish-boundary] finalize timestamp-failed move done: {src}")
+                self._notify_gallery_file_moved(src, dst)
                 self._build_tray()
             elif msg == "FILE_LOCKED":
                 self.show_status(self.loc.get("msg_file_locked"), 5000)
