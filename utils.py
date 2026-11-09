@@ -140,12 +140,12 @@ def configure_dwm_thumbnail_behavior(hwnd):
                                  ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int(1)))
 
 
-def flatten_single_folder(folder: Path) -> tuple[list[Path], bool]:
+def flatten_single_folder(folder: Path, progress_callback=None) -> tuple[list[Path], bool]:
     """
-    Aplana de forma manual una carpeta específica en Downloads.
-    Mueve los archivos contenidos a Downloads y elimina las carpetas vacías.
-    Retorna la lista de rutas de los archivos movidos a Downloads y un booleano
-    que indica si la carpeta fue aplanada y eliminada completamente.
+    Flatten a folder into Downloads and report progress through an optional callback.
+
+    The callback receives (completed, total, current_path, phase), where phase is
+    "scan" while enumerating files and "move" while processing them.
     """
     if not folder.exists() or not folder.is_dir():
         return [], True
@@ -153,51 +153,71 @@ def flatten_single_folder(folder: Path) -> tuple[list[Path], bool]:
     moved_files = []
     flatten_failed = False
 
+    def report(completed: int, total: int, current_path: str = "", phase: str = "move"):
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(completed, total, current_path, phase)
+        except Exception:
+            logging.debug("Flatten progress callback failed", exc_info=True)
+
+    report(0, 0, "", "scan")
     if not folder_is_safe_to_flatten(folder):
         flatten_failed = True
 
-    # mover archivos uno por uno
-    for f in list(folder.rglob('*')):
-        if not f.is_file():
-            continue
+    try:
+        entries = list(folder.rglob("*"))
+    except Exception:
+        logging.exception("Could not enumerate folder for flattening: %s", folder)
+        return [], False
 
-        if is_temporary(f) or is_file_locked(f):
-            flatten_failed = True
-            continue
-
-        dest = resolve_duplicate(config.DOWNLOADS / f.name)
-
+    files = []
+    for entry in entries:
         try:
-            stat = f.stat()
-            ctime = stat.st_ctime
-
-            shutil.copy2(f, dest)
-
-            setctime_blocking(str(dest), ctime)
-            f.unlink(missing_ok=True)
-            logging.info(f"Flattened: {f} -> {dest}")
-            moved_files.append(dest)
-
-        except Exception:
-            logging.exception(f"Error flattening file {f}")
+            if entry.is_file():
+                files.append(entry)
+        except OSError:
             flatten_failed = True
-            continue
 
-    # eliminar subcarpetas y carpeta principal si quedaron vacías
+    total = len(files)
+    report(0, total, "", "move")
+
+    for index, file_path in enumerate(files, start=1):
+        try:
+            if is_temporary(file_path) or is_file_locked(file_path):
+                flatten_failed = True
+                continue
+
+            destination = resolve_duplicate(config.DOWNLOADS / file_path.name)
+            stat = file_path.stat()
+            creation_time = stat.st_ctime
+
+            shutil.copy2(file_path, destination)
+            setctime_blocking(str(destination), creation_time)
+            file_path.unlink(missing_ok=True)
+            logging.info("Flattened: %s -> %s", file_path, destination)
+            moved_files.append(destination)
+        except Exception:
+            logging.exception("Error flattening file %s", file_path)
+            flatten_failed = True
+        finally:
+            report(index, total, str(file_path), "move")
+
     folder_removed = False
     try:
-        for sub in sorted(folder.rglob('*'), reverse=True):
+        for sub in sorted(folder.rglob("*"), reverse=True):
             if sub.is_dir() and not any(sub.iterdir()):
                 sub.rmdir()
         if folder.exists() and not any(folder.iterdir()):
             folder.rmdir()
             folder_removed = True
-            logging.info(f"Removed empty folder after manual flatten: {folder}")
+            logging.info("Removed empty folder after manual flatten: %s", folder)
     except Exception:
-        logging.warning(f"Could not remove folder structure: {folder}")
+        logging.warning("Could not remove folder structure: %s", folder, exc_info=True)
         flatten_failed = True
 
     success = folder_removed and not folder.exists() and not flatten_failed
+    report(total, total, "", "finished")
     return moved_files, success
 
 
