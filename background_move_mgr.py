@@ -24,6 +24,9 @@ class BackgroundMoveManager(QtCore.QObject):
     move_progress = QtCore.pyqtSignal(Path, int)            # (src, progress)
     # (src, dst, ok, error_msg, src_meta, decision)
     move_finished = QtCore.pyqtSignal(Path, Path, bool, str, dict, dict)
+    undo_started = QtCore.pyqtSignal(str, int)
+    undo_progress = QtCore.pyqtSignal(int)
+    undo_finished = QtCore.pyqtSignal(bool, str, str)
 
     def __init__(self, state_manager, parent=None):
         super().__init__(parent)
@@ -34,6 +37,9 @@ class BackgroundMoveManager(QtCore.QObject):
         self._active_signals = {}     # Keeps FileMoveSignals alive while queued Qt events drain.
         self._accepting_tasks = True
         self._history = HistoryManager()
+        self._undo_worker = None
+        self._undo_entry = None
+        self._undo_target = None
         self._thread_pool = QtCore.QThreadPool(self)
         self._thread_pool.setMaxThreadCount(self._max_concurrent)
 
@@ -75,8 +81,16 @@ class BackgroundMoveManager(QtCore.QObject):
         return len(self._active_workers)
 
     def is_idle(self) -> bool:
-        """Returns True if there are no running or pending moves."""
-        return len(self._active_workers) == 0 and len(self._pending_tasks) == 0
+        """Returns True when no move or undo operation is active."""
+        return (
+            len(self._active_workers) == 0
+            and len(self._pending_tasks) == 0
+            and self._undo_worker is None
+        )
+
+    @property
+    def undo_in_progress(self) -> bool:
+        return self._undo_worker is not None
 
     def stop_accepting_new_moves(self) -> None:
         """Prevents new work from being queued while the UI is shutting down."""
@@ -88,39 +102,88 @@ class BackgroundMoveManager(QtCore.QObject):
         return self._thread_pool.waitForDone(msecs)
 
     def undo_last_move(self) -> bool:
-        """
-        Physically reverts the last move operation recorded in history.
-        """
-        entry = self._history.pop_last()
+        """Compatibility alias for starting an asynchronous undo operation."""
+        return self.start_undo_last_move()
+
+    def start_undo_last_move(self) -> bool:
+        """Start undoing the latest move without blocking the GUI thread."""
+        if self._undo_worker is not None:
+            logging.info("Undo request ignored: another undo is already running.")
+            return False
+
+        entry = self._history.get_last_move()
         if not entry:
             logging.warning("No moves found in history to undo.")
             return False
 
-        src = Path(entry["src"])
-        dst = Path(entry["dst"])
-        meta = entry["meta"]
-
-        if not dst.exists():
-            logging.error(f"Cannot undo: destination file is missing: {dst}")
+        source = Path(entry["dst"])
+        if not source.is_file():
+            logging.error("Cannot undo: destination file is missing: %s", source)
             return False
 
         try:
-            # Re-resolve duplicate if someone else took the name in Downloads
-            target = resolve_duplicate(src)
-            shutil.move(str(dst), str(target))
-
-            # Restore timestamps
-            os.utime(target, (meta["atime"], meta["mtime"]))
-            setctime_blocking(str(target), meta["ctime"])
-
-            logging.info(f"Physical Undo successful: {dst} -> {target}")
-
-            # Notify StateManager of logical undo / queue updating
-            self.state_manager.register_undone_file(target)
-            return True
+            target = resolve_duplicate(Path(entry["src"]))
+            size = source.stat().st_size
+            worker = FileMoveWorker(source, target, restore_meta=entry.get("meta", {}))
         except Exception:
-            logging.exception(f"Physical Undo failed for {dst}")
+            logging.exception("Could not prepare asynchronous undo for %s", source)
             return False
+
+        self._undo_worker = worker
+        self._undo_entry = dict(entry)
+        self._undo_target = target
+        worker.progress.connect(self.undo_progress.emit)
+        worker.finished.connect(
+            self._handle_undo_finished,
+            type=QtCore.Qt.ConnectionType.QueuedConnection,
+        )
+        self.undo_started.emit(str(source), size)
+        self._thread_pool.start(worker)
+        return True
+
+    def _handle_undo_finished(self, success: bool, target: Path, message: str) -> None:
+        """Finalize an undo on the manager's Qt thread after file I/O has ended."""
+        entry = self._undo_entry
+        target = Path(target)
+        source = Path(entry["dst"]) if entry else None
+
+        # Same-volume moves can finish physically before timestamp restoration fails.
+        # Remove incomplete cross-volume copies while preserving source and history.
+        if (
+            not success
+            and message == "TIMESTAMP_RESTORE_FAILED"
+            and source is not None
+            and target.exists()
+        ):
+            if not source.exists():
+                success = True
+            else:
+                try:
+                    target.unlink(missing_ok=True)
+                except OSError:
+                    logging.exception("Could not remove incomplete undo copy: %s", target)
+
+        if success:
+            if entry and not self._history.remove_entry(entry):
+                logging.warning("Undo completed but its history entry was no longer present: %s", entry)
+            try:
+                from utils import update_folder_mtime
+                update_folder_mtime(target.parent)
+                if source is not None:
+                    update_folder_mtime(source.parent)
+            except Exception:
+                logging.exception("Could not refresh folder timestamps after undo")
+
+            self.state_manager.register_undone_file(target)
+            logging.info("Asynchronous undo completed: %s -> %s", source, target)
+        else:
+            logging.error("Asynchronous undo failed for %s: %s", source, message)
+
+        self._undo_worker = None
+        self._undo_entry = None
+        self._undo_target = None
+        self.undo_finished.emit(bool(success), str(target), str(message))
+        self._process_queue()
 
     def finalize_move(self, src: Path, dst: Path, src_meta: dict, post_action: str = "none"):
         """
