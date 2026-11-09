@@ -38,6 +38,7 @@ from pending_scheduler_mgr import PendingScheduler
 from selection_panel_mgr import SelectionPanel
 from action_panel_mgr import ActionPanel
 from queue_panel_mgr import QueuePanel
+from queue_rename_dialog import QueueRenameDialog
 from service_mgr import send_character_service_command
 from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
@@ -243,6 +244,7 @@ class MainWindow(QWidget):
         self.queue_panel.characters_updated.connect(self._update_character_buttons)
         self.queue_panel.character_updated.connect(self._on_single_character_updated)
         self.queue_panel.file_double_clicked.connect(self._on_queue_file_double_clicked)
+        self.queue_panel.queue_file_rename_requested.connect(self._on_queue_file_rename_requested)
         self.queue_panel.movings_minimized_changed.connect(self._on_movings_minimized_changed)
         root.addWidget(self.queue_panel)
         
@@ -1584,6 +1586,80 @@ class MainWindow(QWidget):
         # A folder may be the active queue item. Double-clicking a file must
         # still allow the user to switch the active queue entry to that file.
         self.state_manager.select_queued_file(p)
+
+    def _on_queue_file_rename_requested(self, path_str: str):
+        """Rename a queued file and let the watcher re-enqueue it at its former index."""
+        source = Path(path_str)
+        if not source.is_file():
+            self.show_status(self.loc.get("msg_queue_rename_missing"), 5000)
+            return
+
+        dialog = QueueRenameDialog(source, self.loc, self)
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        new_stem = dialog.new_stem
+        if not new_stem:
+            return
+
+        destination = source.with_name(f"{new_stem}{source.suffix}")
+        source_key = os.path.normcase(os.path.abspath(str(source))).casefold()
+        destination_key = os.path.normcase(os.path.abspath(str(destination))).casefold()
+        if source_key == destination_key:
+            return
+
+        if destination.exists():
+            self.show_status(
+                self.loc.get("msg_queue_rename_exists").format(name=destination.name),
+                6000,
+            )
+            return
+
+        try:
+            renamed = self.state_manager.rename_queued_file(source, destination)
+        except FileExistsError:
+            self.show_status(
+                self.loc.get("msg_queue_rename_exists").format(name=destination.name),
+                6000,
+            )
+            return
+        except Exception as exc:
+            logging.exception("Could not rename queued file %s", source)
+            self.show_status(
+                self.loc.get("msg_queue_rename_failed").format(error=exc),
+                7000,
+            )
+            return
+
+        if not renamed:
+            self.show_status(self.loc.get("msg_queue_rename_not_queued"), 6000)
+            return
+
+        # Ask the same stability watcher used by filesystem events to rediscover
+        # the renamed path. It also accepts explicit candidates in Downloads subfolders.
+        try:
+            downloads_root = Path(config.DOWNLOADS).resolve()
+            resolved_destination = destination.resolve()
+            is_inside_downloads = (
+                resolved_destination != downloads_root
+                and downloads_root in resolved_destination.parents
+            )
+        except OSError:
+            is_inside_downloads = False
+
+        watcher_candidate = getattr(self.state_manager, "recent_path_handler", None)
+        try:
+            if is_inside_downloads and callable(watcher_candidate):
+                watcher_candidate(destination)
+            else:
+                # Queue entries may originate outside Downloads; keep them queued
+                # even though the Downloads watcher does not monitor those paths.
+                self.state_manager.enqueue_file(destination)
+        except Exception:
+            logging.exception("Could not schedule renamed queue file for rediscovery: %s", destination)
+            self.state_manager.enqueue_file(destination)
+
+        self.show_status(self.loc.get("msg_queue_rename_scanning"), 6000)
 
     @QtCore.pyqtSlot(list, str)
     def _on_queue_updated(self, queue_list: list[Path], active_path_str: str):

@@ -23,6 +23,7 @@ class QueuePanel(QWidget):
     characters_updated = QtCore.pyqtSignal()
     character_updated = QtCore.pyqtSignal(object)
     file_double_clicked = QtCore.pyqtSignal(str)
+    queue_file_rename_requested = QtCore.pyqtSignal(str)
     movings_minimized_changed = QtCore.pyqtSignal(bool)
 
     def __init__(self, parent=None):
@@ -140,6 +141,10 @@ class QueuePanel(QWidget):
 
         menu = QtWidgets.QMenu(self)
 
+        act_rename = menu.addAction(self.loc.get("menu_queue_rename_file"))
+        act_rename.setEnabled(p.is_file())
+        menu.addSeparator()
+
         act_activate = menu.addAction(self.loc.get("menu_queue_activate"))
         if is_active:
             act_activate.setEnabled(False)
@@ -164,7 +169,14 @@ class QueuePanel(QWidget):
             act_send_bottom.setEnabled(True)
 
         chosen = menu.exec(self.queue_list_widget.mapToGlobal(pos))
-        if not chosen or not state_mgr:
+        if not chosen:
+            return
+
+        if chosen == act_rename:
+            self.queue_file_rename_requested.emit(path_str)
+            return
+
+        if not state_mgr:
             return
 
         if chosen == act_activate:

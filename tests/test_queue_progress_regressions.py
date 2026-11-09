@@ -44,7 +44,10 @@ import file_worker_mgr
 import utils
 from file_worker_mgr import FileMoveWorker
 from pending_dialog import PendingDialog
+from queue_rename_dialog import QueueRenameDialog
 from state_manager import StateManager, State
+import watcher_mgr
+from watcher_mgr import WatcherHandler
 
 try:
     from main_window_mgr import MainWindow
@@ -171,6 +174,102 @@ class TestQueueProgressRegressions(unittest.TestCase):
         finally:
             file_worker_mgr.is_same_drive = original_same_drive
             file_worker_mgr.setctime_blocking = original_setctime
+
+
+    def _make_frozen_queue(self, active_path: Path, queued_paths: list[Path]):
+        manager = StateManager()
+        with manager._lock:
+            manager._state = State.USER_DECIDING
+            manager._state_event.clear()
+            manager._active_file = active_path
+            manager._pending = {active_path, *queued_paths}
+            manager._queue_list = [active_path, *queued_paths]
+            with manager._q.not_full:
+                manager._q.queue.clear()
+                manager._q.queue.extend(queued_paths)
+                manager._q.unfinished_tasks = len(queued_paths)
+        return manager
+
+    def test_renamed_pending_file_returns_to_its_original_queue_index(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            active = root / "active.txt"
+            first = root / "first.txt"
+            source = root / "queued.txt"
+            last = root / "last.txt"
+            for path in (active, first, source, last):
+                path.write_text(path.name)
+
+            manager = self._make_frozen_queue(active, [first, source, last])
+            destination = root / "renamed.txt"
+
+            self.assertTrue(manager.rename_queued_file(source, destination))
+            self.assertFalse(source.exists())
+            manager.enqueue_file(destination)
+
+            with manager._lock:
+                self.assertEqual(
+                    manager._queue_list,
+                    [active, first, destination, last],
+                )
+                self.assertEqual(
+                    list(manager._q.queue),
+                    [first, destination, last],
+                )
+                self.assertEqual(manager.pending_count(), 4)
+
+    def test_renamed_active_file_is_restored_as_active_after_rediscovery(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "active.txt"
+            next_file = root / "next.txt"
+            source.write_text("active")
+            next_file.write_text("next")
+
+            manager = self._make_frozen_queue(source, [next_file])
+            destination = root / "active-renamed.txt"
+
+            self.assertTrue(manager.rename_queued_file(source, destination))
+            manager.enqueue_file(destination)
+
+            with manager._lock:
+                self.assertEqual(manager._active_file, destination)
+                self.assertEqual(manager._queue_list, [destination, next_file])
+                self.assertEqual(list(manager._q.queue), [next_file])
+                self.assertEqual(manager.current_state(), State.FILE_DETECTED)
+
+    def test_queue_rename_dialog_has_600_pixel_width_and_keeps_extension(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "original.mp4"
+            source.write_bytes(b"")
+            dialog = QueueRenameDialog(source, FakeLocalization())
+            self.assertEqual(dialog.width(), 600)
+            self.assertEqual(dialog.new_stem, "original")
+            self.assertEqual(dialog.extension_label.text(), ".mp4")
+            dialog.close()
+
+    def test_watcher_accepts_explicit_candidate_inside_downloads_subfolder(self):
+        original_downloads = config.DOWNLOADS
+        original_runner = watcher_mgr.run_in_threadpool
+        scheduled = []
+        try:
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp) / "Downloads"
+                nested = root / "subfolder"
+                nested.mkdir(parents=True)
+                candidate = nested / "queued.txt"
+                candidate.write_text("queued")
+                config.DOWNLOADS = root
+                watcher_mgr.run_in_threadpool = (
+                    lambda func, *args, **kwargs: scheduled.append((func, args, kwargs))
+                )
+
+                handler = WatcherHandler(lambda path: None)
+                self.assertTrue(handler.handle_candidate(candidate))
+                self.assertEqual(len(scheduled), 1)
+        finally:
+            config.DOWNLOADS = original_downloads
+            watcher_mgr.run_in_threadpool = original_runner
 
 
 if __name__ == "__main__":

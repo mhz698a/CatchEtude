@@ -50,7 +50,8 @@ class WatcherHandler(FileSystemEventHandler):
         candidate = Path(path)
         try:
             root = Path(config.DOWNLOADS).resolve()
-            if candidate.parent.resolve() != root:
+            resolved_candidate = candidate.resolve()
+            if resolved_candidate == root or not resolved_candidate.is_relative_to(root):
                 return False
         except OSError:
             logger.debug("Could not resolve candidate path %s", candidate, exc_info=True)
