@@ -54,3 +54,12 @@ class HistoryManager:
         if not self.history:
             return None
         return self.history[-1]
+
+    def remove_entry(self, entry: Dict) -> bool:
+        """Remove a specific move entry after its undo has completed successfully."""
+        for index in range(len(self.history) - 1, -1, -1):
+            if self.history[index] == entry:
+                self.history.pop(index)
+                self._save_history()
+                return True
+        return False
