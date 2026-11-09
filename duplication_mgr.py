@@ -38,11 +38,21 @@ class _QueueFileCopySignals(QtCore.QObject):
 class _QueueFileCopyWorker(QtCore.QRunnable):
     """Copies queued files into a subfolder without blocking the UI thread."""
 
-    def __init__(self, operation_id: int, target_folder: Path, sources: list[Path]):
+    def __init__(
+        self,
+        operation_id: int,
+        target_folder: Path,
+        sources: list[Path],
+        destinations: dict[Path, Path] | None = None,
+    ):
         super().__init__()
         self.operation_id = operation_id
         self.target_folder = Path(target_folder)
         self.sources = [Path(source) for source in sources]
+        self.destinations = {
+            Path(source): Path(destination)
+            for source, destination in (destinations or {}).items()
+        }
         self.signals = _QueueFileCopySignals()
 
     @QtCore.pyqtSlot()
@@ -59,7 +69,9 @@ class _QueueFileCopyWorker(QtCore.QRunnable):
                         f"La carpeta de destino ya no existe: {self.target_folder}"
                     )
 
-                destination = resolve_duplicate(self.target_folder / source.name)
+                destination = self.destinations.get(source)
+                if destination is None:
+                    destination = resolve_duplicate(self.target_folder / source.name)
                 shutil.copy2(source, destination)
                 copied.append(str(destination))
             except Exception as exc:
