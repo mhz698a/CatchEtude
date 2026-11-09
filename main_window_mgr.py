@@ -821,6 +821,8 @@ class MainWindow(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._update_tray_show_hide_action()
+        if hasattr(self, "selection_panel") and self.selection_panel:
+            self.selection_panel.set_subfolders_enabled(True)
 
     def hideEvent(self, event):
         super().hideEvent(event)
