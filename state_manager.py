@@ -88,6 +88,11 @@ class StateManager:
         with self._lock:
             return bool(self._pending or self._background_moves or self._active_file is not None or not self._q.empty())
 
+    def pending_count(self) -> int:
+        """Return the number of tracked files still waiting for completion."""
+        with self._lock:
+            return len(self._pending)
+
     @safe_thread_logger("StateManagerMaintenance")
     def _safe_maintenance_and_flatten(self):
         """Runs _run_maintenance_scan safely in a daemon thread."""
