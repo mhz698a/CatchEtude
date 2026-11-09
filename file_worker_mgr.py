@@ -10,7 +10,7 @@ import time
 import threading
 from pathlib import Path
 from PyQt6.QtCore import QRunnable, QObject, pyqtSignal, pyqtSlot
-from utils import is_same_drive, safe_unlink
+from utils import is_same_drive, safe_unlink, flatten_single_folder
 from wctime import setctime_blocking
 from log_mgr import safe_thread_logger
 
@@ -205,3 +205,31 @@ class FileMoveWorker(QRunnable):
                 except Exception:
                     pass
             self.finished.emit(False, self.dst, str(e))
+
+
+class FlattenFolderSignals(QObject):
+    """Signals emitted by a background folder-flattening operation."""
+    progress = pyqtSignal(int, int, str)
+    finished = pyqtSignal(object, bool)
+
+
+class FlattenFolderWorker(QRunnable):
+    """Runs flatten_single_folder outside the GUI thread and reports file progress."""
+
+    def __init__(self, folder: Path):
+        super().__init__()
+        self.folder = Path(folder)
+        self.signals = FlattenFolderSignals()
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            moved, success = flatten_single_folder(
+                self.folder,
+                progress_callback=self.signals.progress.emit,
+            )
+        except Exception:
+            logging.exception("Unexpected error while flattening folder: %s", self.folder)
+            moved, success = [], False
+
+        self.signals.finished.emit(moved, success)
