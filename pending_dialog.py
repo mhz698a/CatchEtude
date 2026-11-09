@@ -14,6 +14,10 @@ class PendingDialog(QtWidgets.QDialog):
         super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.loc = loc_manager
         self.on_show_clicked = on_show_clicked
+        
+        # Ajusta la opacidad (0.0 = totalmente transparente, 1.0 = completamente opaco)
+        self.setWindowOpacity(0.85)
+        
         self._build_ui()
 
     def _build_ui(self):
@@ -40,11 +44,17 @@ class PendingDialog(QtWidgets.QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Center on screen
+        CENTER = False
         screen = self.screen().availableGeometry()
-        self.move(
-            (screen.width() - self.width()) // 2,
-            (screen.height() - self.height()) // 2
-        )
-
-#
+        margin = 20
+        if CENTER:
+            self.move(
+                (screen.width() - self.width()) // 2,
+                (screen.height() - self.height()) // 2
+            )
+        else:
+            self.move(
+                screen.x() + screen.width() - self.width() - margin,
+                screen.y() + screen.height() - self.height() - margin
+            )
+            
