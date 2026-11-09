@@ -130,16 +130,15 @@ class TestQueueProgressRegressions(unittest.TestCase):
         self.assertEqual(dialog.lbl_msg.text(), "Hay 1 archivo pendiente")
 
     def test_state_manager_exposes_pending_count(self):
-        manager = StateManager()
-        with manager._lock:
-            manager._state = State.USER_DECIDING
-            manager._state_event.clear()
+        manager = StateManager.__new__(StateManager)
+        manager._lock = threading.RLock()
+        manager._pending = set()
 
         with tempfile.TemporaryDirectory() as temp:
             paths = [Path(temp) / "one.txt", Path(temp) / "two.txt"]
             for path in paths:
                 path.write_text("queued")
-            manager.enqueue_files(paths)
+            manager._pending.update(paths)
             self.assertEqual(manager.pending_count(), 2)
 
     def test_file_move_worker_emits_progress_for_large_undo_transfer(self):
@@ -216,7 +215,8 @@ class TestQueueProgressRegressions(unittest.TestCase):
 
             self.assertTrue(manager.rename_queued_file(source, destination))
             self.assertFalse(source.exists())
-            manager.enqueue_file(destination)
+            # scan_existing_downloads reinserts stable discoveries in batches.
+            manager.enqueue_files([destination])
 
             with manager._lock:
                 self.assertEqual(

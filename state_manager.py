@@ -198,7 +198,6 @@ class StateManager:
             self._pending.add(path)
             self._queue_list.append(path)
             self._q.put(path)
-            self._emit_queue_update()
             return True, False
 
         previous_path, original_index = rename_info
@@ -242,7 +241,6 @@ class StateManager:
                     self._q.unfinished_tasks += 1
                 self._q.not_empty.notify()
 
-        self._emit_queue_update()
         return True, was_active
 
     def _purge_missing_queue_entries(self) -> int:
@@ -285,6 +283,8 @@ class StateManager:
 
         with self._lock:
             added, replaced_active = self._enqueue_path_locked(Path(p))
+            if added:
+                self._emit_queue_update()
 
         if replaced_active:
             self._set_state(State.FILE_DETECTED)
@@ -296,14 +296,21 @@ class StateManager:
             return
 
         replaced_active_path = None
+        changed = False
         with self._lock:
             for path in paths:
                 if not Path(path).exists():
                     logging.debug("Skipping missing file before enqueue: %s", path)
                     continue
                 added, replaced_active = self._enqueue_path_locked(Path(path))
+                changed = changed or added
                 if replaced_active:
                     replaced_active_path = Path(path)
+
+            # A scan can discover many files. Emit one UI refresh for the complete
+            # batch instead of rebuilding the queue view once per file.
+            if changed:
+                self._emit_queue_update()
 
         if replaced_active_path is not None:
             self._set_state(State.FILE_DETECTED)
