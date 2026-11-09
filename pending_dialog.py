@@ -14,6 +14,7 @@ class PendingDialog(QtWidgets.QDialog):
         super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.loc = loc_manager
         self.on_show_clicked = on_show_clicked
+        self._pending_count = 0
         
         # Ajusta la opacidad (0.0 = totalmente transparente, 1.0 = completamente opaco)
         self.setWindowOpacity(0.85)
@@ -36,10 +37,22 @@ class PendingDialog(QtWidgets.QDialog):
         self.btn_show.clicked.connect(self.on_show_clicked)
         layout.addWidget(self.btn_show, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self.setFixedSize(250, 150)
+        self.setFixedSize(270, 160)
+
+    def set_pending_count(self, count: int):
+        self._pending_count = max(0, int(count))
+        self._refresh_message()
+
+    def _refresh_message(self):
+        key = (
+            "msg_pending_files_one"
+            if self._pending_count == 1
+            else "msg_pending_files_many"
+        )
+        self.lbl_msg.setText(self.loc.get(key).format(count=self._pending_count))
 
     def retranslate_ui(self):
-        self.lbl_msg.setText(self.loc.get("msg_pending_files"))
+        self._refresh_message()
         self.btn_show.setText(self.loc.get("btn_show_again"))
 
     def showEvent(self, event):
