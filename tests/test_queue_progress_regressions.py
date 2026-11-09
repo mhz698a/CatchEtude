@@ -2,6 +2,8 @@ import os
 import sys
 import ctypes
 import tempfile
+import threading
+import queue
 import unittest
 from pathlib import Path
 
@@ -177,17 +179,26 @@ class TestQueueProgressRegressions(unittest.TestCase):
 
 
     def _make_frozen_queue(self, active_path: Path, queued_paths: list[Path]):
-        manager = StateManager()
-        with manager._lock:
-            manager._state = State.USER_DECIDING
-            manager._state_event.clear()
-            manager._active_file = active_path
-            manager._pending = {active_path, *queued_paths}
-            manager._queue_list = [active_path, *queued_paths]
-            with manager._q.not_full:
-                manager._q.queue.clear()
-                manager._q.queue.extend(queued_paths)
-                manager._q.unfinished_tasks = len(queued_paths)
+        # Avoid starting QueueProcessorThread: these tests exercise bookkeeping
+        # deterministically and must not race a live consumer.
+        manager = StateManager.__new__(StateManager)
+        manager._state = State.USER_DECIDING
+        manager._q = queue.Queue()
+        manager._active_file = active_path
+        manager._lock = threading.RLock()
+        manager._state_event = threading.Event()
+        manager._enqueue_allowed = threading.Event()
+        manager._pending = {active_path, *queued_paths}
+        manager._queue_list = [active_path, *queued_paths]
+        manager._queued_rename_positions = {}
+        manager._background_moves = set()
+        manager._is_scanning = False
+        manager.recent_path_handler = None
+        manager._last_requeue_log = None
+        manager.notifier = None
+        with manager._q.not_full:
+            manager._q.queue.extend(queued_paths)
+            manager._q.unfinished_tasks = len(queued_paths)
         return manager
 
     def test_renamed_pending_file_returns_to_its_original_queue_index(self):
