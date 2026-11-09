@@ -54,3 +54,11 @@ class HistoryManager:
         if not self.history:
             return None
         return self.history[-1]
+
+    def remove_last_if_matches(self, expected: Dict) -> bool:
+        """Removes the last entry only after its corresponding undo succeeds."""
+        if not self.history or self.history[-1] != expected:
+            return False
+        self.history.pop()
+        self._save_history()
+        return True

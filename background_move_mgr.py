@@ -3,15 +3,12 @@ Background Move Manager for CatchEtude.
 Handles enqueuing and running multiple background moves with prioritization, concurrency limit, and undo tracking.
 """
 
-import os
-import shutil
 import logging
 from pathlib import Path
 from PyQt6 import QtCore
 from file_worker_mgr import FileMoveWorker
 from history_mgr import HistoryManager
-from utils import resolve_duplicate
-from wctime import setctime_blocking
+from undo_worker_mgr import perform_undo_move
 import config
 
 class BackgroundMoveManager(QtCore.QObject):
@@ -88,39 +85,25 @@ class BackgroundMoveManager(QtCore.QObject):
         return self._thread_pool.waitForDone(msecs)
 
     def undo_last_move(self) -> bool:
+        """Synchronously restores the last move for non-UI callers.
+
+        MainWindow uses UndoMoveWorker so large cross-volume files never block
+        the interface. The history entry is removed only after physical success.
         """
-        Physically reverts the last move operation recorded in history.
-        """
-        entry = self._history.pop_last()
+        entry = self._history.get_last_move()
         if not entry:
             logging.warning("No moves found in history to undo.")
             return False
 
-        src = Path(entry["src"])
-        dst = Path(entry["dst"])
-        meta = entry["meta"]
-
-        if not dst.exists():
-            logging.error(f"Cannot undo: destination file is missing: {dst}")
+        success, target, error = perform_undo_move(entry)
+        if not success or target is None:
+            logging.error("Cannot undo last move: %s", error)
             return False
 
-        try:
-            # Re-resolve duplicate if someone else took the name in Downloads
-            target = resolve_duplicate(src)
-            shutil.move(str(dst), str(target))
-
-            # Restore timestamps
-            os.utime(target, (meta["atime"], meta["mtime"]))
-            setctime_blocking(str(target), meta["ctime"])
-
-            logging.info(f"Physical Undo successful: {dst} -> {target}")
-
-            # Notify StateManager of logical undo / queue updating
-            self.state_manager.register_undone_file(target)
-            return True
-        except Exception:
-            logging.exception(f"Physical Undo failed for {dst}")
-            return False
+        if not self._history.remove_last_if_matches(entry):
+            logging.error("Undo completed but its history entry had changed.")
+        self.state_manager.register_undone_file(target)
+        return True
 
     def finalize_move(self, src: Path, dst: Path, src_meta: dict, post_action: str = "none"):
         """

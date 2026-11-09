@@ -89,8 +89,11 @@ except ImportError:
     sys.modules['PyQt6.QtGui'] = mock_pyqt6.QtGui
     sys.modules['PyQt6.QtNetwork'] = mock_pyqt6.QtNetwork
 
-from utils import flatten_single_folder
+from unittest.mock import patch
+
+from utils import flatten_single_folder, reserve_unique_destination
 from state_manager import StateManager, State
+from undo_worker_mgr import perform_undo_move
 import config
 
 class TestQueueFeatures(unittest.TestCase):
@@ -125,6 +128,113 @@ class TestQueueFeatures(unittest.TestCase):
         moved, success = flatten_single_folder(folder)
         self.assertFalse(success)
         self.assertTrue(folder.exists())
+
+    def test_flatten_folder_reports_progress(self):
+        folder = config.DOWNLOADS / "FolderWithProgress"
+        folder.mkdir()
+        (folder / "one.txt").write_text("one")
+        (folder / "two.txt").write_text("two")
+        progress = []
+
+        moved, success = flatten_single_folder(
+            folder,
+            progress_callback=lambda current, total, name: progress.append(
+                (current, total, name)
+            ),
+        )
+
+        self.assertTrue(success)
+        self.assertEqual(len(moved), 2)
+        self.assertTrue(progress)
+        self.assertEqual(progress[-1][0:2], (2, 2))
+
+    def test_reserve_unique_destination_scopes_names_to_each_folder(self):
+        folder_a = config.DOWNLOADS / "FolderA"
+        folder_b = config.DOWNLOADS / "FolderB"
+        folder_a.mkdir()
+        folder_b.mkdir()
+        existing = folder_a / "same.txt"
+        existing.write_text("existing")
+        reserved = set()
+
+        first = reserve_unique_destination(existing, reserved)
+        second = reserve_unique_destination(existing, reserved)
+        other_folder = reserve_unique_destination(folder_b / "same.txt", reserved)
+
+        self.assertEqual(first.name, "same_1.txt")
+        self.assertEqual(second.name, "same_2.txt")
+        self.assertEqual(other_folder.name, "same.txt")
+        self.assertEqual(other_folder.parent, folder_b)
+
+    def test_pending_count_deduplicates_active_and_background_items(self):
+        sm = StateManager()
+        active = config.DOWNLOADS / "active.txt"
+        queued = config.DOWNLOADS / "queued.txt"
+        moving = config.DOWNLOADS / "moving.txt"
+        for path in (active, queued, moving):
+            path.write_text("data")
+
+        with sm._lock:
+            sm._active_file = active
+            sm._pending = {active, queued}
+            sm._queue_list = [active, queued]
+            sm._background_moves = {queued, moving}
+
+        self.assertEqual(sm.pending_count(), 3)
+
+    def test_select_queued_file_when_active_item_is_a_folder(self):
+        sm = StateManager()
+        active_folder = config.DOWNLOADS / "ActiveFolder"
+        active_folder.mkdir()
+        queued_file = config.DOWNLOADS / "queued_file.txt"
+        queued_file.write_text("data")
+
+        with sm._lock:
+            sm._active_file = active_folder
+            sm._state = State.USER_DECIDING
+            sm._pending = {active_folder, queued_file}
+            sm._queue_list = [active_folder, queued_file]
+
+        self.assertTrue(sm.select_queued_file(queued_file))
+        with sm._lock:
+            self.assertEqual(sm._active_file, queued_file)
+            self.assertEqual(sm._queue_list[:2], [queued_file, active_folder])
+
+    def test_undo_cross_volume_copy_reports_progress(self):
+        moved_dir = config.DOWNLOADS / "Moved"
+        original_dir = config.DOWNLOADS / "Original"
+        moved_dir.mkdir()
+        original_dir.mkdir()
+        moved_file = moved_dir / "large.bin"
+        original_file = original_dir / "large.bin"
+        payload = b"x" * (3 * 1024 * 1024 + 17)
+        moved_file.write_bytes(payload)
+        stat = moved_file.stat()
+        entry = {
+            "src": str(original_file),
+            "dst": str(moved_file),
+            "meta": {
+                "atime": stat.st_atime,
+                "mtime": stat.st_mtime,
+                "ctime": getattr(stat, "st_birthtime", stat.st_ctime),
+            },
+        }
+        progress = []
+
+        with patch("undo_worker_mgr.is_same_drive", return_value=False), patch(
+            "undo_worker_mgr.setctime_blocking"
+        ):
+            success, target, error = perform_undo_move(
+                entry,
+                progress_callback=lambda value, detail: progress.append(value),
+            )
+
+        self.assertTrue(success, error)
+        self.assertEqual(target, original_file)
+        self.assertEqual(target.read_bytes(), payload)
+        self.assertFalse(moved_file.exists())
+        self.assertTrue(any(0 < value < 100 for value in progress))
+        self.assertEqual(progress[-1], 100)
 
     def test_undo_hot_swap_option_a(self):
         sm = StateManager()

@@ -88,6 +88,14 @@ class StateManager:
         with self._lock:
             return bool(self._pending or self._background_moves or self._active_file is not None or not self._q.empty())
 
+    def pending_count(self) -> int:
+        """Return distinct queued, active and background-moving entries."""
+        with self._lock:
+            pending = set(self._pending) | set(self._background_moves)
+            if self._active_file is not None:
+                pending.add(self._active_file)
+            return len(pending)
+
     @safe_thread_logger("StateManagerMaintenance")
     def _safe_maintenance_and_flatten(self):
         """Runs _run_maintenance_scan safely in a daemon thread."""

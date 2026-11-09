@@ -14,6 +14,7 @@ class PendingDialog(QtWidgets.QDialog):
         super().__init__(parent, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.loc = loc_manager
         self.on_show_clicked = on_show_clicked
+        self._pending_count = 0
         
         # Ajusta la opacidad (0.0 = totalmente transparente, 1.0 = completamente opaco)
         self.setWindowOpacity(0.85)
@@ -28,9 +29,11 @@ class PendingDialog(QtWidgets.QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
 
-        self.lbl_msg = QLabel(self.loc.get("msg_pending_files"))
+        self.lbl_msg = QLabel()
         self.lbl_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_msg.setWordWrap(True)
         layout.addWidget(self.lbl_msg)
+        self.set_pending_count(self._pending_count)
 
         self.btn_show = QPushButton(self.loc.get("btn_show_again"))
         self.btn_show.clicked.connect(self.on_show_clicked)
@@ -38,8 +41,13 @@ class PendingDialog(QtWidgets.QDialog):
 
         self.setFixedSize(250, 150)
 
+    def set_pending_count(self, count: int) -> None:
+        self._pending_count = max(0, int(count))
+        template = self.loc.get("msg_pending_files_count")
+        self.lbl_msg.setText(template.format(count=self._pending_count))
+
     def retranslate_ui(self):
-        self.lbl_msg.setText(self.loc.get("msg_pending_files"))
+        self.set_pending_count(self._pending_count)
         self.btn_show.setText(self.loc.get("btn_show_again"))
 
     def showEvent(self, event):

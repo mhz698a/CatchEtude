@@ -23,6 +23,7 @@ from PyQt6 import QtWidgets, QtCore
 import config
 from action_panel_mgr import ActionPanel
 from queue_panel_mgr import QueuePanel
+from pending_dialog import PendingDialog
 
 p = str(Path("settings_dialog.pyw").resolve())
 settings_dialog_mod = importlib.machinery.SourceFileLoader("settings_dialog", p).load_module()
@@ -79,6 +80,19 @@ class TestAutoflatAndUI(unittest.TestCase):
         self.assertTrue(hasattr(panel, "progress"))
         panel.set_progress(50)
         self.assertEqual(panel.progress.value(), 50)
+
+    def test_pending_dialog_displays_current_file_count(self):
+        class DummyLocalization:
+            def get(self, key):
+                if key == "msg_pending_files_count":
+                    return "{count} archivos pendientes"
+                if key == "btn_show_again":
+                    return "Mostrar de nuevo"
+                return key
+
+        dialog = PendingDialog(DummyLocalization(), lambda: None)
+        dialog.set_pending_count(7)
+        self.assertEqual(dialog.lbl_msg.text(), "7 archivos pendientes")
 
 if __name__ == "__main__":
     unittest.main()

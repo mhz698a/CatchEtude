@@ -7,7 +7,7 @@ from send2trash import send2trash
 from pathlib import Path
 import config
 from wctime import setctime_blocking
-from typing import Optional
+from typing import Callable, Optional
 from PyQt6 import QtCore
 
 class GenericRunnable(QtCore.QRunnable):
@@ -73,6 +73,24 @@ def resolve_duplicate(dest: Path) -> Path:
         if not cand.exists():
             return cand
         i += 1
+
+
+def reserve_unique_destination(dest: Path, reserved: set[str] | None = None) -> Path:
+    """Reserve a unique path within one batch; reservations are folder-scoped."""
+    reserved_paths = reserved if reserved is not None else set()
+    base = Path(dest)
+    candidate = base
+    index = 0
+
+    def key(path: Path) -> str:
+        return os.path.normcase(os.path.abspath(str(path)))
+
+    while candidate.exists() or key(candidate) in reserved_paths:
+        index += 1
+        candidate = base.with_name(f"{base.stem}_{index}{base.suffix}")
+
+    reserved_paths.add(key(candidate))
+    return candidate
 
 def folder_is_safe_to_flatten(folder: Path) -> bool:
     """
@@ -140,14 +158,21 @@ def configure_dwm_thumbnail_behavior(hwnd):
                                  ctypes.byref(ctypes.c_int(1)), ctypes.sizeof(ctypes.c_int(1)))
 
 
-def flatten_single_folder(folder: Path) -> tuple[list[Path], bool]:
-    """
-    Aplana de forma manual una carpeta específica en Downloads.
-    Mueve los archivos contenidos a Downloads y elimina las carpetas vacías.
-    Retorna la lista de rutas de los archivos movidos a Downloads y un booleano
-    que indica si la carpeta fue aplanada y eliminada completamente.
-    """
+def flatten_single_folder(
+    folder: Path,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
+) -> tuple[list[Path], bool]:
+    """Flatten a folder and optionally report (current, total, filename) progress."""
+    def report_progress(current: int, total: int, name: str = "") -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(current, total, name)
+        except Exception:
+            logging.exception("Flatten progress callback failed")
+
     if not folder.exists() or not folder.is_dir():
+        report_progress(0, 0, "")
         return [], True
 
     moved_files = []
@@ -156,45 +181,42 @@ def flatten_single_folder(folder: Path) -> tuple[list[Path], bool]:
     if not folder_is_safe_to_flatten(folder):
         flatten_failed = True
 
-    # mover archivos uno por uno
-    for f in list(folder.rglob('*')):
-        if not f.is_file():
-            continue
+    files = [path for path in folder.rglob("*") if path.is_file()]
+    total = len(files)
+    report_progress(0, total, "Preparando archivos")
 
-        if is_temporary(f) or is_file_locked(f):
-            flatten_failed = True
-            continue
-
-        dest = resolve_duplicate(config.DOWNLOADS / f.name)
-
+    for index, f in enumerate(files, start=1):
         try:
+            if is_temporary(f) or is_file_locked(f):
+                flatten_failed = True
+                continue
+
+            dest = resolve_duplicate(config.DOWNLOADS / f.name)
             stat = f.stat()
             ctime = stat.st_ctime
 
             shutil.copy2(f, dest)
-
             setctime_blocking(str(dest), ctime)
             f.unlink(missing_ok=True)
-            logging.info(f"Flattened: {f} -> {dest}")
+            logging.info("Flattened: %s -> %s", f, dest)
             moved_files.append(dest)
-
         except Exception:
-            logging.exception(f"Error flattening file {f}")
+            logging.exception("Error flattening file %s", f)
             flatten_failed = True
-            continue
+        finally:
+            report_progress(index, total, f.name)
 
-    # eliminar subcarpetas y carpeta principal si quedaron vacías
     folder_removed = False
     try:
-        for sub in sorted(folder.rglob('*'), reverse=True):
+        for sub in sorted(folder.rglob("*"), reverse=True):
             if sub.is_dir() and not any(sub.iterdir()):
                 sub.rmdir()
         if folder.exists() and not any(folder.iterdir()):
             folder.rmdir()
             folder_removed = True
-            logging.info(f"Removed empty folder after manual flatten: {folder}")
+            logging.info("Removed empty folder after manual flatten: %s", folder)
     except Exception:
-        logging.warning(f"Could not remove folder structure: {folder}")
+        logging.warning("Could not remove folder structure: %s", folder)
         flatten_failed = True
 
     success = folder_removed and not folder.exists() and not flatten_failed

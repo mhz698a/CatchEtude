@@ -9,7 +9,7 @@ import logging
 import time
 import threading
 from pathlib import Path
-from PyQt6.QtCore import QRunnable, QObject, pyqtSignal
+from PyQt6.QtCore import QRunnable, QObject, pyqtSignal, pyqtSlot
 from utils import is_same_drive, safe_unlink
 from wctime import setctime_blocking
 from log_mgr import safe_thread_logger
