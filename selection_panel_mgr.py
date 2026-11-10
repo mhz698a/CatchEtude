@@ -374,7 +374,7 @@ class SelectionPanel(QWidget):
         type_id = decision["id"]
         needs_year = self.decision_dispatcher.requires_year(decision)
         year = self.list_year.current_year() if needs_year else None
-        secondary = decision.get("behaviour_secon_line")
+        secondary = decision.get("behaviour_second_line")
         try:
             if secondary == "last_file":
                 self.list_sub.show_loading_placeholder("Cargando...")
@@ -433,7 +433,7 @@ class SelectionPanel(QWidget):
             return
         decision = self.classification_registry.get_decision(decision_id)
         selected_year = self.list_year.current_year() if decision and self.decision_dispatcher.requires_year(decision) else None
-        if self._selected_type_id() != decision_id or selected_year != year or not decision or decision.get("behaviour_secon_line") != "last_file":
+        if self._selected_type_id() != decision_id or selected_year != year or not decision or decision.get("behaviour_second_line") != "last_file":
             return
         if not subfolder_paths:
             self.list_sub.clear()
@@ -462,7 +462,7 @@ class SelectionPanel(QWidget):
         if generation != self._sub_scan_generation:
             return
         decision = self.classification_registry.get_decision(decision_id)
-        if self._selected_type_id() != decision_id or not decision or decision.get("behaviour_secon_line") != "last_file":
+        if self._selected_type_id() != decision_id or not decision or decision.get("behaviour_second_line") != "last_file":
             return
         self.list_sub.update_button(name, secondary_text)
     def _on_episode_scanner_finished(self, scanner):
@@ -607,7 +607,7 @@ class SelectionPanel(QWidget):
     def _show_folder_properties(self, target_folder: Path, name: str):
         from folder_properties_dialog import FolderPropertiesDialog
         decision = self.get_current_decision() or {}
-        secondary = decision.get("behaviour_secon_line")
+        secondary = decision.get("behaviour_second_line")
         year = self.list_year.current_year()
         overworld_year = year if secondary == "overworld_metadata" else None
         char_entry = None
@@ -632,7 +632,7 @@ class SelectionPanel(QWidget):
     def _on_overworld_result(self, name: str, line2: str = "", line3: str = ""):
         self._overworld_refresh_pending = False
         decision = self.get_current_decision()
-        if not decision or decision.get("behaviour_secon_line") != "overworld_metadata":
+        if not decision or decision.get("behaviour_second_line") != "overworld_metadata":
             return
         self.list_sub.update_button(name, line2, line3)
     def _handle_create_folder(self, base_path: Path):

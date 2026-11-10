@@ -120,7 +120,7 @@ class TestDecisionDispatcher(unittest.TestCase):
         )
         self.assertEqual(episodes["handler"], "move_to_subfolder")
         self.assertEqual(episodes["folder_contains"], "___[")
-        self.assertEqual(episodes["behaviour_secon_line"], "last_file")
+        self.assertEqual(episodes["behaviour_second_line"], "last_file")
         self.assertIsNotNone(custom)
         self.assertEqual(custom["base_path"], "D:/Custom")
 
@@ -130,7 +130,7 @@ class TestDecisionDispatcher(unittest.TestCase):
     def test_episode_default_declares_folder_contains_and_secondary_line(self):
         episode=ClassificationRegistry(self.config_path).get_decision(3)
         self.assertEqual(episode["folder_contains"],"___[")
-        self.assertEqual(episode["behaviour_secon_line"],"last_file")
+        self.assertEqual(episode["behaviour_second_line"],"last_file")
         self.assertEqual(episode["handler"],"move_to_subfolder")
 
     def test_folder_contains_resolves_episode_parent_without_fixed_id(self):

@@ -9,13 +9,13 @@ import config
 
 DEFAULT_DECISIONS: list[dict[str, Any]] = [
  {"id":1,"name_key":"type_1","icon":"descargas.png","enabled":True,"order":1,"handler":"keep","year_mode":"none","folder_source":"none","requires_internal":False,"allow_create":False,"allow_rename":False,"allow_delete":False},
- {"id":2,"name_key":"type_2","icon":"me-gusta.png","enabled":True,"order":2,"handler":"move_to_subfolder","year_mode":"required","base_path":"{BASE_INTERNAL}/{year}","folder_contains":"{IMAGES_FOLDER}","folder_fallback":"{BASE_INTERNAL}/{year}/{year_prefix}. {IMAGES_FOLDER}","folder_source":"filesystem","requires_internal":True,"allow_create":True,"allow_rename":True,"allow_delete":True,"behaviour_secon_line":"character_metadata"},
- {"id":3,"name_key":"type_3","icon":"película.png","enabled":True,"order":3,"handler":"move_to_subfolder","year_mode":"required","base_path":"{BASE_INTERNAL}/{year}","folder_contains":"___[","folder_fallback":"{BASE_INTERNAL}/{year}","folder_source":"filesystem","requires_internal":True,"allow_create":True,"allow_rename":True,"allow_delete":True,"behaviour_secon_line":"last_file"},
+ {"id":2,"name_key":"type_2","icon":"me-gusta.png","enabled":True,"order":2,"handler":"move_to_subfolder","year_mode":"required","base_path":"{BASE_INTERNAL}/{year}","folder_contains":"{IMAGES_FOLDER}","folder_fallback":"{BASE_INTERNAL}/{year}/{year_prefix}. {IMAGES_FOLDER}","folder_source":"filesystem","requires_internal":True,"allow_create":True,"allow_rename":True,"allow_delete":True,"behaviour_second_line":"character_metadata"},
+ {"id":3,"name_key":"type_3","icon":"película.png","enabled":True,"order":3,"handler":"move_to_subfolder","year_mode":"required","base_path":"{BASE_INTERNAL}/{year}","folder_contains":"___[","folder_fallback":"{BASE_INTERNAL}/{year}","folder_source":"filesystem","requires_internal":True,"allow_create":True,"allow_rename":True,"allow_delete":True,"behaviour_second_line":"last_file"},
  {"id":4,"name_key":"type_4","icon":"música.png","enabled":True,"order":4,"handler":"move_to_subfolder","year_mode":"required","base_path":"{BASE_INTERNAL}/{year}","folder_contains":"{MUSIC_FOLDER}","folder_fallback":"{BASE_INTERNAL}/{year}/{year_prefix}. {MUSIC_FOLDER}","folder_source":"filesystem","requires_internal":True,"allow_create":True,"allow_rename":True,"allow_delete":True},
  {"id":5,"name_key":"type_5","icon":"aula-de-google.png","enabled":True,"order":5,"handler":"move_to_subfolder","year_mode":"none","base_path":"{ONEDRIVE_DOCS}","folder_source":"filesystem","requires_internal":False,"allow_create":True,"allow_rename":True,"allow_delete":True},
  {"id":6,"name_key":"type_6","icon":"identificación-verificada.png","enabled":True,"order":6,"handler":"move_to_subfolder","year_mode":"none","base_path":"{ONEDRIVE_DOCTOS_FAMILIA}","folder_source":"filesystem","requires_internal":False,"allow_create":True,"allow_rename":True,"allow_delete":True},
  {"id":7,"name_key":"type_7","icon":"adobe-acrobat.png","enabled":True,"order":7,"handler":"linear_docs","year_mode":"required","base_path":"{BASE_INTERNAL}/{year}/{year_prefix}. {ACROBAT_FOLDER}","folder_source":"none","requires_internal":True,"allow_create":False,"allow_rename":False,"allow_delete":False},
- {"id":8,"name_key":"type_8","icon":"mundo.png","enabled":True,"order":8,"handler":"move_to_subfolder","year_mode":"required","base_path":"{BASE_INTERNAL}/{year}","folder_contains":"{OVERWORLD_FOLDER}","folder_fallback":"{BASE_INTERNAL}/{year}/{year_prefix}. {OVERWORLD_FOLDER}","folder_source":"filesystem","requires_internal":True,"allow_create":True,"allow_rename":True,"allow_delete":True,"behaviour_secon_line":"overworld_metadata"},
+ {"id":8,"name_key":"type_8","icon":"mundo.png","enabled":True,"order":8,"handler":"move_to_subfolder","year_mode":"required","base_path":"{BASE_INTERNAL}/{year}","folder_contains":"{OVERWORLD_FOLDER}","folder_fallback":"{BASE_INTERNAL}/{year}/{year_prefix}. {OVERWORLD_FOLDER}","folder_source":"filesystem","requires_internal":True,"allow_create":True,"allow_rename":True,"allow_delete":True,"behaviour_second_line":"overworld_metadata"},
 ]
 _LEGACY_HANDLERS={"subfolder_year":"move_to_subfolder","episode":"move_to_subfolder","docs":"move_to_subfolder","overworld":"move_to_subfolder"}
 _OLD_DEFAULT_PATHS={2:"{BASE_INTERNAL}/{year}/{year_prefix}. album",4:"{BASE_INTERNAL}/{year}/{year_prefix}. musica",8:"{BASE_INTERNAL}/{year}/{year_prefix}. overworld"}
@@ -50,7 +50,7 @@ class ClassificationRegistry:
                 decision["handler"]=_LEGACY_HANDLERS[old_handler]
                 if decision.get("base_path")==_OLD_DEFAULT_PATHS.get(decision.get("id")):
                     decision["base_path"]=default["base_path"]
-                for key in ("folder_contains","folder_fallback","behaviour_secon_line","requires_internal","allow_create","allow_rename","allow_delete"):
+                for key in ("folder_contains","folder_fallback","behaviour_second_line","requires_internal","allow_create","allow_rename","allow_delete"):
                     if key in default:
                         decision[key]=default[key]
         return decision
@@ -108,8 +108,8 @@ class ClassificationRegistry:
                 raise ValueError(f"Decision {ident} requires base_path")
             if d.get("folder_contains") is not None and not isinstance(d["folder_contains"],str):
                 raise ValueError(f"folder_contains for decision {ident} must be a string")
-            if d.get("behaviour_secon_line") not in second:
-                raise ValueError(f"Unsupported behaviour_secon_line for decision {ident}")
+            if d.get("behaviour_second_line") not in second:
+                raise ValueError(f"Unsupported behaviour_second_line for decision {ident}")
             for flag in ("enabled","requires_internal","allow_create","allow_rename","allow_delete"):
                 if flag in d and not isinstance(d[flag],bool):
                     raise ValueError(f"{flag} for decision {ident} must be boolean")

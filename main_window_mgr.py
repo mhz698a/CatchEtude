@@ -1447,7 +1447,7 @@ class MainWindow(QWidget):
         decision=self.selection_panel.classification_registry.get_decision(t)
         if not decision:
             return
-        if decision.get("behaviour_secon_line")=="character_metadata":
+        if decision.get("behaviour_second_line")=="character_metadata":
             year=self.selection_panel.get_selection()["year"]
             if year:
                 self._on_year_changed(year)
@@ -1552,14 +1552,14 @@ class MainWindow(QWidget):
 
     def _on_year_changed(self,year:int):
         decision=self.selection_panel.get_current_decision()
-        if decision and decision.get("behaviour_secon_line")=="character_metadata":
+        if decision and decision.get("behaviour_second_line")=="character_metadata":
             self._pending_year=year
             self._year_load_timer.start(400)
 
     def _on_folder_structure_changed(self):
         decision=self.selection_panel.get_current_decision()
         selected=self.selection_panel.get_selection()
-        if decision and decision.get("behaviour_secon_line")=="character_metadata" and selected["year"]:
+        if decision and decision.get("behaviour_second_line")=="character_metadata" and selected["year"]:
             self._pending_year=selected["year"]
             self._year_load_timer.start(200)
     def _load_characters_for_year(self):
@@ -1659,7 +1659,7 @@ class MainWindow(QWidget):
 
     def _on_single_character_updated(self,c):
         decision=self.selection_panel.get_current_decision()
-        if not decision or decision.get("behaviour_secon_line")!="character_metadata":
+        if not decision or decision.get("behaviour_second_line")!="character_metadata":
             return
         folder_name=Path(c.path).name
         try:
@@ -1674,7 +1674,7 @@ class MainWindow(QWidget):
 
     def _update_character_buttons(self):
         decision=self.selection_panel.get_current_decision()
-        if not decision or decision.get("behaviour_secon_line")!="character_metadata":
+        if not decision or decision.get("behaviour_second_line")!="character_metadata":
             return
         for character in self.queue_panel.get_characters():
             self._on_single_character_updated(character)
