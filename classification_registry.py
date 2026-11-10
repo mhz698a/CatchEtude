@@ -37,7 +37,8 @@ class ClassificationRegistry:
 
     def _migrate_decision(self, raw):
         decision=copy.deepcopy(raw)
-        default=self._default_by_id().get(decision.get("id"))
+        decision_id=decision.get("id")
+        default=self._default_by_id().get(decision_id)
         old_handler=decision.get("handler")
         if default:
             merged=copy.deepcopy(default)
@@ -83,7 +84,7 @@ class ClassificationRegistry:
             raise ValueError("decisions must be a list")
         seen=set()
         handlers={"keep","linear_docs","move_to_subfolder"}
-        years={"none","required","optional"}
+        years={"none","required"}
         second={None,"","character_metadata","last_file","overworld_metadata"}
         sources={"none","filesystem"}
         for d in decisions:

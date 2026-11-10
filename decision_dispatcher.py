@@ -112,7 +112,13 @@ class DecisionDispatcher:
             if destination_dir is None:
                 raise ValueError(f"Decision {decision.get('id')} has no resolvable base_path")
             if subfolder:
-                if Path(subfolder).is_absolute() or Path(subfolder).name!=subfolder or subfolder in {".",".."}:
+                if (
+                    Path(subfolder).is_absolute()
+                    or "/" in subfolder
+                    or "\\" in subfolder
+                    or Path(subfolder).name != subfolder
+                    or subfolder in {".", ".."}
+                ):
                     raise ValueError(f"Invalid destination subfolder: {subfolder!r}")
                 destination_dir=destination_dir/subfolder
         else:
