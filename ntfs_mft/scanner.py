@@ -193,7 +193,7 @@ class MFTScanner:
                         volume_handle, connection
                     )
                     return self._scan_index(
-                        volume_handle, connection, root_reference, records_scanned
+                        file_hint_handle, connection, root_reference, records_scanned
                     )
         finally:
             if volume_handle is not None:

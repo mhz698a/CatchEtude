@@ -59,6 +59,7 @@ class FakeMFTApi:
         self.inaccessible = set(inaccessible)
         self.opened = False
         self.closed = False
+        self.file_size_hints = []
         self.records = [
             _usn_v2_record(20, 10, "nested", 0x10),
             _usn_v2_record(30, 10, "one.bin", 0),
@@ -93,7 +94,8 @@ class FakeMFTApi:
             return _usn_page(1000, *self.records)
         return None
 
-    def get_file_size_by_id(self, volume_handle, file_reference):
+    def get_file_size_by_id(self, file_hint_handle, file_reference):
+        self.file_size_hints.append(file_hint_handle)
         if file_reference in self.inaccessible:
             raise MFTAccessError("access denied")
         return {30: 10, 40: 20}[file_reference]
@@ -134,6 +136,7 @@ class TestNTFSMFTLibrary(unittest.TestCase):
         self.assertTrue(result.complete)
         self.assertTrue(api.opened)
         self.assertTrue(api.closed)
+        self.assertEqual(api.file_size_hints, ["directory-hint", "directory-hint"])
 
     def test_mft_scan_reports_unreadable_file_sizes_as_partial(self):
         api = FakeMFTApi(inaccessible={30})
