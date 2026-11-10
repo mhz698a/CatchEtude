@@ -1,12 +1,42 @@
 """Regression tests for JSON-driven classification routing."""
+import os
+import sys
+import ctypes
 import json
 import tempfile
 import unittest
 from pathlib import Path
-import config
-from classification_registry import ClassificationRegistry
-from decision_dispatcher import DecisionDispatcher
-from fallback_utils import compute_destination
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+# The application has Windows APIs, but these tests only exercise path resolution.
+if not hasattr(ctypes, "windll"):
+    class MockWinDLL:
+        def __getattr__(self, name):
+            class MockDLL:
+                def __getattr__(self, func):
+                    return lambda *args, **kwargs: 1
+            return MockDLL()
+    ctypes.windll = MockWinDLL()
+    ctypes.WinDLL = lambda name, **kwargs: MockWinDLL()
+if not hasattr(ctypes, "WINFUNCTYPE"):
+    ctypes.WINFUNCTYPE = ctypes.CFUNCTYPE
+
+for module_name in ("win32file", "win32con"):
+    try:
+        __import__(module_name)
+    except ImportError:
+        sys.modules[module_name] = type("Mock" + module_name, (), {})()
+try:
+    import pywintypes
+except ImportError:
+    sys.modules["pywintypes"] = type("MockPyWinTypes", (), {"error": Exception})
+try:
+    import send2trash
+except ImportError:
+    sys.modules["send2trash"] = type(
+        "MockSend2Trash", (), {"send2trash": staticmethod(lambda path: True)}
+    )
 
 class TestDecisionDispatcher(unittest.TestCase):
     def setUp(self):

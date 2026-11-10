@@ -19,6 +19,7 @@ DEFAULT_DECISIONS: list[dict[str, Any]] = [
 ]
 _LEGACY_HANDLERS={"subfolder_year":"move_to_subfolder","episode":"move_to_subfolder","docs":"move_to_subfolder","overworld":"move_to_subfolder"}
 _OLD_DEFAULT_PATHS={2:"{BASE_INTERNAL}/{year}/{year_prefix}. album",4:"{BASE_INTERNAL}/{year}/{year_prefix}. musica",8:"{BASE_INTERNAL}/{year}/{year_prefix}. overworld"}
+_LEGACY_NAMES={1:"Keep in downloads",2:"Personajes",3:"Episodios",4:"Musica",5:"Academico",6:"Tramites"}
 
 class ClassificationRegistry:
     SCHEMA_VERSION=2
@@ -42,6 +43,8 @@ class ClassificationRegistry:
             merged=copy.deepcopy(default)
             merged.update(decision)
             decision=merged
+            if decision.get("name") == _LEGACY_NAMES.get(decision_id):
+                decision.pop("name", None)
             if old_handler in _LEGACY_HANDLERS:
                 decision["handler"]=_LEGACY_HANDLERS[old_handler]
                 if decision.get("base_path")==_OLD_DEFAULT_PATHS.get(decision.get("id")):
