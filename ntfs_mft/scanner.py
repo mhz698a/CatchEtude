@@ -178,7 +178,7 @@ class MFTScanner:
                 with sqlite3.connect(str(database_path)) as connection:
                     connection.execute("PRAGMA journal_mode=OFF")
                     connection.execute("PRAGMA synchronous=OFF")
-                    connection.execute("PRAGMA temp_store=MEMORY")
+                    connection.execute("PRAGMA temp_store=FILE")
                     connection.execute("PRAGMA cache_size=-32768")
                     connection.execute(
                         "CREATE TABLE entries ("
@@ -186,12 +186,15 @@ class MFTScanner:
                         "name TEXT NOT NULL, attributes INTEGER NOT NULL, "
                         "UNIQUE(file_ref, parent_ref, name))"
                     )
-                    connection.execute(
-                        "CREATE INDEX entries_by_parent ON entries(parent_ref)"
-                    )
                     records_scanned = self._index_volume(
                         volume_handle, connection
                     )
+                    # Building this index after bulk insertion avoids maintaining
+                    # a secondary B-tree for every MFT record as pages are imported.
+                    connection.execute(
+                        "CREATE INDEX entries_by_parent ON entries(parent_ref)"
+                    )
+                    connection.commit()
                     return self._scan_index(
                         file_hint_handle, connection, root_reference, records_scanned
                     )
