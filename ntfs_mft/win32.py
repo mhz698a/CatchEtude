@@ -372,3 +372,12 @@ class WindowsVolumeApi:
             return max(0, int(info.EndOfFile))
         finally:
             self.close_handle(handle)
+
+def get_volume_info(path: Path) -> VolumeInfo:
+    """Función auxiliar a nivel de módulo para obtener información del volumen."""
+    return WindowsVolumeApi().get_volume_info(path)
+
+
+def is_process_elevated() -> bool:
+    """Función auxiliar a nivel de módulo para comprobar la elevación del proceso."""
+    return WindowsVolumeApi().is_process_elevated()
