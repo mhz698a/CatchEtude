@@ -1,9 +1,9 @@
 """
 Folder Properties dialog for CatchEtude.
 
-The dialog is deliberately lightweight at construction time. Filesystem traversal
-runs in a worker thread after the dialog is shown, and reports incremental counts
-back to the UI thread.
+The dialog never starts a scan during construction or display. The user chooses
+the traditional filesystem traversal or the NTFS MFT-backed scanner explicitly;
+both run in a worker thread and report incremental statistics.
 """
 
 import logging
