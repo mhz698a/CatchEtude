@@ -27,6 +27,14 @@ class ElevationRequiredError(MFTError):
     """Raised when the current process token is not elevated."""
 
 
+class ElevationCancelledError(MFTError):
+    """Raised when the user declines or cancels the Windows UAC prompt."""
+
+
+class ElevationLaunchError(MFTError):
+    """Raised when the elevated helper process cannot be started."""
+
+
 class MFTAccessError(MFTError):
     """Raised when Windows denies access to the volume or its MFT."""
 

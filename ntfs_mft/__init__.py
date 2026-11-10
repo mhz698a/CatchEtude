@@ -1,6 +1,8 @@
 """Reusable NTFS Master File Table scanning library for CatchEtude."""
 
 from .errors import (
+    ElevationCancelledError,
+    ElevationLaunchError,
     ElevationRequiredError,
     MFTAccessError,
     MFTEnumerationError,
@@ -19,9 +21,13 @@ from .scanner import (
     scan_folder_mft,
 )
 from .win32 import VolumeInfo, WindowsVolumeApi, get_volume_info, is_process_elevated
+from .elevation import ElevatedMFTRunner
 
 __all__ = [
+    "ElevationCancelledError",
+    "ElevationLaunchError",
     "ElevationRequiredError",
+    "ElevatedMFTRunner",
     "MFTAccessError",
     "MFTEntry",
     "MFTEnumerationError",
