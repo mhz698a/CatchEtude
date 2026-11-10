@@ -194,8 +194,12 @@ class SubfolderButtonList(QtWidgets.QScrollArea):
         # Update all buttons
         for i in range(self.layout.count()):
             item = self.layout.itemAt(i)
-            if item.widget():
-                item.widget().setEnabled(enabled)
+            widget = item.widget()
+            if widget:
+                is_message = widget is self._empty_button and isinstance(
+                    widget, QtWidgets.QLabel
+                )
+                widget.setEnabled(enabled and not is_message)
         
         super().setEnabled(enabled)
         

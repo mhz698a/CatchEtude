@@ -307,7 +307,7 @@ class TestQueueProgressRegressions(unittest.TestCase):
             labels = list(panel.list_sub._buttons)
             self.assertEqual(len(labels), 2)
             self.assertIn("Internal Documents", labels[0])
-            self.assertIn("type_5", labels[0])
+            self.assertIn(panel.loc.get("type_5"), labels[0])
             self.assertIn("Movies", labels[1])
             self.assertIn("2025", labels[1])
             self.assertFalse(hasattr(panel, "_show_recently_menu"))
