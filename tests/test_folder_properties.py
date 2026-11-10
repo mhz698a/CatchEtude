@@ -77,12 +77,16 @@ class FakeMFTApi:
     def get_file_reference(self, path):
         return 10
 
+    def open_file_hint(self, path):
+        return "directory-hint"
+
     def open_volume(self, volume):
         self.opened = True
         return "volume-handle"
 
     def close_handle(self, handle):
-        self.closed = True
+        if handle == "volume-handle":
+            self.closed = True
 
     def enumerate_usn_data(self, volume_handle, start_reference, buffer_size):
         if start_reference == 0:

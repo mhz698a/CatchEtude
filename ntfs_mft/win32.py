@@ -276,6 +276,21 @@ class WindowsVolumeApi:
         finally:
             self.close_handle(handle)
 
+    def open_file_hint(self, path: Path):
+        """Open a file/directory handle usable as OpenFileById's volume hint."""
+        handle = self.kernel32.CreateFileW(
+            self._extended_path(path),
+            FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            None,
+        )
+        if handle in (None, ctypes.c_void_p(-1).value):
+            self._raise_last_error(f"No se pudo abrir el identificador de volumen {path}")
+        return handle
+
     def enumerate_usn_data(
         self, volume_handle, start_reference: int, buffer_size: int
     ) -> Optional[bytes]:
@@ -311,14 +326,14 @@ class WindowsVolumeApi:
             return None
         return output_buffer.raw[:bytes_returned.value]
 
-    def get_file_size_by_id(self, volume_handle, file_reference: int) -> int:
+    def get_file_size_by_id(self, file_hint_handle, file_reference: int) -> int:
         descriptor = _FILE_ID_DESCRIPTOR()
         descriptor.dwSize = ctypes.sizeof(_FILE_ID_DESCRIPTOR)
         descriptor.Type = 0  # FileIdType
         descriptor.FileId = ctypes.c_int64(file_reference).value
 
         handle = self.kernel32.OpenFileById(
-            volume_handle,
+            file_hint_handle,
             ctypes.byref(descriptor),
             FILE_READ_ATTRIBUTES,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,

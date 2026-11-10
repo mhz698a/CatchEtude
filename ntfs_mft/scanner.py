@@ -169,8 +169,10 @@ class MFTScanner:
             )
 
         root_reference = self.api.get_file_reference(folder)
-        volume_handle = self.api.open_volume(volume)
+        file_hint_handle = self.api.open_file_hint(folder)
+        volume_handle = None
         try:
+            volume_handle = self.api.open_volume(volume)
             with tempfile.TemporaryDirectory(prefix="catchetude-mft-") as temporary:
                 database_path = Path(temporary) / "mft-index.sqlite3"
                 with sqlite3.connect(str(database_path)) as connection:
@@ -194,7 +196,9 @@ class MFTScanner:
                         volume_handle, connection, root_reference, records_scanned
                     )
         finally:
-            self.api.close_handle(volume_handle)
+            if volume_handle is not None:
+                self.api.close_handle(volume_handle)
+            self.api.close_handle(file_hint_handle)
 
     def _index_volume(self, volume_handle, connection: sqlite3.Connection) -> int:
         start_reference = 0
@@ -258,7 +262,7 @@ class MFTScanner:
 
     def _scan_index(
         self,
-        volume_handle,
+        file_hint_handle,
         connection: sqlite3.Connection,
         root_reference: int,
         records_scanned: int,
@@ -303,7 +307,7 @@ class MFTScanner:
                 processed_files += 1
                 try:
                     total_size += self.api.get_file_size_by_id(
-                        volume_handle, struct.unpack("<Q", child_reference)[0]
+                        file_hint_handle, struct.unpack("<Q", child_reference)[0]
                     )
                 except (OSError, MFTAccessError):
                     inaccessible_count += 1
