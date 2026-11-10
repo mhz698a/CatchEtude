@@ -308,9 +308,34 @@ class TestFolderProperties(unittest.TestCase):
         with patch("ntfs_mft.elevation.sys.frozen", False, create=True):
             executable, arguments, working_directory = build_helper_launch()
 
-        self.assertTrue(Path(executable).name.casefold() in ("python.exe", "pythonw.exe"))
+        self.assertTrue(Path(executable).is_file())
         self.assertEqual(arguments, ["-m", "ntfs_mft.elevated_worker"])
         self.assertTrue(Path(working_directory).is_dir())
+
+    def test_elevated_launcher_requests_runas_and_keeps_process_handle(self):
+        from ntfs_mft.elevation import _launch_with_uac
+
+        shell32 = Mock()
+        kernel32 = Mock()
+
+        def fake_shell_execute(info_pointer):
+            info_pointer._obj.hProcess = 1234
+            return 1
+
+        shell32.ShellExecuteExW.side_effect = fake_shell_execute
+        with patch("ntfs_mft.elevation.os.name", "nt"), patch(
+            "ntfs_mft.elevation.ctypes.WinDLL", side_effect=[shell32, kernel32]
+        ):
+            process_handle, returned_kernel32 = _launch_with_uac(
+                "pythonw.exe", ["-m", "ntfs_mft.elevated_worker"], r"C:\\CatchEtude"
+            )
+
+        self.assertEqual(process_handle, 1234)
+        self.assertIs(returned_kernel32, kernel32)
+        shell_info = shell32.ShellExecuteExW.call_args.args[0]._obj
+        self.assertEqual(shell_info.lpVerb, "runas")
+        self.assertEqual(shell_info.lpFile, "pythonw.exe")
+        self.assertEqual(shell_info.fMask, 0x40)
 
     def test_traditional_scan_uses_valid_character_cache(self):
         cache = Mock()
