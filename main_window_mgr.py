@@ -1410,7 +1410,12 @@ class MainWindow(QWidget):
 
         logging.info("FD 12")
         t = sel["type"]
-        if t in (2, 3, 4, 7, 8) and not is_internal_available():
+        selected_decision = self.selection_panel.classification_registry.get_decision(t)
+        if (
+            selected_decision
+            and self.selection_panel.decision_dispatcher.requires_internal(selected_decision)
+            and not is_internal_available()
+        ):
             if not self._internal_warned:
                 self._internal_warned = True
                 QtWidgets.QMessageBox.warning(self, "Almacenamiento no disponible", "El disco interno (E:\\_Internal) no está conectado.")
@@ -1437,21 +1442,23 @@ class MainWindow(QWidget):
 
         logging.info("FD END")
 
-    def _on_type_changed(self, t: int):
-        if t == 2:
-            sel = self.selection_panel.get_selection()
-            if sel['year']:
-                self._on_year_changed(sel['year'])
 
-        if t in (2, 3, 4, 7, 8) and not is_internal_available():
+    def _on_type_changed(self,t:int):
+        decision=self.selection_panel.classification_registry.get_decision(t)
+        if not decision:
+            return
+        if decision.get("behaviour_secon_line")=="character_metadata":
+            year=self.selection_panel.get_selection()["year"]
+            if year:
+                self._on_year_changed(year)
+        if self.selection_panel.decision_dispatcher.requires_internal(decision) and not is_internal_available():
             if not self._internal_warned:
-                self._internal_warned = True
-                QtWidgets.QMessageBox.warning(self, "Almacenamiento no disponible", "El disco interno (E:\\_Internal) no está conectado.")
+                self._internal_warned=True
+                QtWidgets.QMessageBox.warning(self,"Almacenamiento no disponible","El disco interno (E:\\_Internal) no está conectado.")
             self.selection_panel.list_sub.clear()
             self.selection_panel.list_sub.setEnabled(False)
             self.selection_panel.list_year.setEnabled(False)
             return
-
     def _on_keep_action_clicked(self, action_name: str):
         if not self.filepath and action_name not in (
             self.loc.get("keep_all_files"),
@@ -1514,62 +1521,47 @@ class MainWindow(QWidget):
         ):
             self._on_apply_custom(post_action=post_action)
 
-    def _on_linear_docs_action_clicked(self, action_name: str):
+
+    def _on_linear_docs_action_clicked(self,action_name:str):
         if not self.filepath:
             return
-
-        if action_name == "Guardar en el año seleccionado":
-            selected_year = self.selection_panel.get_selection()["year"] or datetime.now().year
-            target_year = selected_year
-        else: # "Guardar en el año actual"
-            target_year = datetime.now().year
-
-        dt = datetime.fromtimestamp(self.filepath.stat().st_mtime)
-        base_year_folder = config.BASE_INTERNAL / str(target_year)
-        if not base_year_folder.exists():
-            target_year = datetime.now().year
-            base_year_folder = config.BASE_INTERNAL / str(target_year)
-
-        prefix = f"{target_year - 2003:02d}"
-        base = base_year_folder / f"{prefix}. {config.ACROBAT_FOLDER}"
-        month_folder = dt.strftime("%Y-%m")
-        dest_dir = base / month_folder
-        dest_dir.mkdir(parents=True, exist_ok=True)
-
-        new_name = sanitize_windows_filename(self.action_panel.get_new_name() or self.filepath.stem)
-        candidate = dest_dir / (new_name + self.filepath.suffix)
-
-        decision = {
-            'action': 'move',
-            'movement_type': 7,
-            'year': target_year,
-            'sub': None,
-            'new_name': new_name,
-            'post_action': "none",
-        }
-
-        action, final_dest = self._check_destination_collision(
-            candidate,
-            on_delete_complete=lambda: self._start_move_task(decision, candidate),
-        )
-        if action != "move" or final_dest is None:
+        selected=self.selection_panel.get_selection()
+        type_id=selected["type"]
+        definition=self.selection_panel.classification_registry.get_decision(type_id)
+        if not definition or definition.get("handler")!="linear_docs":
             return
-        self._start_move_task(decision, final_dest)
+        target_year=(selected["year"] or datetime.now().year) if action_name=="Guardar en el año seleccionado" else datetime.now().year
+        dt=datetime.fromtimestamp(self.filepath.stat().st_mtime)
+        if not (config.BASE_INTERNAL/str(target_year)).exists():
+            target_year=datetime.now().year
+        base=self.selection_panel.decision_dispatcher.resolve_base_path(definition,target_year,self.filepath)
+        if base is None:
+            self.show_status("La decisión no tiene una ruta base válida configurada.",6000)
+            return
+        dest_dir=base/dt.strftime("%Y-%m")
+        dest_dir.mkdir(parents=True,exist_ok=True)
+        new_name=sanitize_windows_filename(self.action_panel.get_new_name() or self.filepath.stem)
+        candidate=dest_dir/(new_name+self.filepath.suffix)
+        move_decision={"action":"move","movement_type":type_id,"year":target_year,"sub":None,"new_name":new_name,"post_action":"none"}
+        action,final_dest=self._check_destination_collision(
+            candidate,on_delete_complete=lambda:self._start_move_task(move_decision,candidate)
+        )
+        if action!="move" or final_dest is None:
+            return
+        self._start_move_task(move_decision,final_dest)
 
-    def _on_year_changed(self, year: int):
-        t = self.selection_panel.get_selection()['type']
-        if t == 2:
-            self._pending_year = year
+    def _on_year_changed(self,year:int):
+        decision=self.selection_panel.get_current_decision()
+        if decision and decision.get("behaviour_secon_line")=="character_metadata":
+            self._pending_year=year
             self._year_load_timer.start(400)
 
     def _on_folder_structure_changed(self):
-        sel = self.selection_panel.get_selection()
-        t = sel['type']
-        year = sel['year']
-        if t == 2 and year:
-            self._pending_year = year
-            self._year_load_timer.start(200) # Faster refresh on manual change
-
+        decision=self.selection_panel.get_current_decision()
+        selected=self.selection_panel.get_selection()
+        if decision and decision.get("behaviour_secon_line")=="character_metadata" and selected["year"]:
+            self._pending_year=selected["year"]
+            self._year_load_timer.start(200)
     def _load_characters_for_year(self):
         if self._pending_year is None: return
         self._char_load_generation += 1
@@ -1664,29 +1656,28 @@ class MainWindow(QWidget):
             self._pending_dialog.set_pending_count(self.state_manager.pending_count())
         self._update_undo_button_tooltip()
 
-    def _on_single_character_updated(self, c):
-        t = self.selection_panel.get_selection()['type']
-        if t != 2: return
 
-        folder_name = Path(c.path).name
+    def _on_single_character_updated(self,c):
+        decision=self.selection_panel.get_current_decision()
+        if not decision or decision.get("behaviour_secon_line")!="character_metadata":
+            return
+        folder_name=Path(c.path).name
         try:
-            birthday = datetime.fromisoformat(c.birthday_iso)
+            birthday=datetime.fromisoformat(c.birthday_iso)
         except Exception:
-            birthday = datetime(1970, 1, 1)
-        birthday_fix = "" if not birthday or birthday.year == 1970 else f" · {birthday.strftime('%Y-%m-%d')}"
-        num_char = f" · {c.num:02d}" if c.num != 0 else ""
-        alter_sh = f"/{c.alter}" if c.name != '_' else ""
-        line2 = f"{c.year}{num_char} · {c.name if c.name != '_' else c.alter}{alter_sh}{birthday_fix}"
-        # Character subfolder buttons intentionally use two lines: name and summary.
-        self.selection_panel.update_subfolder_button(folder_name, line2, "")
+            birthday=datetime(1970,1,1)
+        birthday_fix="" if not birthday or birthday.year==1970 else f" · {birthday.strftime('%Y-%m-%d')}"
+        num_char=f" · {c.num:02d}" if c.num!=0 else ""
+        alter_sh=f"/{c.alter}" if c.name!="_" else ""
+        line2=f"{c.year}{num_char} · {c.name if c.name!='_' else c.alter}{alter_sh}{birthday_fix}"
+        self.selection_panel.update_subfolder_button(folder_name,line2,"")
 
     def _update_character_buttons(self):
-        t = self.selection_panel.get_selection()['type']
-        if t != 2: return
-            
-        for c in self.queue_panel.get_characters():
-            self._on_single_character_updated(c)
-
+        decision=self.selection_panel.get_current_decision()
+        if not decision or decision.get("behaviour_secon_line")!="character_metadata":
+            return
+        for character in self.queue_panel.get_characters():
+            self._on_single_character_updated(character)
     def _register_batch_post_action(
         self, target: Path, post_action: str, task_count: int
     ) -> int | None:
