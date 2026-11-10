@@ -1329,7 +1329,6 @@ class MainWindow(QWidget):
     def _set_ui_enabled_for_move(self, enabled: bool):
         if self.filepath and self.filepath.is_dir():
             self.action_panel.action_toolbar.action_delete.setEnabled(False)
-            self.action_panel.rename_input.setEnabled(False)
             self.selection_panel.setEnabled(False)
             return
 
