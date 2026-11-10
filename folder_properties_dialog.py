@@ -15,6 +15,14 @@ from typing import Callable, Optional
 from PyQt6 import QtCore, QtWidgets
 
 from localization import LocalizationManager
+from ntfs_mft import (
+    ElevationRequiredError,
+    MFTError,
+    UnsupportedFilesystemError,
+    get_volume_info,
+    is_process_elevated,
+    scan_folder_mft,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -135,6 +143,46 @@ class FolderStatsWorker(QtCore.QThread):
                 self.scan_failed.emit(str(exc))
 
 
+
+
+class MFTFolderStatsWorker(QtCore.QThread):
+    """Obtain recursive statistics through NTFS MFT records."""
+
+    progress = QtCore.pyqtSignal(str, int, int, int)
+    stats_ready = QtCore.pyqtSignal(int, int, int, int, int)
+    scan_failed = QtCore.pyqtSignal(str)
+
+    def __init__(self, folder_path: Path):
+        super().__init__()
+        self.folder_path = Path(folder_path)
+
+    def run(self) -> None:
+        try:
+            result = scan_folder_mft(
+                self.folder_path,
+                progress_callback=self._report_progress,
+                should_stop=self.isInterruptionRequested,
+            )
+            if not self.isInterruptionRequested():
+                self.stats_ready.emit(
+                    result.file_count,
+                    result.total_size,
+                    result.root_entry_count,
+                    result.inaccessible_count,
+                    result.records_scanned,
+                )
+        except Exception as exc:
+            logger.exception("MFT folder properties scan failed for %s", self.folder_path)
+            if not self.isInterruptionRequested():
+                self.scan_failed.emit(str(exc))
+
+    def _report_progress(
+        self, phase: str, processed: int, file_count: int, total_size: int
+    ) -> None:
+        if not self.isInterruptionRequested():
+            self.progress.emit(phase, processed, file_count, total_size)
+
+
 class FolderPropertiesDialog(QtWidgets.QDialog):
     """Display folder and optional character metadata without blocking the UI."""
 
@@ -151,8 +199,8 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         self.char_entry = char_entry
         self.overworld_year = overworld_year
         self.loc = loc or LocalizationManager()
-        self._scan_started = False
-        self._scan_worker: Optional[FolderStatsWorker] = None
+        self._scan_worker: Optional[QtCore.QThread] = None
+        self._scan_mode: Optional[str] = None
 
         self.setWindowTitle(
             f"{self.loc.get('dlg_properties_title')} - {self.folder_path.name}"
@@ -181,9 +229,10 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setTextVisible(False)
+        self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
 
-        self.status_label = self._make_label(self.loc.get("lbl_prop_calculating"))
+        self.status_label = self._make_label(self.loc.get("lbl_prop_scan_not_started"))
         layout.addWidget(self.status_label)
 
         form = QtWidgets.QFormLayout()
@@ -193,8 +242,8 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         )
         form.setSpacing(8)
 
-        self.files_value = self._make_label("0")
-        self.size_value = self._make_label(format_bytes(0))
+        self.files_value = self._make_label("—")
+        self.size_value = self._make_label("—")
 
         form.addRow(
             self._make_label(self.loc.get("lbl_prop_name"), True),
@@ -250,6 +299,19 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         layout.addStretch()
 
         button_row = QtWidgets.QHBoxLayout()
+        self.traditional_scan_button = QtWidgets.QPushButton(
+            self.loc.get("btn_prop_scan_traditional")
+        )
+        self.traditional_scan_button.clicked.connect(self._start_traditional_scan)
+        button_row.addWidget(self.traditional_scan_button)
+
+        self.mft_scan_button = QtWidgets.QPushButton(
+            self.loc.get("btn_prop_scan_mft")
+        )
+        self.mft_scan_button.setToolTip(self.loc.get("tooltip_prop_scan_mft"))
+        self.mft_scan_button.clicked.connect(self._start_mft_scan)
+        button_row.addWidget(self.mft_scan_button)
+
         button_row.addStretch()
         close_button = QtWidgets.QPushButton(self.loc.get("btn_close"))
         close_button.setFixedWidth(100)
@@ -257,25 +319,126 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         button_row.addWidget(close_button)
         layout.addLayout(button_row)
 
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        if not self._scan_started:
-            self._scan_started = True
-            # Let Qt paint the dialog before the worker starts traversing the folder.
-            QtCore.QTimer.singleShot(0, self._start_scan)
+    def _prepare_scan(self, mode: str) -> bool:
+        if self._scan_worker is not None:
+            return False
 
-    def _start_scan(self) -> None:
-        if self._scan_worker is not None or not self.isVisible():
+        self._scan_mode = mode
+        self.files_value.setText("0")
+        self.size_value.setText(format_bytes(0))
+        self.status_label.setText(
+            self.loc.get(
+                "lbl_prop_mft_indexing" if mode == "mft"
+                else "lbl_prop_traditional_scanning"
+            )
+        )
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.show()
+        self.traditional_scan_button.setEnabled(False)
+        self.mft_scan_button.setEnabled(False)
+        return True
+
+    def _attach_scan_worker(self, worker: QtCore.QThread) -> None:
+        self._scan_worker = worker
+        _ACTIVE_SCAN_WORKERS.add(worker)
+        worker.finished.connect(
+            lambda current=worker: self._on_scan_worker_finished(current)
+        )
+        worker.start()
+
+    def _start_traditional_scan(self) -> None:
+        if not self._prepare_scan("traditional"):
             return
 
         worker = FolderStatsWorker(self.folder_path)
-        self._scan_worker = worker
-        _ACTIVE_SCAN_WORKERS.add(worker)
-        worker.finished.connect(lambda current=worker: _ACTIVE_SCAN_WORKERS.discard(current))
         worker.progress.connect(self._on_scan_progress)
         worker.stats_ready.connect(self._on_scan_ready)
         worker.scan_failed.connect(self._on_scan_failed)
-        worker.start()
+        self._attach_scan_worker(worker)
+
+    def _start_mft_scan(self) -> None:
+        if self._scan_worker is not None:
+            return
+
+        try:
+            volume = get_volume_info(self.folder_path)
+        except MFTError as exc:
+            QtWidgets.QMessageBox.warning(
+                self, self.loc.get("dlg_properties_title"), str(exc)
+            )
+            return
+        except OSError as exc:
+            logger.exception("Could not identify filesystem for %s", self.folder_path)
+            QtWidgets.QMessageBox.warning(
+                self,
+                self.loc.get("dlg_properties_title"),
+                self.loc.get("msg_prop_mft_volume_error").format(error=exc),
+            )
+            return
+
+        if volume.filesystem.casefold() != "ntfs":
+            QtWidgets.QMessageBox.information(
+                self,
+                self.loc.get("dlg_properties_title"),
+                self.loc.get("msg_prop_mft_unsupported_fs").format(
+                    filesystem=volume.filesystem or self.loc.get("unknown_value")
+                ),
+            )
+            return
+
+        try:
+            elevated = is_process_elevated()
+        except MFTError as exc:
+            QtWidgets.QMessageBox.warning(
+                self, self.loc.get("dlg_properties_title"), str(exc)
+            )
+            return
+        except OSError as exc:
+            logger.exception("Could not inspect process elevation")
+            QtWidgets.QMessageBox.warning(
+                self,
+                self.loc.get("dlg_properties_title"),
+                self.loc.get("msg_prop_mft_elevation_check_error").format(error=exc),
+            )
+            return
+
+        if not elevated:
+            QtWidgets.QMessageBox.warning(
+                self,
+                self.loc.get("dlg_properties_title"),
+                self.loc.get("msg_prop_admin_required"),
+            )
+            return
+
+        if not self._prepare_scan("mft"):
+            return
+
+        worker = MFTFolderStatsWorker(self.folder_path)
+        worker.progress.connect(self._on_mft_scan_progress)
+        worker.stats_ready.connect(self._on_mft_scan_ready)
+        worker.scan_failed.connect(self._on_scan_failed)
+        self._attach_scan_worker(worker)
+
+    def _on_scan_worker_finished(self, worker: QtCore.QThread) -> None:
+        _ACTIVE_SCAN_WORKERS.discard(worker)
+        if self._scan_worker is worker:
+            self._scan_worker = None
+            self.traditional_scan_button.setEnabled(True)
+            self.mft_scan_button.setEnabled(True)
+
+    def _on_mft_scan_progress(
+        self, phase: str, processed: int, file_count: int, total_size: int
+    ) -> None:
+        self.files_value.setText(str(file_count))
+        self.size_value.setText(format_bytes(total_size))
+        if phase == "index":
+            self.status_label.setText(
+                self.loc.get("lbl_prop_mft_indexing").format(records=processed)
+            )
+        else:
+            self.status_label.setText(
+                self.loc.get("lbl_prop_mft_counting").format(files=processed)
+            )
 
     @QtCore.pyqtSlot(int, int)
     def _on_scan_progress(self, file_count: int, total_size: int) -> None:
@@ -289,6 +452,43 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         self._on_scan_progress(file_count, total_size)
         self.progress_bar.hide()
         self.status_label.setText(self.loc.get("lbl_prop_scan_complete"))
+        self._update_folder_cache(
+            file_count, total_size, entry_count, folder_mtime_ns
+        )
+
+    @QtCore.pyqtSlot(int, int, int, int, int)
+    def _on_mft_scan_ready(
+        self,
+        file_count: int,
+        total_size: int,
+        entry_count: int,
+        inaccessible_count: int,
+        records_scanned: int,
+    ) -> None:
+        self._on_scan_progress(file_count, total_size)
+        self.progress_bar.hide()
+
+        if inaccessible_count:
+            self.status_label.setText(
+                self.loc.get("lbl_prop_mft_partial").format(
+                    inaccessible=inaccessible_count,
+                    records=records_scanned,
+                )
+            )
+            logger.warning(
+                "MFT scan for %s could not read sizes for %s files",
+                self.folder_path,
+                inaccessible_count,
+            )
+            return
+
+        self.status_label.setText(
+            self.loc.get("lbl_prop_mft_complete").format(records=records_scanned)
+        )
+        try:
+            folder_mtime_ns = self.folder_path.stat().st_mtime_ns
+        except OSError:
+            folder_mtime_ns = 0
         self._update_folder_cache(
             file_count, total_size, entry_count, folder_mtime_ns
         )
