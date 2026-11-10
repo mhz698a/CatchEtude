@@ -2361,7 +2361,7 @@ class MainWindow(QWidget):
             self._consume_post_action()
 
     def _consume_post_action(self):
-        mode = self.action_panel.get_post_action_mode()
+        mode = self._post_action_mode
 
         if mode == "none":
             return
