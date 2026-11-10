@@ -41,6 +41,23 @@ class TestFolderProperties(unittest.TestCase):
             self.assertFalse(hasattr(dialog, "traditional_scan_button"))
             dialog.close()
 
+    def test_scan_failed_signal_accepts_string_and_updates_dialog(self):
+        class FailureSignalEmitter(QtCore.QObject):
+            failed = QtCore.pyqtSignal(str)
+
+        with patch.object(FolderPropertiesDialog, "_start_traditional_scan"):
+            dialog = FolderPropertiesDialog(self.test_folder)
+        emitter = FailureSignalEmitter()
+        try:
+            # Connecting this signal validates the slot's declared Qt signature.
+            emitter.failed.connect(dialog._on_scan_failed)
+            emitter.failed.emit("disk access denied")
+
+            self.assertEqual(dialog.status_label.text(), dialog.loc.get("lbl_prop_scan_error"))
+            self.assertEqual(dialog.status_label.toolTip(), "disk access denied")
+        finally:
+            dialog.close()
+
     def test_scan_folder_stats_and_format(self):
         file_count, total_bytes = scan_folder_stats(self.test_folder)
         self.assertEqual(file_count, 2)
