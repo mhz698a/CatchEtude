@@ -53,6 +53,13 @@ class ClassificationRegistry:
                 for key in ("folder_contains","folder_fallback","behaviour_second_line","requires_internal","allow_create","allow_rename","allow_delete"):
                     if key in default:
                         decision[key]=default[key]
+
+        # Previous registry versions represented OneDrive-backed folder lists
+        # with "onedrive". The new model stores the actual path in base_path and
+        # uses "filesystem" to indicate that its child folders are enumerated.
+        if str(decision.get("folder_source", "")).strip().casefold() == "onedrive":
+            decision["folder_source"] = "filesystem"
+
         return decision
 
     def load_config(self):
@@ -71,7 +78,10 @@ class ClassificationRegistry:
             migrated=[self._migrate_decision(d) for d in data["decisions"]]
             self.validate_decisions(migrated)
             self.decisions=sorted(migrated,key=lambda d:(d.get("order",0),d["id"]))
-            if data.get("schema_version")!=self.SCHEMA_VERSION:
+            if (
+                data.get("schema_version") != self.SCHEMA_VERSION
+                or migrated != data["decisions"]
+            ):
                 self.save_config()
         except Exception:
             logging.exception("Could not load %s; built-in classifications remain available",path)

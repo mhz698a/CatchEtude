@@ -95,6 +95,30 @@ class TestDecisionDispatcher(unittest.TestCase):
                 "folder_source": "filesystem",
             },
             {
+                "id": 5,
+                "name": "Academico",
+                "name_key": "type_5",
+                "icon": "aula-de-google.png",
+                "enabled": True,
+                "order": 5,
+                "handler": "docs",
+                "year_mode": "none",
+                "folder_source": "onedrive",
+                "allow_create": False,
+            },
+            {
+                "id": 6,
+                "name": "Tramites",
+                "name_key": "type_6",
+                "icon": "identificación-verificada.png",
+                "enabled": True,
+                "order": 6,
+                "handler": "docs",
+                "year_mode": "none",
+                "folder_source": "onedrive",
+                "allow_create": False,
+            },
+            {
                 "id": 99,
                 "name": "Custom",
                 "handler": "move_to_subfolder",
@@ -121,6 +145,14 @@ class TestDecisionDispatcher(unittest.TestCase):
         self.assertEqual(episodes["handler"], "move_to_subfolder")
         self.assertEqual(episodes["folder_contains"], "___[")
         self.assertEqual(episodes["behaviour_second_line"], "last_file")
+        academic = registry.get_decision(5)
+        family = registry.get_decision(6)
+        self.assertEqual(academic["handler"], "move_to_subfolder")
+        self.assertEqual(academic["folder_source"], "filesystem")
+        self.assertEqual(academic["base_path"], "{ONEDRIVE_DOCS}")
+        self.assertEqual(family["handler"], "move_to_subfolder")
+        self.assertEqual(family["folder_source"], "filesystem")
+        self.assertEqual(family["base_path"], "{ONEDRIVE_DOCTOS_FAMILIA}")
         self.assertIsNotNone(custom)
         self.assertEqual(custom["base_path"], "D:/Custom")
 
