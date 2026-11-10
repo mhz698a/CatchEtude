@@ -5,7 +5,6 @@ from datetime import datetime
 import sys
 import tomllib
 
-# App Metadata
 APP_NAME = "CatchEtude"
 MYAPPID = 'EtudeProduts.CatchEtude.CatchEtudeWatcher.v1.0'
 

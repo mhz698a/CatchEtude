@@ -27,10 +27,11 @@ class FileMoveWorker(QRunnable):
     """
     Worker that performs a file copy with progress reporting, subclassing QRunnable.
     """
-    def __init__(self, src: Path, dst: Path):
+    def __init__(self, src: Path, dst: Path, restore_meta: dict | None = None):
         super().__init__()
         self.src = src
         self.dst = dst
+        self.restore_meta = dict(restore_meta) if restore_meta else None
         self.signals = FileMoveSignals()
         try:
             self.stat = self.src.stat()
@@ -58,10 +59,12 @@ class FileMoveWorker(QRunnable):
         def target():
             try:
                 logging.info(f"[FileMoveWorker][native-boundary] setctime_blocking start: '{self.dst}'")
-                setctime_blocking(
-                    str(self.dst),
-                    getattr(self.stat, "st_birthtime", self.stat.st_ctime),
+                ctime = (
+                    self.restore_meta.get("ctime")
+                    if self.restore_meta and self.restore_meta.get("ctime") is not None
+                    else getattr(self.stat, "st_birthtime", self.stat.st_ctime)
                 )
+                setctime_blocking(str(self.dst), ctime)
                 logging.info(f"[FileMoveWorker][native-boundary] setctime_blocking done: '{self.dst}'")
             except Exception as exc:
                 logging.exception(f"[FileMoveWorker][native-boundary] setctime_blocking failed: '{self.dst}'")
@@ -81,9 +84,13 @@ class FileMoveWorker(QRunnable):
     def _restore_timestamps(self):
         """Restores source timestamps on the destination as part of the move operation."""
         logging.info(f"[FileMoveWorker][native-boundary] os.utime start: '{self.dst}'")
+        metadata = self.restore_meta or {}
         os.utime(
             self.dst,
-            (self.stat.st_atime, self.stat.st_mtime)
+            (
+                metadata.get("atime", self.stat.st_atime),
+                metadata.get("mtime", self.stat.st_mtime),
+            ),
         )
         logging.info(f"[FileMoveWorker][native-boundary] os.utime done: '{self.dst}'")
         self._restore_creation_time_in_helper_thread()

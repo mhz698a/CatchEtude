@@ -83,6 +83,7 @@ class SelectionPanel(QWidget):
         self._last_loaded_type = None
         self._last_loaded_year = None
         self._recent_subfolders = []
+        self._recent_items_by_label = {}
         self._build_ui()
 
     def _build_ui(self):
@@ -96,12 +97,6 @@ class SelectionPanel(QWidget):
         type_decition_bar.setContentsMargins(0, 0, 0, 0)
         type_decition_bar.setSpacing(8)
 
-        self.btn_recently = QtWidgets.QPushButton(self.loc.get("btn_recently"))
-        self.btn_recently.setFixedHeight(34)
-        self.btn_recently.setFixedWidth(100)
-        self.btn_recently.clicked.connect(self._show_recently_menu)
-        type_decition_bar.addWidget(self.btn_recently)
-        
         self.list_type = QListWidget()
         self.list_type.setMaximumHeight(50)
         self.list_type.setViewMode(QListWidget.ViewMode.IconMode)
@@ -159,15 +154,32 @@ class SelectionPanel(QWidget):
         layout.addLayout(bottom_h_row)
         
 
-    def retranslate_ui(self):               
+    def retranslate_ui(self):
         curr = self.list_type.currentRow()
-        self.btn_recently.setText(self.loc.get("btn_recently"))
         self._fill_type_list(curr)
-        self.refresh_classification_ui(force=True)
+        if self._selected_type_id() == 0:
+            self._populate_recent_subfolders()
+        else:
+            self.refresh_classification_ui(force=True)
 
+
+    def _selected_type_id(self) -> int:
+        """Return the classification ID stored on the selected decision item."""
+        item = self.list_type.currentItem()
+        if item is None:
+            return 0
+        try:
+            return int(item.data(QtCore.Qt.ItemDataRole.UserRole) or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def _on_subfolder_clicked(self, name: str):
-        t = self.list_type.currentRow() + 1
+        t = self._selected_type_id()
+        if t == 0:
+            recent = self._recent_items_by_label.get(name)
+            if recent is not None:
+                self._choose_recent_subfolder(recent)
+            return
         if t == 1:
             self.keep_action_clicked.emit(name)
             return
@@ -179,56 +191,98 @@ class SelectionPanel(QWidget):
         self.subfolder_clicked.emit(name)
 
     def _remember_recent_subfolder(self, name: str):
-        t = self.list_type.currentRow() + 1
+        t = self._selected_type_id()
+        if t not in (2, 3, 4, 5, 6, 8) or not name:
+            return
+
         year = self.list_year.current_year() if t in (2, 3, 4, 8) else None
-        if not name or year is None:
+        if t in (2, 3, 4, 8) and year is None:
             return
 
         recent = {"type": t, "year": year, "name": name}
-        if recent in self._recent_subfolders:
-            return
-
+        self._recent_subfolders = [
+            item for item in self._recent_subfolders
+            if not (
+                item.get("type") == t
+                and item.get("year") == year
+                and item.get("name") == name
+            )
+        ]
         self._recent_subfolders.insert(0, recent)
-        del self._recent_subfolders[12:]
+        del self._recent_subfolders[20:]
 
-    def _show_recently_menu(self):
-        menu = QtWidgets.QMenu(self)
+    def _recent_subfolder_label(self, recent: dict) -> str:
+        """Build a unique, readable list label while retaining the real folder name."""
+        type_id = recent.get("type")
+        type_label = self.loc.get(f"type_{type_id}")
+        year = recent.get("year")
+        classification = f"{type_label} ({year})" if year is not None else type_label
+        return f'{recent["name"]} — {classification}'
+
+    def _populate_recent_subfolders(self):
+        """Display the MRU folders directly in the subfolder list."""
+        self._cancel_subfolder_scans()
+        self._last_loaded_type = None
+        self._last_loaded_year = None
+        self.list_year.setEnabled(False)
+        self._recent_items_by_label = {}
 
         if not self._recent_subfolders:
-            empty_action = menu.addAction(self.loc.get("menu_no_recently_folders"))
-            empty_action.setEnabled(False)
-        else:
-            for recent in self._recent_subfolders:
-                label = f'{recent["name"]} ({recent["year"]})'
-                action = menu.addAction(label)
-                action.triggered.connect(
-                    lambda checked=False, item=recent: self._choose_recent_subfolder(item)
-                )
+            self.list_sub.show_message_placeholder(
+                self.loc.get("menu_no_recently_folders")
+            )
+            self.list_sub.setEnabled(True)
+            self.subfolders_refreshed.emit()
+            return
 
-        menu.exec(self.btn_recently.mapToGlobal(self.btn_recently.rect().bottomLeft()))
+        labels = []
+        for recent in self._recent_subfolders[:20]:
+            label = self._recent_subfolder_label(recent)
+            # The classification/year suffix disambiguates folders with equal names.
+            self._recent_items_by_label[label] = recent
+            labels.append(label)
+
+        self.list_sub.add_subfolders(labels)
+        self.list_sub.setEnabled(True)
+        self.subfolders_refreshed.emit()
 
     def _choose_recent_subfolder(self, recent: dict):
         type_id = recent.get("type")
         year = recent.get("year")
         name = recent.get("name")
-        if not type_id or year is None or not name:
+        if type_id not in (2, 3, 4, 5, 6, 8) or not name:
+            return
+        if type_id in (2, 3, 4, 8) and year is None:
             return
 
-        row = type_id - 1
-        if 0 <= row < self.list_type.count():
+        # Decision rows retain their original classification IDs: row 0 is Recent.
+        row = type_id
+        if 0 < row < self.list_type.count():
             self.list_type.setCurrentRow(row)
 
-        if year in getattr(config, "NONCANON_YEARS", ()):
-            self.list_year._select_hidden_year(year)
-        else:
-            self.list_year._select_year(year)
+        if year is not None:
+            if year in getattr(config, "NONCANON_YEARS", ()):
+                self.list_year._select_hidden_year(year)
+            else:
+                self.list_year._select_year(year)
 
         self.subfolder_clicked.emit(name)
 
     def _on_type_changed(self, idx):
+        if idx < 0:
+            return
+        if idx == 0:
+            self._populate_recent_subfolders()
+            return
+
+        self._last_non_recent_row = idx
+        type_id = self._selected_type_id()
+        if not type_id:
+            return
+
         # Never block the UI waiting for a stale episode scan to finish.
         self._cancel_subfolder_scans()
-        self.type_changed.emit(idx + 1)
+        self.type_changed.emit(type_id)
         self.refresh_classification_ui()
 
     def _on_year_changed(self, year):
@@ -237,13 +291,26 @@ class SelectionPanel(QWidget):
             self.refresh_classification_ui()
 
     def get_selection(self):
+        type_id = self._selected_type_id()
+        if type_id == 0:
+            # Recent is a navigation view, not a movement destination.
+            previous_item = self.list_type.item(self._last_non_recent_row)
+            if previous_item is not None:
+                type_id = int(
+                    previous_item.data(QtCore.Qt.ItemDataRole.UserRole) or 1
+                )
+            else:
+                type_id = 1
+
         return {
-            'type': self.list_type.currentRow() + 1,
+            'type': type_id,
             'year': self.list_year.current_year()
         }
 
     def refresh_classification_ui(self, force=False):
-        t = self.list_type.currentRow() + 1
+        t = self._selected_type_id()
+        if t == 0:
+            return
         year = self.list_year.current_year() if t in (2, 3, 4, 7, 8) else None
 
         if not force and t == self._last_loaded_type and year == self._last_loaded_year:
@@ -328,12 +395,12 @@ class SelectionPanel(QWidget):
         generation = self._sub_scan_generation
         self.list_sub.clear()
 
-        if not is_internal_available() and (self.list_type.currentRow() + 1) in (2, 3, 4, 7, 8):
+        if not is_internal_available() and self._selected_type_id() in (2, 3, 4, 7, 8):
             self.list_sub.setEnabled(False)
             return
 
         try:
-            t = self.list_type.currentRow() + 1
+            t = self._selected_type_id()
             year = self.list_year.current_year()
 
             if t == 3:
@@ -408,7 +475,7 @@ class SelectionPanel(QWidget):
         """Populate episode buttons first, then start the metadata scanner."""
         if generation != self._sub_scan_generation:
             return
-        if self.list_type.currentRow() + 1 != 3 or self.list_year.current_year() != year:
+        if self._selected_type_id() != 3 or self.list_year.current_year() != year:
             return
 
         if not subfolder_paths:
@@ -442,7 +509,7 @@ class SelectionPanel(QWidget):
     def _on_episode_subfolder_result(self, name: str, last_file: str, generation: int):
         if generation != self._sub_scan_generation:
             return
-        if self.list_type.currentRow() + 1 != 3:
+        if self._selected_type_id() != 3:
             return
         self.list_sub.update_button(name, last_file)
 
@@ -452,7 +519,7 @@ class SelectionPanel(QWidget):
             self._sub_scanner = None
 
     def _on_empty_create_folder_clicked(self):
-        t = self.list_type.currentRow() + 1
+        t = self._selected_type_id()
         year = self.list_year.current_year()
         if t != 8 or not year:
             return
@@ -466,7 +533,7 @@ class SelectionPanel(QWidget):
         self.list_sub.setEnabled(enabled)
 
     def _on_subfolder_right_clicked(self, name, pos):
-        t = self.list_type.currentRow() + 1
+        t = self._selected_type_id()
         if t in (1, 7):
             return
 
@@ -603,7 +670,7 @@ class SelectionPanel(QWidget):
         from folder_properties_dialog import FolderPropertiesDialog
 
         char_entry = None
-        t = self.list_type.currentRow() + 1
+        t = self._selected_type_id()
         year = self.list_year.current_year()
         overworld_year = year if t == 8 else None
 
@@ -634,7 +701,7 @@ class SelectionPanel(QWidget):
 
     def _on_overworld_result(self, name: str, line2: str = "", line3: str = ""):
         self._overworld_refresh_pending = False
-        t = self.list_type.currentRow() + 1
+        t = self._selected_type_id()
         if t != 8:
             return
 
@@ -704,9 +771,19 @@ class SelectionPanel(QWidget):
     def _fill_type_list(self, selected_row: int | None = None):
         if selected_row is None:
             selected_row = self.list_type.currentRow()
+        if selected_row < 0:
+            # Keep the historical initial selection on Keep_downloads (type 1).
+            selected_row = 1
 
         self.list_type.blockSignals(True)
         self.list_type.clear()
+
+        recent_icon_path = Path(config.APP_DIR) / "assets" / "recently.png"
+        recent_icon = QIcon(str(recent_icon_path)) if recent_icon_path.is_file() else self._app_icon
+        recent_item = QListWidgetItem(recent_icon, "")
+        recent_item.setData(QtCore.Qt.ItemDataRole.UserRole, 0)
+        recent_item.setToolTip(self.loc.get("btn_recently"))
+        self.list_type.addItem(recent_item)
 
         for type_id in range(1, 9):
             text = self.loc.get(f"type_{type_id}")
@@ -718,6 +795,11 @@ class SelectionPanel(QWidget):
         if 0 <= selected_row < self.list_type.count():
             self.list_type.setCurrentRow(selected_row)
         else:
-            self.list_type.setCurrentRow(0)
+            self.list_type.setCurrentRow(1)
 
+        self._last_non_recent_row = (
+            self.list_type.currentRow()
+            if self.list_type.currentRow() > 0
+            else 1
+        )
         self.list_type.blockSignals(False)

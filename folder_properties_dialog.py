@@ -1,9 +1,8 @@
 """
 Folder Properties dialog for CatchEtude.
 
-The dialog is deliberately lightweight at construction time. Filesystem traversal
-runs in a worker thread after the dialog is shown, and reports incremental counts
-back to the UI thread.
+Folder statistics are loaded from the existing cache when it is current;
+otherwise the traditional filesystem traversal runs in a background worker.
 """
 
 import logging
@@ -15,7 +14,6 @@ from typing import Callable, Optional
 from PyQt6 import QtCore, QtWidgets
 
 from localization import LocalizationManager
-
 
 logger = logging.getLogger(__name__)
 _IGNORED_FILES = {"desktop.ini", "thumbs.db"}
@@ -135,6 +133,8 @@ class FolderStatsWorker(QtCore.QThread):
                 self.scan_failed.emit(str(exc))
 
 
+
+
 class FolderPropertiesDialog(QtWidgets.QDialog):
     """Display folder and optional character metadata without blocking the UI."""
 
@@ -151,8 +151,7 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         self.char_entry = char_entry
         self.overworld_year = overworld_year
         self.loc = loc or LocalizationManager()
-        self._scan_started = False
-        self._scan_worker: Optional[FolderStatsWorker] = None
+        self._scan_worker: Optional[QtCore.QThread] = None
 
         self.setWindowTitle(
             f"{self.loc.get('dlg_properties_title')} - {self.folder_path.name}"
@@ -160,6 +159,7 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         self.setMinimumWidth(460)
         self.setModal(True)
         self._build_ui()
+        self._start_traditional_scan()
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
@@ -181,9 +181,10 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         self.progress_bar = QtWidgets.QProgressBar()
         self.progress_bar.setRange(0, 0)
         self.progress_bar.setTextVisible(False)
+        self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
 
-        self.status_label = self._make_label(self.loc.get("lbl_prop_calculating"))
+        self.status_label = self._make_label(self.loc.get("lbl_prop_traditional_scanning"))
         layout.addWidget(self.status_label)
 
         form = QtWidgets.QFormLayout()
@@ -193,8 +194,8 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         )
         form.setSpacing(8)
 
-        self.files_value = self._make_label("0")
-        self.size_value = self._make_label(format_bytes(0))
+        self.files_value = self._make_label("—")
+        self.size_value = self._make_label("—")
 
         form.addRow(
             self._make_label(self.loc.get("lbl_prop_name"), True),
@@ -257,25 +258,54 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         button_row.addWidget(close_button)
         layout.addLayout(button_row)
 
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        if not self._scan_started:
-            self._scan_started = True
-            # Let Qt paint the dialog before the worker starts traversing the folder.
-            QtCore.QTimer.singleShot(0, self._start_scan)
+    def _prepare_scan(self) -> bool:
+        if self._scan_worker is not None:
+            return False
 
-    def _start_scan(self) -> None:
-        if self._scan_worker is not None or not self.isVisible():
+        self.files_value.setText("0")
+        self.size_value.setText(format_bytes(0))
+        self.status_label.setText(self.loc.get("lbl_prop_traditional_scanning"))
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.show()
+        return True
+
+    def _attach_scan_worker(self, worker: QtCore.QThread) -> None:
+        self._scan_worker = worker
+        _ACTIVE_SCAN_WORKERS.add(worker)
+        # Global cleanup must outlive the dialog; UI updates use a QObject-bound
+        # slot so Qt disconnects them automatically if the dialog is destroyed.
+        worker.finished.connect(
+            lambda current=worker: _ACTIVE_SCAN_WORKERS.discard(current)
+        )
+        worker.finished.connect(self._on_scan_worker_finished)
+        worker.start()
+
+    def _start_traditional_scan(self) -> None:
+        if self._scan_worker is not None:
+            return
+
+        cached = self._read_valid_folder_cache()
+        if cached is not None:
+            file_count, total_size = cached["file_count"], cached["total_size"]
+            self._on_scan_progress(file_count, total_size)
+            self.progress_bar.hide()
+            self.status_label.setText(self.loc.get("lbl_prop_cache_used"))
+            return
+
+        if not self._prepare_scan():
             return
 
         worker = FolderStatsWorker(self.folder_path)
-        self._scan_worker = worker
-        _ACTIVE_SCAN_WORKERS.add(worker)
-        worker.finished.connect(lambda current=worker: _ACTIVE_SCAN_WORKERS.discard(current))
         worker.progress.connect(self._on_scan_progress)
         worker.stats_ready.connect(self._on_scan_ready)
         worker.scan_failed.connect(self._on_scan_failed)
-        worker.start()
+        self._attach_scan_worker(worker)
+
+    @QtCore.pyqtSlot()
+    def _on_scan_worker_finished(self) -> None:
+        worker = self.sender()
+        if worker is self._scan_worker:
+            self._scan_worker = None
 
     @QtCore.pyqtSlot(int, int)
     def _on_scan_progress(self, file_count: int, total_size: int) -> None:
@@ -297,11 +327,60 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
     def _on_scan_failed(self, error_message: str) -> None:
         self.progress_bar.hide()
         self.status_label.setText(self.loc.get("lbl_prop_scan_error"))
+        self.status_label.setToolTip(error_message)
         logger.error(
             "Unable to calculate properties for %s: %s",
             self.folder_path,
             error_message,
         )
+
+    def _read_valid_folder_cache(self) -> Optional[dict]:
+        """Return cached counts only when the cached folder timestamp still matches."""
+        try:
+            current_mtime_ns = self.folder_path.stat().st_mtime_ns
+        except OSError:
+            return None
+
+        cache_manager = None
+        cache_kind = None
+        try:
+            if self.overworld_year is not None:
+                from overworld_cache_mgr import OverworldCacheManager
+
+                cache_manager = OverworldCacheManager(self.overworld_year)
+                cache_kind = "overworld"
+            else:
+                year = getattr(self.char_entry, "year", None)
+                if year:
+                    from character_cache_mgr import CharacterCacheManager
+
+                    cache_manager = CharacterCacheManager(year)
+                    cache_kind = "character"
+            if cache_manager is None:
+                return None
+
+            cached = cache_manager.get_folder_data(str(self.folder_path))
+            if not isinstance(cached, dict):
+                return None
+            if int(cached.get("mtime_ns", -1)) != int(current_mtime_ns):
+                return None
+
+            file_count = cached.get("file_count")
+            total_size = cached.get("total_size")
+            if file_count is None or total_size is None:
+                return None
+
+            # Character cache also stores the direct-child count. Overworld's
+            # established schema does not, so keep its cache fields unchanged.
+            entry_count = cached.get("entry_count", 0) if cache_kind == "character" else 0
+            return {
+                "file_count": max(0, int(file_count)),
+                "total_size": max(0, int(total_size)),
+                "entry_count": max(0, int(entry_count)),
+            }
+        except Exception:
+            logger.exception("Could not read folder statistics cache for %s", self.folder_path)
+            return None
 
     def _update_folder_cache(
         self,

@@ -38,12 +38,18 @@ from pending_scheduler_mgr import PendingScheduler
 from selection_panel_mgr import SelectionPanel
 from action_panel_mgr import ActionPanel
 from queue_panel_mgr import QueuePanel
+from queue_rename_dialog import QueueRenameDialog
 from service_mgr import send_character_service_command
 from pending_dialog import PendingDialog
 from temporary_hide_banner_mgr import TemporaryHideBanner
 from background_move_mgr import BackgroundMoveManager
 from tray_menu_mgr import TrayMenuManager
 from duplication_mgr import _DuplicateDeleteWorker, _QueueFileCopyWorker
+
+
+class _FlattenOperationSignals(QtCore.QObject):
+    progress = QtCore.pyqtSignal(int, int, str, str)
+    finished = QtCore.pyqtSignal(object, bool, str)
 
 
 class MainWindow(QWidget):
@@ -62,7 +68,13 @@ class MainWindow(QWidget):
         self.background_move_mgr.move_started.connect(self._on_background_move_started)
         self.background_move_mgr.move_progress.connect(self._on_background_move_progress)
         self.background_move_mgr.move_finished.connect(self._on_background_move_finished)
+        self.background_move_mgr.undo_started.connect(self._on_undo_started)
+        self.background_move_mgr.undo_progress.connect(self._on_undo_progress)
+        self.background_move_mgr.undo_finished.connect(self._on_undo_finished)
         self._closing = False
+        self._undo_progress_dialog = None
+        self._undo_select_first_after_finish = False
+        self._flatten_operation = None
         self._duplicate_delete_operation_counter = 0
         self._duplicate_delete_operations: dict[int, dict] = {}
         self._queue_copy_operation_counter = 0
@@ -76,10 +88,12 @@ class MainWindow(QWidget):
         
         self.setWindowTitle(config.APP_NAME)
         
-        flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint
+        flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint | QtCore.Qt.WindowType.WindowCloseButtonHint
         flags |= QtCore.Qt.WindowType.Tool
         self.setWindowFlags(flags)
         self.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
+        
+        self._real_close = False
         
         self.base_width = 860
         self.base_height = 580
@@ -101,6 +115,7 @@ class MainWindow(QWidget):
         
         self._build_ui()
         self._pending_dialog = PendingDialog(self.loc, self._bring_and_center)
+        self._pending_dialog.set_pending_count(self.state_manager.pending_count())
         self.tray_mgr = TrayMenuManager(self)
         self.tray_mgr.build_tray()
         
@@ -143,11 +158,15 @@ class MainWindow(QWidget):
         # Header Row
         header_layout = QHBoxLayout()
         
-        self.btn_reload = QPushButton(self.loc.get("btn_reload"))
-        self.btn_reload.setFixedHeight(25)
-        self.btn_reload.setToolTip(self.loc.get("tooltip_reload"))
-        self.btn_reload.clicked.connect(self._on_reload_clicked)
-
+        self.btn_lang = QPushButton(self.loc.get("lang_toggle"))
+        self.btn_lang.setFixedWidth(40)
+        self.btn_lang.setFixedHeight(25)
+        self.btn_lang.clicked.connect(self._on_lang_toggle)
+        
+        self.btn_undo = QPushButton(self.loc.get("btn_history"))
+        self.btn_undo.setFixedHeight(25)
+        self.btn_undo.clicked.connect(self._on_undo_clicked)
+        
         self.hide_secure_cb = QCheckBox(self.loc.get("btn_secure"))
         self.hide_secure_cb.setFixedHeight(25)
         self.hide_secure_cb.setChecked(self._hide_secure)
@@ -169,29 +188,15 @@ class MainWindow(QWidget):
         self.time_auto_run_pendings.setFixedHeight(25)
         self.time_auto_run_pendings.setFixedWidth(80)
         self.time_auto_run_pendings.timeChanged.connect(self._on_pending_schedule_changed)
-
-        self.btn_hide = QPushButton(self.loc.get("btn_hide"))
-        self.btn_hide.setFixedHeight(25)
-        self.btn_hide.clicked.connect(self._manual_hide)
-
-        self.btn_undo = QPushButton(self.loc.get("btn_history"))
-        self.btn_undo.setFixedHeight(25)
-        self.btn_undo.clicked.connect(self._on_undo_clicked)
         
-        self.btn_lang = QPushButton(self.loc.get("lang_toggle"))
-        self.btn_lang.setFixedWidth(40)
-        self.btn_lang.setFixedHeight(25)
-        self.btn_lang.clicked.connect(self._on_lang_toggle)
-        
-        header_layout.addWidget(self.btn_reload)
+        header_layout.addWidget(self.btn_lang)
+        header_layout.addWidget(self.btn_undo)
         header_layout.addStretch()
         header_layout.addWidget(self.hide_secure_cb)
         header_layout.addWidget(self.blur_spinbox)
         header_layout.addWidget(self.chk_auto_run_pendings)
         header_layout.addWidget(self.time_auto_run_pendings)
-        header_layout.addWidget(self.btn_hide)
-        header_layout.addWidget(self.btn_undo)
-        header_layout.addWidget(self.btn_lang)
+        
         main_vbox.addLayout(header_layout)
 
         # CENTRO
@@ -223,6 +228,7 @@ class MainWindow(QWidget):
         self.action_panel = ActionPanel()
         self.action_panel.delete_clicked.connect(self._on_delete_clicked)
         self.action_panel.flat_folder_clicked.connect(self._on_flat_folder_clicked)
+        self.action_panel.action_toolbar.reload_clicked.connect(self._on_reload_clicked)
         root.addWidget(self.action_panel)
 
         # Queue / Character Panel
@@ -231,6 +237,7 @@ class MainWindow(QWidget):
         self.queue_panel.characters_updated.connect(self._update_character_buttons)
         self.queue_panel.character_updated.connect(self._on_single_character_updated)
         self.queue_panel.file_double_clicked.connect(self._on_queue_file_double_clicked)
+        self.queue_panel.queue_file_rename_requested.connect(self._on_queue_file_rename_requested)
         self.queue_panel.movings_minimized_changed.connect(self._on_movings_minimized_changed)
         root.addWidget(self.queue_panel)
         
@@ -644,11 +651,8 @@ class MainWindow(QWidget):
             logging.exception("Failed to capture UI render")
 
     def retranslate_ui(self):
-        self.btn_reload.setText(self.loc.get("btn_reload"))
-        self.btn_reload.setToolTip(self.loc.get("tooltip_reload"))
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
-        self.chk_auto_run_pendings.setText("Autoexecure Pendings")
-        self.btn_hide.setText(self.loc.get("btn_hide"))
+        self.chk_auto_run_pendings.setText("Shedule Pendings")
         self.btn_undo.setText(self.loc.get("btn_history"))
         self.btn_lang.setText(self.loc.get("lang_toggle"))
         self.selection_panel.retranslate_ui()
@@ -722,46 +726,93 @@ class MainWindow(QWidget):
         finally:
             send_character_service_command("resume")
 
-    def _on_undo_clicked(self):
+    def _start_undo(self, *, select_first: bool = False, show_dialog: bool = True):
+        if self.background_move_mgr.undo_in_progress:
+            return
+
+        self._undo_select_first_after_finish = select_first
         send_character_service_command("pause")
-        try:
-            if not self.background_move_mgr.undo_last_move():
-                QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
-            else:
-                self._build_tray()
-                self._update_undo_button_tooltip()
-                self._bring_and_center()
-        finally:
+        if not self.background_move_mgr.start_undo_last_move():
             send_character_service_command("resume")
+            self._undo_select_first_after_finish = False
+            if show_dialog:
+                QtWidgets.QMessageBox.information(
+                    self, "Undo", self.loc.get("msg_nothing_to_undo")
+                )
+            else:
+                self.show_status(self.loc.get("msg_nothing_to_undo"), 5000)
+
+    def _on_undo_clicked(self):
+        self._start_undo(show_dialog=True)
 
     def _on_context_undo_clicked(self):
-        send_character_service_command("pause")
-        try:
-            if not self.background_move_mgr.undo_last_move():
-                self.show_status(self.loc.get("msg_nothing_to_undo"), 5000)
-            else:
-                self._build_tray()
-                self._update_undo_button_tooltip()
-                self._bring_and_center()
-        finally:
-            send_character_service_command("resume")
+        self._start_undo(show_dialog=False)
 
     def _on_tray_undo_clicked(self):
-        send_character_service_command("pause")
-        try:
-            if not self.background_move_mgr.undo_last_move():
-                QtWidgets.QMessageBox.information(self, "Undo", "Nothing to undo or file no longer exists.")
-            else:
+        self._start_undo(select_first=True, show_dialog=True)
+
+    @QtCore.pyqtSlot(str, int)
+    def _on_undo_started(self, source_path: str, total_bytes: int):
+        progress = QtWidgets.QProgressDialog(
+            f"Deshaciendo archivo: {Path(source_path).name}", "", 0, 100, self
+        )
+        progress.setWindowTitle("Deshacer movimiento")
+        progress.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setValue(0)
+        self._undo_progress_dialog = progress
+        self.btn_undo.setEnabled(False)
+        progress.show()
+
+    @QtCore.pyqtSlot(int)
+    def _on_undo_progress(self, value: int):
+        if self._undo_progress_dialog is not None:
+            self._undo_progress_dialog.setValue(max(0, min(100, int(value))))
+
+    @QtCore.pyqtSlot(bool, str, str)
+    def _on_undo_finished(self, success: bool, target_path: str, message: str):
+        if self._undo_progress_dialog is not None:
+            self._undo_progress_dialog.close()
+            self._undo_progress_dialog.deleteLater()
+            self._undo_progress_dialog = None
+
+        send_character_service_command("resume")
+        self.btn_undo.setEnabled(True)
+
+        if success:
+            if self._undo_select_first_after_finish:
                 with self.state_manager._lock:
                     queue_list = list(self.state_manager._queue_list)
                 if queue_list:
-                    first_file = queue_list[0]
-                    self.state_manager.select_queued_file(first_file)
-                self._build_tray()
-                self._update_undo_button_tooltip()
-                self._bring_and_center()
-        finally:
-            send_character_service_command("resume")
+                    self.state_manager.select_queued_file(queue_list[0])
+
+            self._build_tray()
+            self._update_undo_button_tooltip()
+            self._bring_and_center()
+
+            if message == "TIMESTAMP_RESTORE_FAILED":
+                self.show_status(
+                    "El archivo se deshizo, pero no se pudieron restaurar sus fechas.",
+                    8000,
+                )
+        else:
+            self._update_undo_button_tooltip()
+            if message == "TIMESTAMP_RESTORE_FAILED":
+                self.show_status(
+                    "No se pudo restaurar la fecha. La copia parcial se retiró y "
+                    "el historial se conservó para permitir otro intento.",
+                    8000,
+                )
+            else:
+                self.show_status(
+                    f"No se pudo deshacer el movimiento: {message}",
+                    8000,
+                )
+
+        self._undo_select_first_after_finish = False
 
     def _on_reload_clicked(self):
         reply = QtWidgets.QMessageBox.question(
@@ -778,7 +829,7 @@ class MainWindow(QWidget):
             self._bring_and_center()
 
     def _on_exit_clicked(self):
-        if not self.background_move_mgr.is_idle():
+        if self._flatten_operation is not None or not self.background_move_mgr.is_idle():
             logging.warning("Exit blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
@@ -793,16 +844,23 @@ class MainWindow(QWidget):
             QtWidgets.QMessageBox.StandardButton.No
         )
         if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            self._real_close = True
             QApplication.quit()
 
     def closeEvent(self, event):
-        if not self.background_move_mgr.is_idle():
+        if not self._real_close:
+            event.ignore()
+            self._manual_hide()
+            return
+
+        if self._flatten_operation is not None or not self.background_move_mgr.is_idle():
             logging.warning("Close event blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
                 self,
                 self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
                 self.loc.get("msg_cannot_close_moving") or "No se puede cerrar la aplicación mientras se realiza un movimiento de archivos. Por favor, espere a que termine."
             )
+            self._real_close = False
             event.ignore()
         else:
             self._closing = True
@@ -816,6 +874,7 @@ class MainWindow(QWidget):
     def _manual_hide(self):
         self.hide()
         if self.state_manager.has_pending_work():
+            self._pending_dialog.set_pending_count(self.state_manager.pending_count())
             self._pending_dialog.show()
 
     def showEvent(self, event):
@@ -1181,21 +1240,106 @@ class MainWindow(QWidget):
                 logging.exception("Failed to process pending folder")
         run_in_threadpool(worker)
 
+    def _start_flatten_operation(self, folder: Path, on_finished: Callable):
+        if self._flatten_operation is not None:
+            self.show_status("Ya hay una operación de aplanado en curso.", 5000)
+            return False
+
+        signals = _FlattenOperationSignals(self)
+        dialog = QtWidgets.QProgressDialog(
+            f"Buscando archivos en {folder.name}...", "", 0, 0, self
+        )
+        dialog.setWindowTitle("Aplanar carpeta")
+        dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+        dialog.setCancelButton(None)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+
+        self._flatten_operation = {
+            "folder": folder,
+            "signals": signals,
+            "dialog": dialog,
+            "on_finished": on_finished,
+        }
+        signals.progress.connect(self._on_flatten_progress)
+        signals.finished.connect(self._on_flatten_finished)
+        dialog.show()
+
+        def worker():
+            try:
+                moved, success = flatten_single_folder(
+                    folder,
+                    progress_callback=lambda current, total, path, phase:
+                        signals.progress.emit(current, total, path, phase),
+                )
+                signals.finished.emit(moved, success, "")
+            except Exception as exc:
+                logging.exception("Flatten operation failed for %s", folder)
+                signals.finished.emit([], False, str(exc))
+
+        run_in_threadpool(worker)
+        return True
+
+    @QtCore.pyqtSlot(int, int, str, str)
+    def _on_flatten_progress(
+        self, completed: int, total: int, current_path: str, phase: str
+    ):
+        operation = self._flatten_operation
+        if operation is None:
+            return
+
+        dialog = operation["dialog"]
+        folder = operation["folder"]
+        if phase == "scan":
+            dialog.setRange(0, 0)
+            dialog.setLabelText(f"Buscando archivos en {folder.name}...")
+            return
+
+        maximum = max(1, int(total))
+        dialog.setRange(0, maximum)
+        dialog.setValue(max(0, min(int(completed), maximum)))
+        if current_path:
+            dialog.setLabelText(
+                f"Aplanando {folder.name}\n{Path(current_path).name} "
+                f"({completed}/{total})"
+            )
+        elif phase == "finished":
+            dialog.setLabelText(f"Finalizando {folder.name}...")
+        else:
+            dialog.setLabelText(f"Aplanando {folder.name} ({completed}/{total})...")
+
+    @QtCore.pyqtSlot(object, bool, str)
+    def _on_flatten_finished(self, moved, success: bool, error: str):
+        operation = self._flatten_operation
+        if operation is None:
+            return
+
+        self._flatten_operation = None
+        dialog = operation["dialog"]
+        dialog.close()
+        dialog.deleteLater()
+
+        moved_paths = [Path(path) for path in (moved or [])]
+        if moved_paths:
+            self.state_manager.enqueue_files(moved_paths)
+
+        operation["on_finished"](moved_paths, bool(success), str(error or ""))
+
     def _set_ui_enabled_for_move(self, enabled: bool):
         if self.filepath and self.filepath.is_dir():
-            self.action_panel.btn_delete.setEnabled(False)
-            self.action_panel.rename_input.setEnabled(False)
+            self.action_panel.action_toolbar.action_delete.setEnabled(False)
             self.selection_panel.setEnabled(False)
             return
 
         self.selection_panel.setEnabled(True)
-        self.action_panel.btn_delete.setEnabled(enabled and bool(self.filepath))
+        self.action_panel.action_toolbar.action_delete.setEnabled(enabled and bool(self.filepath))
         if not enabled:
             self.btn_undo.setEnabled(False)
         else:
             self._update_undo_button_tooltip()
         self.selection_panel.set_subfolders_enabled(enabled)
-
+    
     @QtCore.pyqtSlot(str)
     def on_file_detected(self, path_str: str):
         logging.info("FD 1")
@@ -1241,23 +1385,21 @@ class MainWindow(QWidget):
                 self.action_panel.suspend_preview_loading(folder)
                 self._set_ui_enabled_for_move(False)
 
-                def autoflat_worker():
-                    moved, success = flatten_single_folder(folder)
-                    if moved:
-                        self.state_manager.enqueue_files(moved)
+                def on_autoflat_finish(moved, success, error):
+                    if success:
+                        self.action_panel.clear()
+                        self.filepath = None
+                        self.state_manager.discard_active_file()
+                    else:
+                        self._set_ui_enabled_for_move(True)
+                        detail = f" ({error})" if error else ""
+                        self.show_status(
+                            f"Auto-flat falló para {folder.name}{detail}. "
+                            "Por favor, hágalo manualmente.",
+                            8000,
+                        )
 
-                    def on_autoflat_finish():
-                        if success:
-                            self.action_panel.clear()
-                            self.filepath = None
-                            self.state_manager.discard_active_file()
-                        else:
-                            self._set_ui_enabled_for_move(True)
-                            self.show_status(f"Auto-flat falló para {folder.name}. Por favor, hágalo manualmente.", 5000)
-
-                    QtCore.QTimer.singleShot(0, on_autoflat_finish)
-
-                run_in_threadpool(autoflat_worker)
+                self._start_flatten_operation(folder, on_autoflat_finish)
                 return
         else:
             self.selection_panel.setEnabled(True)
@@ -1435,15 +1577,91 @@ class MainWindow(QWidget):
 
     def _on_queue_file_double_clicked(self, path_str: str):
         p = Path(path_str)
-        if not p.exists():
+        if not p.is_file():
             return
-        if self.filepath and self.filepath.is_dir():
-            return
+        # A folder may be the active queue item. Double-clicking a file must
+        # still allow the user to switch the active queue entry to that file.
         self.state_manager.select_queued_file(p)
+
+    def _on_queue_file_rename_requested(self, path_str: str):
+        """Rename a queued file and let the watcher re-enqueue it at its former index."""
+        source = Path(path_str)
+        if not source.is_file():
+            self.show_status(self.loc.get("msg_queue_rename_missing"), 5000)
+            return
+
+        dialog = QueueRenameDialog(source, self.loc, self)
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        new_stem = dialog.new_stem
+        if not new_stem:
+            return
+
+        destination = source.with_name(f"{new_stem}{source.suffix}")
+        source_key = os.path.normcase(os.path.abspath(str(source))).casefold()
+        destination_key = os.path.normcase(os.path.abspath(str(destination))).casefold()
+        if source_key == destination_key:
+            return
+
+        if destination.exists():
+            self.show_status(
+                self.loc.get("msg_queue_rename_exists").format(name=destination.name),
+                6000,
+            )
+            return
+
+        try:
+            renamed = self.state_manager.rename_queued_file(source, destination)
+        except FileExistsError:
+            self.show_status(
+                self.loc.get("msg_queue_rename_exists").format(name=destination.name),
+                6000,
+            )
+            return
+        except Exception as exc:
+            logging.exception("Could not rename queued file %s", source)
+            self.show_status(
+                self.loc.get("msg_queue_rename_failed").format(error=exc),
+                7000,
+            )
+            return
+
+        if not renamed:
+            self.show_status(self.loc.get("msg_queue_rename_not_queued"), 6000)
+            return
+
+        # Ask the same stability watcher used by filesystem events to rediscover
+        # the renamed path. It also accepts explicit candidates in Downloads subfolders.
+        try:
+            downloads_root = Path(config.DOWNLOADS).resolve()
+            resolved_destination = destination.resolve()
+            is_inside_downloads = (
+                resolved_destination != downloads_root
+                and downloads_root in resolved_destination.parents
+            )
+        except OSError:
+            is_inside_downloads = False
+
+        watcher_candidate = getattr(self.state_manager, "recent_path_handler", None)
+        try:
+            if is_inside_downloads and callable(watcher_candidate):
+                watcher_candidate(destination)
+            else:
+                # Queue entries may originate outside Downloads; keep them queued
+                # even though the Downloads watcher does not monitor those paths.
+                self.state_manager.enqueue_file(destination)
+        except Exception:
+            logging.exception("Could not schedule renamed queue file for rediscovery: %s", destination)
+            self.state_manager.enqueue_file(destination)
+
+        self.show_status(self.loc.get("msg_queue_rename_scanning"), 6000)
 
     @QtCore.pyqtSlot(list, str)
     def _on_queue_updated(self, queue_list: list[Path], active_path_str: str):
         self.queue_panel.update_queue(queue_list, active_path_str)
+        if hasattr(self, "_pending_dialog"):
+            self._pending_dialog.set_pending_count(self.state_manager.pending_count())
         self._update_undo_button_tooltip()
 
     def _on_single_character_updated(self, c):
@@ -1508,6 +1726,8 @@ class MainWindow(QWidget):
             return
 
         tasks = []
+        skipped_sources = []
+        reserved_destinations = set()
         for source in sources:
             if not source.exists() or source.is_dir():
                 self.state_manager.fail_background_move(source)
@@ -1524,10 +1744,25 @@ class MainWindow(QWidget):
                 self.state_manager.fail_background_move(source)
                 continue
 
-            destination = resolve_duplicate(config.CONFLICTS / source.name)
+            destination = self._check_batch_destination_collision(config.CONFLICTS / source.name)
+            if destination is None:
+                skipped_sources.append(source)
+                continue
+            suffix_index = 1
+            base_destination = destination
+            while destination.exists() or destination in reserved_destinations:
+                destination = base_destination.with_name(
+                    f"{base_destination.stem}_{suffix_index}{base_destination.suffix}"
+                )
+                suffix_index += 1
+            reserved_destinations.add(destination)
             tasks.append((source, destination, source_meta))
 
         if not tasks:
+            self.filepath = None
+            self.action_panel.clear()
+            for source in reversed(skipped_sources):
+                self.state_manager.fail_background_move(source)
             self.show_status("No se pudieron preparar archivos para conservar.", 5000)
             return
 
@@ -1548,6 +1783,8 @@ class MainWindow(QWidget):
 
         self.filepath = None
         self.action_panel.clear()
+        for source in reversed(skipped_sources):
+            self.state_manager.fail_background_move(source)
         self.show_status(f"Conservando {len(tasks)} archivos de la cola.", 5000)
 
     def _save_all_queued_files_custom(self, post_action: str = "none"):
@@ -1563,6 +1800,8 @@ class MainWindow(QWidget):
             return
 
         tasks = []
+        skipped_sources = []
+        reserved_destinations = set()
         for source in sources:
             if not source.exists() or source.is_dir():
                 self.state_manager.fail_background_move(source)
@@ -1579,10 +1818,25 @@ class MainWindow(QWidget):
                 self.state_manager.fail_background_move(source)
                 continue
 
-            destination = resolve_duplicate(dest_dir / source.name)
+            destination = self._check_batch_destination_collision(dest_dir / source.name)
+            if destination is None:
+                skipped_sources.append(source)
+                continue
+            suffix_index = 1
+            base_destination = destination
+            while destination.exists() or destination in reserved_destinations:
+                destination = base_destination.with_name(
+                    f"{base_destination.stem}_{suffix_index}{base_destination.suffix}"
+                )
+                suffix_index += 1
+            reserved_destinations.add(destination)
             tasks.append((source, destination, source_meta))
 
         if not tasks:
+            self.filepath = None
+            self.action_panel.clear()
+            for source in reversed(skipped_sources):
+                self.state_manager.fail_background_move(source)
             self.show_status("No se pudieron preparar archivos para guardar.", 5000)
             return
 
@@ -1604,6 +1858,8 @@ class MainWindow(QWidget):
 
         self.filepath = None
         self.action_panel.clear()
+        for source in reversed(skipped_sources):
+            self.state_manager.fail_background_move(source)
         self.show_status(f"Guardando {len(tasks)} archivos en {dest_dir.name}.", 5000)
 
     def _copy_selected_queue_files_to_subfolder(self, target_folder_path: str):
@@ -1621,6 +1877,8 @@ class MainWindow(QWidget):
             selected_sources.insert(0, self.filepath)
 
         valid_sources = []
+        destination_map = {}
+        reserved_destinations = set()
         skipped_count = 0
         for source in dict.fromkeys(selected_sources):
             try:
@@ -1630,6 +1888,21 @@ class MainWindow(QWidget):
             except OSError:
                 skipped_count += 1
                 continue
+
+            destination = self._check_batch_destination_collision(target_folder / source.name)
+            if destination is None:
+                skipped_count += 1
+                continue
+
+            suffix_index = 1
+            base_destination = destination
+            while destination.exists() or destination in reserved_destinations:
+                destination = base_destination.with_name(
+                    f"{base_destination.stem}_{suffix_index}{base_destination.suffix}"
+                )
+                suffix_index += 1
+            reserved_destinations.add(destination)
+            destination_map[source] = destination
             valid_sources.append(source)
 
         if not valid_sources:
@@ -1639,7 +1912,9 @@ class MainWindow(QWidget):
         operation_id = self._queue_copy_operation_counter
         self._queue_copy_operation_counter += 1
 
-        worker = _QueueFileCopyWorker(operation_id, target_folder, valid_sources)
+        worker = _QueueFileCopyWorker(
+            operation_id, target_folder, valid_sources, destinations=destination_map
+        )
         worker.signals.finished.connect(self._on_queue_file_copy_finished)
         self._queue_copy_operations[operation_id] = {
             "worker": worker,
@@ -1709,6 +1984,44 @@ class MainWindow(QWidget):
             return
         self._start_move_task(decision, final_dest)
 
+    def _check_batch_destination_collision(self, candidate: Path) -> Optional[Path]:
+        """Ask before scheduling a batch item whose name already exists in its folder."""
+        candidate = Path(candidate)
+        if not candidate.exists():
+            return candidate
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Archivo duplicado en la carpeta")
+        box.setText(
+            f"Ya existe un archivo con el mismo nombre en esta carpeta:\n"
+            f"{candidate.parent}\n\n{candidate.name}"
+        )
+        box.setInformativeText(
+            "Puedes conservar ambos archivos con otro nombre, abrir el existente "
+            "u omitir este archivo."
+        )
+        btn_rename = box.addButton(
+            "Guardar con otro nombre", QMessageBox.ButtonRole.AcceptRole
+        )
+        btn_open = box.addButton(
+            "Abrir existente", QMessageBox.ButtonRole.ActionRole
+        )
+        box.addButton("Omitir archivo", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(btn_rename)
+        box.exec()
+
+        clicked = box.clickedButton()
+        if clicked == btn_rename:
+            return resolve_duplicate(candidate)
+        if clicked == btn_open:
+            try:
+                os.startfile(str(candidate))
+            except OSError as exc:
+                self.show_status(f"No se pudo abrir el archivo existente: {exc}", 5000)
+        return None
+
     def _move_selected_queue_files_to_subfolder(
         self, sub_name: str, selected_sources: list[Path], post_action: str = "none"
     ):
@@ -1758,11 +2071,22 @@ class MainWindow(QWidget):
                     return
                 continue
 
-            destination = candidate
+            destination = self._check_batch_destination_collision(candidate)
+            if destination is None:
+                if source == active_source:
+                    self.selection_panel.set_subfolders_enabled(True)
+                    self.show_status(
+                        "Movimiento cancelado: el archivo activo no se modificó.",
+                        5000,
+                    )
+                    return
+                logging.info("Skipping selected queue file after destination collision: %s", source)
+                continue
+
             suffix_index = 1
             while destination.exists() or destination in reserved_destinations:
-                destination = candidate.with_name(
-                    f"{candidate.stem}_{suffix_index}{candidate.suffix}"
+                destination = destination.with_name(
+                    f"{destination.stem}_{suffix_index}{destination.suffix}"
                 )
                 suffix_index += 1
             reserved_destinations.add(destination)
@@ -2081,23 +2405,17 @@ class MainWindow(QWidget):
         self.action_panel.suspend_preview_loading(folder)
         self._set_ui_enabled_for_move(False)
 
-        def flat_folder_worker():
-            moved, success = flatten_single_folder(folder)
-            if moved:
-                self.state_manager.enqueue_files(moved)
+        def on_flat_finish(moved, success, error):
+            if success:
+                self.action_panel.clear()
+                self.filepath = None
+                self.state_manager.discard_active_file()
+            else:
+                self._set_ui_enabled_for_move(True)
+                detail = f" ({error})" if error else ""
+                self.show_status(f"Flat folder falló para {folder.name}{detail}.", 8000)
 
-            def on_flat_finish():
-                if success:
-                    self.action_panel.clear()
-                    self.filepath = None
-                    self.state_manager.discard_active_file()
-                else:
-                    self._set_ui_enabled_for_move(True)
-                    self.show_status(f"Flat folder falló para {folder.name}.", 5000)
-
-            QtCore.QTimer.singleShot(0, on_flat_finish)
-
-        run_in_threadpool(flat_folder_worker)
+        self._start_flatten_operation(folder, on_flat_finish)
 
     def _on_hide_t_clicked(self):
         self._hide_t_active = True

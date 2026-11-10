@@ -8,15 +8,16 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider, QSizePolicy, QSpinBox
-from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
-from PyQt6.QtGui import QDrag, QPixmap
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileIconProvider
+from PyQt6.QtCore import Qt
+
 import config
 from localization import LocalizationManager
 from ui_utils_mgr import apply_secure_blur, load_stylesheet
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
 from drag_label_widget import DragLabel
 from rename_dialog import RenameDialog
+from action_toolbar import ActionToolBar
 
 class ActionPanel(QWidget):
     """
@@ -43,89 +44,52 @@ class ActionPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 0, 0, 0)
         
-        drag_row = QHBoxLayout()
-        drag_row.setSpacing(10)
-        drag_row.setContentsMargins(0, 15, 0, 5) 
-                
-        self.drag_icon = DragLabel()
-        self.drag_icon.setEnabled(False)
+        self.action_toolbar = ActionToolBar()
         
-        drag_row.addStretch()
-        drag_row.addWidget(self.drag_icon)
-        drag_row.addStretch()
-
-        # Añadimos el drag_row al inicio del layout principal
-        layout.addLayout(drag_row)
+        self.action_toolbar.open_clicked.connect(self._open_file)
+        self.action_toolbar.delete_clicked.connect(self._show_delete_menu)
+        self.action_toolbar.flat_folder_clicked.connect(self.flat_folder_clicked.emit)
+        self.action_toolbar.edit_metadata_clicked.connect(self._open_metadata_editor)
         
-        # Preview Section
+        top_action_panel_row = QHBoxLayout()
+        top_action_panel_row.setSpacing(10)
+        top_action_panel_row.setContentsMargins(5, 15, 5, 5) 
+        top_action_panel_row.addWidget(self.action_toolbar)
+        top_action_panel_row.addStretch()
+        
+        layout.addLayout(top_action_panel_row)
+        
         self.preview_label = QLabel()
-        self.preview_label.setFixedSize(320, 180)
+        self.preview_label.setFixedSize(324, 180)
         self.preview_label.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.preview_label.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        self.preview_label.setBackgroundRole(QtGui.QPalette.ColorRole.Base)
         self.preview_label.setScaledContents(False)
         self.preview_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.preview_label.mousePressEvent = self._toggle_preview
         layout.addWidget(self.preview_label, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
 
-        # Contextual plugin actions use their own two-column grid. Keeping
-        # them separate from Open/Delete prevents three or more buttons from
-        # competing for the narrow width of the action panel.
-        self.dynamic_btn_layout = QtWidgets.QGridLayout()
-        self.dynamic_btn_layout.setContentsMargins(0, 0, 0, 0)
-        self.dynamic_btn_layout.setHorizontalSpacing(8)
-        self.dynamic_btn_layout.setVerticalSpacing(6)
-        self.dynamic_btn_layout.setColumnStretch(0, 1)
-        self.dynamic_btn_layout.setColumnStretch(1, 1)
-        layout.addLayout(self.dynamic_btn_layout)
-
-        self.open_row = QtWidgets.QGridLayout()
-        self.open_row.setContentsMargins(0, 0, 0, 0)
-        self.open_row.setHorizontalSpacing(8)
-        self.open_row.setVerticalSpacing(6)
-        self.open_row.setColumnStretch(0, 1)
-        self.open_row.setColumnStretch(1, 1)
-
-        self.btn_open = QPushButton(self.loc.get("btn_open"))
-        self.btn_open.clicked.connect(self._open_file)
-        self.btn_open.setFixedHeight(30)
-        self.btn_open.setFixedWidth(110)
-        self.open_row.addWidget(self.btn_open, 0, 0)
-        
-        self.btn_delete = QPushButton(self.loc.get("btn_header_delete"))
-        self.btn_delete.clicked.connect(self._show_delete_menu)
-        self.btn_delete.setFixedHeight(30)
-        self.btn_delete.setFixedWidth(110)
-        self.btn_delete.setHidden(False)
-        self.open_row.addWidget(self.btn_delete, 0, 1)
-        
-        self.btn_flat_folder = QPushButton("Flat Folder")
-        self.btn_flat_folder.setFixedHeight(30)
-        self.btn_flat_folder.setFixedWidth(110)
-        self.btn_flat_folder.setHidden(True)
-        self.btn_flat_folder.clicked.connect(self.flat_folder_clicked.emit)
-        self.open_row.addWidget(self.btn_flat_folder, 1, 0)
-        
-        self.btn_edit_metadata = QPushButton("Edit metadata")
-        self.btn_edit_metadata.clicked.connect(self._open_metadata_editor)
-        self.btn_edit_metadata.setFixedHeight(30)
-        self.btn_edit_metadata.setFixedWidth(110)
-        self.btn_edit_metadata.setHidden(True)
-        self.open_row.addWidget(self.btn_edit_metadata, 1, 1)
-
-        layout.addLayout(self.open_row)
-
-        # Rename Section
-        self.lbl_name = QLabel(self.loc.get("lbl_new_name"))
-        layout.addWidget(self.lbl_name)
-        self.rename_input = QLineEdit()
-        layout.addWidget(self.rename_input)
-        
-        self.lbl_file_info = QLabel("")
+        self.lbl_file_info = QLabel("Waiting for files...")
         self.lbl_file_info.setWordWrap(True)
+        self.lbl_file_info.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft)
         self.lbl_file_info.setStyleSheet(load_stylesheet("action_panel_file_info.css"))
         self.lbl_file_info.setMinimumHeight(80)
-        layout.addWidget(self.lbl_file_info)
+        self.lbl_file_info.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.lbl_file_info.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        self.lbl_file_info.setBackgroundRole(QtGui.QPalette.ColorRole.Base)
+        self.lbl_file_info.setAutoFillBackground(True)
         
-        layout.addStretch()        
+        self.lbl_file_info.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred, 
+            QtWidgets.QSizePolicy.Policy.Expanding
+        )
+        
+        info_container = QWidget()
+        info_layout = QVBoxLayout(info_container)
+        info_layout.setContentsMargins(5, 0, 5, 10)  # (Izquierda, Arriba, Derecha, Abajo)
+        info_layout.addWidget(self.lbl_file_info)
+        
+        layout.addWidget(info_container)
 
         # Buttons
         footer = QVBoxLayout()
@@ -133,38 +97,31 @@ class ActionPanel(QWidget):
         layout.addLayout(footer)
 
     def retranslate_ui(self):
-        self.btn_edit_metadata.setText("Edit metadata")
-        self.btn_open.setText(self.loc.get("btn_open"))
-        self.btn_delete.setText(self.loc.get("btn_header_delete"))
-        self.lbl_name.setText(self.loc.get("lbl_new_name"))
-        self.btn_flat_folder.setText("Flat Folder")
+        self.action_toolbar.retranslate_ui()
 
     def set_file(self, p: Path, hide_secure: bool):
         self._preview_generation += 1
         self._preview_loading_suspended = False
         self.filepath = p
         self._hide_secure = hide_secure
-        self.rename_input.setText(p.stem)
-
+    
         if p.is_dir():
             self._update_folder_info_label()
             self.load_preview()
-            self.drag_icon.set_file(p)
-            self.rename_input.setEnabled(False)
-            self.btn_open.setEnabled(True)
-            self.btn_flat_folder.setVisible(True)
-            self.btn_delete.setEnabled(False)
+            self.action_toolbar.set_file(p)
+            self.action_toolbar.action_open.setEnabled(True)
+            self.action_toolbar.action_flat_folder.setVisible(True)
+            self.action_toolbar.action_delete.setEnabled(False)
             self._update_metadata_button_visibility()
             self._update_dynamic_plugin_buttons()
             return
 
-        self.btn_flat_folder.setVisible(False)
-        self.rename_input.setEnabled(True)
-        self.btn_open.setEnabled(True)
-        self.btn_delete.setEnabled(True)
+        self.action_toolbar.action_flat_folder.setVisible(False)
+        self.action_toolbar.action_open.setEnabled(True)
+        self.action_toolbar.action_delete.setEnabled(True)
         self._update_file_info_label()        
         self.load_preview()
-        self.drag_icon.set_file(p)
+        self.action_toolbar.set_file(p)
         self._update_metadata_button_visibility()
         self._update_dynamic_plugin_buttons()
 
@@ -379,8 +336,8 @@ class ActionPanel(QWidget):
 
     def _update_metadata_button_visibility(self):
         visible = self._is_metadata_editable()
-        self.btn_edit_metadata.setVisible(visible)
-        self.btn_edit_metadata.setEnabled(visible)
+        self.action_toolbar.action_edit_metadata.setVisible(visible)
+        self.action_toolbar.action_edit_metadata.setEnabled(visible)
 
     def _open_metadata_editor(self):
         if not self._is_metadata_editable():
@@ -403,30 +360,25 @@ class ActionPanel(QWidget):
 
 
     def get_new_name(self):
-        return self.rename_input.text().strip()
+        pass
 
     def clear(self):
         self._preview_generation += 1
         self._preview_loading_suspended = True
         self.filepath = None
         self.preview_label.clear()
-        self.rename_input.setText("")
-        self.rename_input.setEnabled(True)
         self.lbl_file_info.setText(self.loc.get("msg_no_file"))
-        self.drag_icon.set_file(None)
-        self.btn_flat_folder.setVisible(False)
-        self.btn_delete.setEnabled(False)
+        self.action_toolbar.set_file(None)
+        self.action_toolbar.action_flat_folder.setVisible(False)
+        self.action_toolbar.action_delete.setEnabled(False)
         self._update_metadata_button_visibility()
         self._update_dynamic_plugin_buttons()
 
     def _update_dynamic_plugin_buttons(self):
+        """Inject matching plugin actions directly into ActionToolBar."""
         import sys
-        # Clear previous dynamic buttons
-        while self.dynamic_btn_layout.count():
-            item = self.dynamic_btn_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
 
+        self.action_toolbar.clear_dynamic_actions()
         if not self.filepath:
             return
 
@@ -438,8 +390,6 @@ class ActionPanel(QWidget):
         ext = self.filepath.suffix.lower()
         is_directory = self.filepath.is_dir()
 
-        visible_buttons = []
-
         for btn_def in buttons_def:
             btn_target = btn_def.get("target", "file")
             if btn_target == "subfolder":
@@ -449,64 +399,39 @@ class ActionPanel(QWidget):
             if not is_directory and btn_target == "directory":
                 continue
 
-            exts = btn_def.get("file_extensions")
-            if exts and ext not in [e.lower() for e in exts]:
+            extensions = btn_def.get("file_extensions")
+            if extensions and ext not in [value.lower() for value in extensions]:
                 continue
 
-            btn = QPushButton(btn_def.get("label", "Action"))
-            btn.setFixedHeight(30)
-            btn.setFixedWidth(110)
+            plugin_id = btn_def.get("plugin_id")
+            if not plugin_id:
+                logging.warning("Skipping plugin UI action without plugin_id: %s", btn_def)
+                continue
 
-            plugin_id = btn_def["plugin_id"]
-            menu_items = btn_def.get("menu_items")
+            menu_items = btn_def.get("menu_items") or []
             command = btn_def.get("command")
+            action = self.action_toolbar.add_dynamic_action(
+                btn_def.get("label", "Action")
+            )
+            action.setEnabled(bool(menu_items or command))
+            action.setToolTip(btn_def.get("tooltip", btn_def.get("label", "Action")))
 
             if menu_items:
-                btn.clicked.connect(lambda checked, b=btn, pid=plugin_id, items=menu_items: self._show_dynamic_button_menu(b, pid, items))
-            elif command:
-                btn.clicked.connect(
-                    lambda checked, pid=plugin_id, cmd=command: self._invoke_plugin_command(
-                        plugin_mgr, pid, cmd
+                menu = QtWidgets.QMenu(self.action_toolbar)
+                for item in menu_items:
+                    menu_action = menu.addAction(item.get("label", "Item"))
+                    menu_command = item.get("command", "")
+                    menu_action.setEnabled(bool(menu_command))
+                    menu_action.triggered.connect(
+                        lambda checked=False, pid=plugin_id, cmd=menu_command, mgr=plugin_mgr:
+                            self._invoke_plugin_command(mgr, pid, cmd)
                     )
+                self.action_toolbar.set_dynamic_action_menu(action, menu)
+            elif command:
+                action.triggered.connect(
+                    lambda checked=False, pid=plugin_id, cmd=command, mgr=plugin_mgr:
+                        self._invoke_plugin_command(mgr, pid, cmd)
                 )
-
-            visible_buttons.append(btn)
-
-        # Use at most two buttons per row. A final unpaired button spans the
-        # whole row so it remains centered instead of leaving an empty column.
-        for index, btn in enumerate(visible_buttons):
-            row, column = divmod(index, 2)
-            is_unpaired_last = (
-                len(visible_buttons) % 2 == 1
-                and index == len(visible_buttons) - 1
-            )
-            if is_unpaired_last:
-                self.dynamic_btn_layout.addWidget(
-                    btn, row, 0, 1, 2, Qt.AlignmentFlag.AlignCenter
-                )
-            else:
-                self.dynamic_btn_layout.addWidget(
-                    btn, row, column, Qt.AlignmentFlag.AlignCenter
-                )
-
-    def _show_dynamic_button_menu(self, button, plugin_id: str, items: list):
-        import sys
-        plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
-        if not plugin_mgr:
-            return
-
-        menu = QtWidgets.QMenu(self)
-        for item in items:
-            act = QtGui.QAction(item.get("label", "Item"), self)
-            cmd = item.get("command", "")
-            act.triggered.connect(
-                lambda checked, pid=plugin_id, c=cmd: self._invoke_plugin_command(
-                    plugin_mgr, pid, c
-                )
-            )
-            menu.addAction(act)
-
-        menu.exec(button.mapToGlobal(QtCore.QPoint(0, button.height())))
 
     def _invoke_plugin_command(self, plugin_mgr, plugin_id: str, command: str):
         """Invoke a contextual plugin action with the selected queue file.
@@ -537,5 +462,9 @@ class ActionPanel(QWidget):
         act_no = QtGui.QAction("No", self)
         menu.addAction(act_no)
 
-        menu.exec(self.btn_delete.mapToGlobal(QtCore.QPoint(0, self.btn_delete.height())))
+        widget = self.action_toolbar.widgetForAction(self.action_toolbar.action_delete)
+        if widget:
+            menu.exec(widget.mapToGlobal(QtCore.QPoint(0, widget.height())))
+        else:
+            menu.exec(QtGui.QCursor.pos())
 

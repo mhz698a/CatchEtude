@@ -71,7 +71,6 @@ class TestAutoflatAndUI(unittest.TestCase):
         panel = ActionPanel()
         self.assertTrue(hasattr(panel, "btn_open"))
         self.assertTrue(hasattr(panel, "btn_delete"))
-        self.assertTrue(hasattr(panel, "rename_input"))
         self.assertTrue(hasattr(panel, "btn_flat_folder"))
 
     def test_queue_panel_progress_bar(self):

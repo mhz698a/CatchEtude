@@ -1,4 +1,4 @@
-import sys, time, logging, threading, queue
+import os, sys, time, logging, threading, queue
 from enum import Enum, auto
 from typing import Optional
 from pathlib import Path
@@ -67,6 +67,8 @@ class StateManager:
 
         self._pending: set[Path] = set()
         self._queue_list: list[Path] = []
+        # Destination path -> (old path, original queue index), consumed on rediscovery.
+        self._queued_rename_positions: dict[str, tuple[Path, int]] = {}
         self._background_moves: set[Path] = set()
         self._is_scanning = False
         # Optional callback installed by the Downloads watcher for unstable entries.
@@ -87,6 +89,11 @@ class StateManager:
         """Returns True if there are files in the queue or being processed."""
         with self._lock:
             return bool(self._pending or self._background_moves or self._active_file is not None or not self._q.empty())
+
+    def pending_count(self) -> int:
+        """Return the number of tracked files still waiting for completion."""
+        with self._lock:
+            return len(self._pending)
 
     @safe_thread_logger("StateManagerMaintenance")
     def _safe_maintenance_and_flatten(self):
@@ -123,6 +130,119 @@ class StateManager:
             active_str = str(self._active_file) if self._active_file else ""
             self.notifier.queue_updated.emit(list(self._queue_list), active_str)
 
+    @staticmethod
+    def _queue_rename_key(path: Path) -> str:
+        """Return a Windows-case-insensitive key for a queued rename destination."""
+        return os.path.normcase(os.path.abspath(str(path))).casefold()
+
+    def rename_queued_file(self, source: Path, destination: Path) -> bool:
+        """Rename a queued file while preserving its current queue index for rediscovery."""
+        source = Path(source)
+        destination = Path(destination)
+
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        if source.parent != destination.parent:
+            raise ValueError("Queued files can only be renamed in their current folder.")
+
+        with self._lock:
+            if source == self._active_file:
+                original_index = (
+                    self._queue_list.index(source) if source in self._queue_list else 0
+                )
+            else:
+                if source not in self._queue_list:
+                    return False
+                # Prevent a race with QueueProcessorThread after it has popped the item
+                # but before it has assigned _active_file.
+                with self._q.mutex:
+                    if source not in self._q.queue:
+                        return False
+                original_index = self._queue_list.index(source)
+
+            same_windows_path = (
+                self._queue_rename_key(source) == self._queue_rename_key(destination)
+            )
+            if destination.exists() and not same_windows_path:
+                raise FileExistsError(destination)
+            if same_windows_path and source.name == destination.name:
+                return False
+
+            # File.rename is a same-directory metadata operation. Keep the queue lock
+            # while it runs so the processor cannot take the old path mid-rename.
+            source.rename(destination)
+            self._queued_rename_positions[
+                self._queue_rename_key(destination)
+            ] = (source, original_index)
+
+            logging.info(
+                "Renamed queued file; awaiting scanner reinsertion at index %s: %s -> %s",
+                original_index,
+                source,
+                destination,
+            )
+            return True
+
+    def _enqueue_path_locked(self, path: Path) -> tuple[bool, bool]:
+        """Insert a scanner result, restoring a renamed file's original queue index."""
+        path = Path(path)
+        if not path.exists() or path in self._background_moves:
+            return False, False
+
+        rename_info = self._queued_rename_positions.pop(
+            self._queue_rename_key(path), None
+        )
+        if rename_info is None:
+            if path in self._pending:
+                return False, False
+            self._pending.add(path)
+            self._queue_list.append(path)
+            self._q.put(path)
+            return True, False
+
+        previous_path, original_index = rename_info
+        was_active = self._active_file == previous_path
+
+        if previous_path in self._queue_list:
+            self._queue_list.remove(previous_path)
+        if path in self._queue_list:
+            self._queue_list.remove(path)
+        self._pending.discard(previous_path)
+        self._pending.add(path)
+
+        insert_index = min(max(original_index, 0), len(self._queue_list))
+        self._queue_list.insert(insert_index, path)
+
+        with self._q.not_full:
+            old_was_queued = previous_path in self._q.queue
+            new_was_queued = path in self._q.queue
+            if old_was_queued:
+                self._q.queue.remove(previous_path)
+            if new_was_queued:
+                self._q.queue.remove(path)
+
+            if was_active:
+                # The file being displayed was renamed. Make the rediscovered path
+                # active again so MainWindow refreshes its file panel.
+                self._active_file = path
+            else:
+                active_offset = (
+                    1
+                    if self._active_file is not None
+                    and self._active_file in self._queue_list
+                    else 0
+                )
+                queue_index = min(
+                    max(insert_index - active_offset, 0),
+                    len(self._q.queue),
+                )
+                self._q.queue.insert(queue_index, path)
+                if not old_was_queued and not new_was_queued:
+                    self._q.unfinished_tasks += 1
+                self._q.not_empty.notify()
+
+        return True, was_active
+
     def _purge_missing_queue_entries(self) -> int:
         removed = 0
 
@@ -157,42 +277,45 @@ class StateManager:
 
 
     def enqueue_file(self, p: Path):
-        # ✅ deduplicación
         if not p.exists():
-            logging.debug(f"Skipping missing file before enqueue: {p}")
+            logging.debug("Skipping missing file before enqueue: %s", p)
             return
 
         with self._lock:
-            if p in self._pending or p in self._background_moves:
-                logging.debug(f"Already pending: {p}")
-                return
+            added, replaced_active = self._enqueue_path_locked(Path(p))
+            if added:
+                self._emit_queue_update()
 
-            logging.info(f"Enqueueing file: {p}")
-            self._pending.add(p)
-            self._queue_list.append(p)
-            self._q.put(p)
-            self._emit_queue_update()
+        if replaced_active:
+            self._set_state(State.FILE_DETECTED)
+            if self.notifier:
+                self.notifier.file_detected.emit(str(p))
 
     def enqueue_files(self, paths: list[Path]):
         if not paths:
             return
-        with self._lock:
-            added = False
-            for p in paths:
-                if not p.exists():
-                    logging.debug(f"Skipping missing file before enqueue: {p}")
-                    continue
-                if p in self._pending or p in self._background_moves:
-                    logging.debug(f"Already pending: {p}")
-                    continue
 
-                logging.info(f"Enqueueing file: {p}")
-                self._pending.add(p)
-                self._queue_list.append(p)
-                self._q.put(p)
-                added = True
-            if added:
+        replaced_active_path = None
+        changed = False
+        with self._lock:
+            for path in paths:
+                if not Path(path).exists():
+                    logging.debug("Skipping missing file before enqueue: %s", path)
+                    continue
+                added, replaced_active = self._enqueue_path_locked(Path(path))
+                changed = changed or added
+                if replaced_active:
+                    replaced_active_path = Path(path)
+
+            # A scan can discover many files. Emit one UI refresh for the complete
+            # batch instead of rebuilding the queue view once per file.
+            if changed:
                 self._emit_queue_update()
+
+        if replaced_active_path is not None:
+            self._set_state(State.FILE_DETECTED)
+            if self.notifier:
+                self.notifier.file_detected.emit(str(replaced_active_path))
 
     @safe_thread_logger("StateManagerQueueProcessor")
     def _process_queue(self):
