@@ -40,6 +40,7 @@ ERROR_NO_MORE_FILES = 18
 ERROR_HANDLE_EOF = 38
 ERROR_INVALID_FUNCTION = 1
 ERROR_INVALID_PARAMETER = 87
+DRIVE_REMOTE = 4
 MAX_SIGNED_USN = 0x7FFFFFFFFFFFFFFF
 
 
@@ -117,6 +118,8 @@ class WindowsVolumeApi:
             ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32
         ]
         k32.GetVolumePathNameW.restype = ctypes.c_int
+        k32.GetDriveTypeW.argtypes = [ctypes.c_wchar_p]
+        k32.GetDriveTypeW.restype = ctypes.c_uint32
         k32.GetVolumeInformationW.argtypes = [
             ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32,
             ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_uint32),
@@ -198,6 +201,16 @@ class WindowsVolumeApi:
             filesystem_buffer, len(filesystem_buffer),
         ):
             self._raise_last_error(f"No se pudo consultar el sistema de archivos de {volume_root}")
+
+        # FSCTL_ENUM_USN_DATA is not supported by SMB shares. A mapped network
+        # drive can still have a drive letter, so reject both UNC roots and
+        # DRIVE_REMOTE before constructing a local \\\\.\\X: device path.
+        if volume_root.startswith("\\\\") or (
+            self.kernel32.GetDriveTypeW(volume_root) == DRIVE_REMOTE
+        ):
+            raise UnsupportedVolumeError(
+                "El escaneo MFT no está disponible en unidades de red o recursos SMB."
+            )
 
         # FSCTL_ENUM_USN_DATA expects a volume handle. A mounted folder that is
         # not the drive root is rejected rather than opening the wrong volume.
