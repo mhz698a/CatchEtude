@@ -59,10 +59,11 @@ class ActionPanel(QWidget):
         
         layout.addLayout(top_action_panel_row)
         
-        # Preview Section
         self.preview_label = QLabel()
         self.preview_label.setFixedSize(324, 180)
         self.preview_label.setFrameShape(QtWidgets.QFrame.Shape.Box)
+        self.preview_label.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        self.preview_label.setBackgroundRole(QtGui.QPalette.ColorRole.Base)
         self.preview_label.setScaledContents(False)
         self.preview_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.preview_label.mousePressEvent = self._toggle_preview
@@ -73,7 +74,7 @@ class ActionPanel(QWidget):
         self.lbl_file_info.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft)
         self.lbl_file_info.setStyleSheet(load_stylesheet("action_panel_file_info.css"))
         self.lbl_file_info.setMinimumHeight(80)
-        self.lbl_file_info.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        self.lbl_file_info.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.lbl_file_info.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
         self.lbl_file_info.setBackgroundRole(QtGui.QPalette.ColorRole.Base)
         self.lbl_file_info.setAutoFillBackground(True)

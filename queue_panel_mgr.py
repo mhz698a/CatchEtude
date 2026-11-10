@@ -83,10 +83,11 @@ class QueuePanel(QWidget):
         self.queue_movings_widget.setMaximumHeight(200)
         layout.addWidget(self.queue_movings_widget)
 
-        # Global Progress Bar
+        # Global Progress Bar (Deprecated and Unused)
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
+        self.progress.setVisible(False)
         layout.addWidget(self.progress)
 
         # Character Model
