@@ -88,10 +88,12 @@ class MainWindow(QWidget):
         
         self.setWindowTitle(config.APP_NAME)
         
-        flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint
+        flags = QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.CustomizeWindowHint | QtCore.Qt.WindowType.WindowCloseButtonHint
         flags |= QtCore.Qt.WindowType.Tool
         self.setWindowFlags(flags)
         self.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint, True)
+        
+        self._real_close = False
         
         self.base_width = 860
         self.base_height = 580
@@ -156,11 +158,15 @@ class MainWindow(QWidget):
         # Header Row
         header_layout = QHBoxLayout()
         
-        self.btn_reload = QPushButton(self.loc.get("btn_reload"))
-        self.btn_reload.setFixedHeight(25)
-        self.btn_reload.setToolTip(self.loc.get("tooltip_reload"))
-        self.btn_reload.clicked.connect(self._on_reload_clicked)
-
+        self.btn_lang = QPushButton(self.loc.get("lang_toggle"))
+        self.btn_lang.setFixedWidth(40)
+        self.btn_lang.setFixedHeight(25)
+        self.btn_lang.clicked.connect(self._on_lang_toggle)
+        
+        self.btn_undo = QPushButton(self.loc.get("btn_history"))
+        self.btn_undo.setFixedHeight(25)
+        self.btn_undo.clicked.connect(self._on_undo_clicked)
+        
         self.hide_secure_cb = QCheckBox(self.loc.get("btn_secure"))
         self.hide_secure_cb.setFixedHeight(25)
         self.hide_secure_cb.setChecked(self._hide_secure)
@@ -182,29 +188,15 @@ class MainWindow(QWidget):
         self.time_auto_run_pendings.setFixedHeight(25)
         self.time_auto_run_pendings.setFixedWidth(80)
         self.time_auto_run_pendings.timeChanged.connect(self._on_pending_schedule_changed)
-
-        self.btn_hide = QPushButton(self.loc.get("btn_hide"))
-        self.btn_hide.setFixedHeight(25)
-        self.btn_hide.clicked.connect(self._manual_hide)
-
-        self.btn_undo = QPushButton(self.loc.get("btn_history"))
-        self.btn_undo.setFixedHeight(25)
-        self.btn_undo.clicked.connect(self._on_undo_clicked)
         
-        self.btn_lang = QPushButton(self.loc.get("lang_toggle"))
-        self.btn_lang.setFixedWidth(40)
-        self.btn_lang.setFixedHeight(25)
-        self.btn_lang.clicked.connect(self._on_lang_toggle)
-        
-        header_layout.addWidget(self.btn_reload)
+        header_layout.addWidget(self.btn_lang)
+        header_layout.addWidget(self.btn_undo)
         header_layout.addStretch()
         header_layout.addWidget(self.hide_secure_cb)
         header_layout.addWidget(self.blur_spinbox)
         header_layout.addWidget(self.chk_auto_run_pendings)
         header_layout.addWidget(self.time_auto_run_pendings)
-        header_layout.addWidget(self.btn_hide)
-        header_layout.addWidget(self.btn_undo)
-        header_layout.addWidget(self.btn_lang)
+        
         main_vbox.addLayout(header_layout)
 
         # CENTRO
@@ -236,6 +228,7 @@ class MainWindow(QWidget):
         self.action_panel = ActionPanel()
         self.action_panel.delete_clicked.connect(self._on_delete_clicked)
         self.action_panel.flat_folder_clicked.connect(self._on_flat_folder_clicked)
+        self.action_panel.action_toolbar.reload_clicked.connect(self._on_reload_clicked)
         root.addWidget(self.action_panel)
 
         # Queue / Character Panel
@@ -658,11 +651,8 @@ class MainWindow(QWidget):
             logging.exception("Failed to capture UI render")
 
     def retranslate_ui(self):
-        self.btn_reload.setText(self.loc.get("btn_reload"))
-        self.btn_reload.setToolTip(self.loc.get("tooltip_reload"))
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
         self.chk_auto_run_pendings.setText("Autoexecure Pendings")
-        self.btn_hide.setText(self.loc.get("btn_hide"))
         self.btn_undo.setText(self.loc.get("btn_history"))
         self.btn_lang.setText(self.loc.get("lang_toggle"))
         self.selection_panel.retranslate_ui()
@@ -854,9 +844,15 @@ class MainWindow(QWidget):
             QtWidgets.QMessageBox.StandardButton.No
         )
         if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            self._real_close = True
             QApplication.quit()
 
     def closeEvent(self, event):
+        if not self._real_close:
+            event.ignore()
+            self._manual_hide()
+            return
+
         if self._flatten_operation is not None or not self.background_move_mgr.is_idle():
             logging.warning("Close event blocked: active background file moves are in progress.")
             QtWidgets.QMessageBox.warning(
@@ -864,6 +860,7 @@ class MainWindow(QWidget):
                 self.loc.get("msg_cannot_close_moving_title") or "Operación en progreso",
                 self.loc.get("msg_cannot_close_moving") or "No se puede cerrar la aplicación mientras se realiza un movimiento de archivos. Por favor, espere a que termine."
             )
+            self._real_close = False
             event.ignore()
         else:
             self._closing = True
@@ -1331,19 +1328,19 @@ class MainWindow(QWidget):
 
     def _set_ui_enabled_for_move(self, enabled: bool):
         if self.filepath and self.filepath.is_dir():
-            self.action_panel.btn_delete.setEnabled(False)
+            self.action_panel.action_toolbar.action_delete.setEnabled(False)
             self.action_panel.rename_input.setEnabled(False)
             self.selection_panel.setEnabled(False)
             return
 
         self.selection_panel.setEnabled(True)
-        self.action_panel.btn_delete.setEnabled(enabled and bool(self.filepath))
+        self.action_panel.action_toolbar.action_delete.setEnabled(enabled and bool(self.filepath))
         if not enabled:
             self.btn_undo.setEnabled(False)
         else:
             self._update_undo_button_tooltip()
         self.selection_panel.set_subfolders_enabled(enabled)
-
+    
     @QtCore.pyqtSlot(str)
     def on_file_detected(self, path_str: str):
         logging.info("FD 1")

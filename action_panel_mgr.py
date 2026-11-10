@@ -8,15 +8,16 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox, QComboBox, QFileIconProvider, QSizePolicy, QSpinBox
-from PyQt6.QtCore import Qt, QMimeData, QMimeDatabase
-from PyQt6.QtGui import QDrag, QPixmap
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileIconProvider
+from PyQt6.QtCore import Qt
+
 import config
 from localization import LocalizationManager
 from ui_utils_mgr import apply_secure_blur, load_stylesheet
 from shell_video_thumbnail_pyqt6 import get_shell_thumbnail_pixmap, should_use_shell_thumbnail
 from drag_label_widget import DragLabel
 from rename_dialog import RenameDialog
+from action_toolbar import ActionToolBar
 
 class ActionPanel(QWidget):
     """
@@ -43,23 +44,24 @@ class ActionPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 0, 0, 0)
         
-        drag_row = QHBoxLayout()
-        drag_row.setSpacing(10)
-        drag_row.setContentsMargins(0, 15, 0, 5) 
-                
-        self.drag_icon = DragLabel()
-        self.drag_icon.setEnabled(False)
+        self.action_toolbar = ActionToolBar()
         
-        drag_row.addStretch()
-        drag_row.addWidget(self.drag_icon)
-        drag_row.addStretch()
-
-        # Añadimos el drag_row al inicio del layout principal
-        layout.addLayout(drag_row)
+        self.action_toolbar.open_clicked.connect(self._open_file)
+        self.action_toolbar.delete_clicked.connect(self._show_delete_menu)
+        self.action_toolbar.flat_folder_clicked.connect(self.flat_folder_clicked.emit)
+        self.action_toolbar.edit_metadata_clicked.connect(self._open_metadata_editor)
+        
+        top_action_panel_row = QHBoxLayout()
+        top_action_panel_row.setSpacing(10)
+        top_action_panel_row.setContentsMargins(5, 15, 5, 5) 
+        top_action_panel_row.addWidget(self.action_toolbar)
+        top_action_panel_row.addStretch()
+        
+        layout.addLayout(top_action_panel_row)
         
         # Preview Section
         self.preview_label = QLabel()
-        self.preview_label.setFixedSize(320, 180)
+        self.preview_label.setFixedSize(324, 180)
         self.preview_label.setFrameShape(QtWidgets.QFrame.Shape.Box)
         self.preview_label.setScaledContents(False)
         self.preview_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -77,55 +79,27 @@ class ActionPanel(QWidget):
         self.dynamic_btn_layout.setColumnStretch(1, 1)
         layout.addLayout(self.dynamic_btn_layout)
 
-        self.open_row = QtWidgets.QGridLayout()
-        self.open_row.setContentsMargins(0, 0, 0, 0)
-        self.open_row.setHorizontalSpacing(8)
-        self.open_row.setVerticalSpacing(6)
-        self.open_row.setColumnStretch(0, 1)
-        self.open_row.setColumnStretch(1, 1)
-
-        self.btn_open = QPushButton(self.loc.get("btn_open"))
-        self.btn_open.clicked.connect(self._open_file)
-        self.btn_open.setFixedHeight(30)
-        self.btn_open.setFixedWidth(110)
-        self.open_row.addWidget(self.btn_open, 0, 0)
-        
-        self.btn_delete = QPushButton(self.loc.get("btn_header_delete"))
-        self.btn_delete.clicked.connect(self._show_delete_menu)
-        self.btn_delete.setFixedHeight(30)
-        self.btn_delete.setFixedWidth(110)
-        self.btn_delete.setHidden(False)
-        self.open_row.addWidget(self.btn_delete, 0, 1)
-        
-        self.btn_flat_folder = QPushButton("Flat Folder")
-        self.btn_flat_folder.setFixedHeight(30)
-        self.btn_flat_folder.setFixedWidth(110)
-        self.btn_flat_folder.setHidden(True)
-        self.btn_flat_folder.clicked.connect(self.flat_folder_clicked.emit)
-        self.open_row.addWidget(self.btn_flat_folder, 1, 0)
-        
-        self.btn_edit_metadata = QPushButton("Edit metadata")
-        self.btn_edit_metadata.clicked.connect(self._open_metadata_editor)
-        self.btn_edit_metadata.setFixedHeight(30)
-        self.btn_edit_metadata.setFixedWidth(110)
-        self.btn_edit_metadata.setHidden(True)
-        self.open_row.addWidget(self.btn_edit_metadata, 1, 1)
-
-        layout.addLayout(self.open_row)
-
-        # Rename Section
-        self.lbl_name = QLabel(self.loc.get("lbl_new_name"))
-        layout.addWidget(self.lbl_name)
-        self.rename_input = QLineEdit()
-        layout.addWidget(self.rename_input)
-        
-        self.lbl_file_info = QLabel("")
+        self.lbl_file_info = QLabel("Waiting for files...")
         self.lbl_file_info.setWordWrap(True)
+        self.lbl_file_info.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft)
         self.lbl_file_info.setStyleSheet(load_stylesheet("action_panel_file_info.css"))
         self.lbl_file_info.setMinimumHeight(80)
-        layout.addWidget(self.lbl_file_info)
+        self.lbl_file_info.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        self.lbl_file_info.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
+        self.lbl_file_info.setBackgroundRole(QtGui.QPalette.ColorRole.Base)
+        self.lbl_file_info.setAutoFillBackground(True)
         
-        layout.addStretch()        
+        self.lbl_file_info.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Preferred, 
+            QtWidgets.QSizePolicy.Policy.Expanding
+        )
+        
+        info_container = QWidget()
+        info_layout = QVBoxLayout(info_container)
+        info_layout.setContentsMargins(5, 0, 5, 10)  # (Izquierda, Arriba, Derecha, Abajo)
+        info_layout.addWidget(self.lbl_file_info)
+        
+        layout.addWidget(info_container)
 
         # Buttons
         footer = QVBoxLayout()
@@ -133,38 +107,31 @@ class ActionPanel(QWidget):
         layout.addLayout(footer)
 
     def retranslate_ui(self):
-        self.btn_edit_metadata.setText("Edit metadata")
-        self.btn_open.setText(self.loc.get("btn_open"))
-        self.btn_delete.setText(self.loc.get("btn_header_delete"))
-        self.lbl_name.setText(self.loc.get("lbl_new_name"))
-        self.btn_flat_folder.setText("Flat Folder")
+        self.action_toolbar.retranslate_ui()
 
     def set_file(self, p: Path, hide_secure: bool):
         self._preview_generation += 1
         self._preview_loading_suspended = False
         self.filepath = p
         self._hide_secure = hide_secure
-        self.rename_input.setText(p.stem)
-
+    
         if p.is_dir():
             self._update_folder_info_label()
             self.load_preview()
-            self.drag_icon.set_file(p)
-            self.rename_input.setEnabled(False)
-            self.btn_open.setEnabled(True)
-            self.btn_flat_folder.setVisible(True)
-            self.btn_delete.setEnabled(False)
+            self.action_toolbar.set_file(p)
+            self.action_toolbar.action_open.setEnabled(True)
+            self.action_toolbar.action_flat_folder.setVisible(True)
+            self.action_toolbar.action_delete.setEnabled(False)
             self._update_metadata_button_visibility()
             self._update_dynamic_plugin_buttons()
             return
 
-        self.btn_flat_folder.setVisible(False)
-        self.rename_input.setEnabled(True)
-        self.btn_open.setEnabled(True)
-        self.btn_delete.setEnabled(True)
+        self.action_toolbar.action_flat_folder.setVisible(False)
+        self.action_toolbar.action_open.setEnabled(True)
+        self.action_toolbar.action_delete.setEnabled(True)
         self._update_file_info_label()        
         self.load_preview()
-        self.drag_icon.set_file(p)
+        self.action_toolbar.set_file(p)
         self._update_metadata_button_visibility()
         self._update_dynamic_plugin_buttons()
 
@@ -379,8 +346,8 @@ class ActionPanel(QWidget):
 
     def _update_metadata_button_visibility(self):
         visible = self._is_metadata_editable()
-        self.btn_edit_metadata.setVisible(visible)
-        self.btn_edit_metadata.setEnabled(visible)
+        self.action_toolbar.action_edit_metadata.setVisible(visible)
+        self.action_toolbar.action_edit_metadata.setEnabled(visible)
 
     def _open_metadata_editor(self):
         if not self._is_metadata_editable():
@@ -403,19 +370,17 @@ class ActionPanel(QWidget):
 
 
     def get_new_name(self):
-        return self.rename_input.text().strip()
+        pass
 
     def clear(self):
         self._preview_generation += 1
         self._preview_loading_suspended = True
         self.filepath = None
         self.preview_label.clear()
-        self.rename_input.setText("")
-        self.rename_input.setEnabled(True)
         self.lbl_file_info.setText(self.loc.get("msg_no_file"))
-        self.drag_icon.set_file(None)
-        self.btn_flat_folder.setVisible(False)
-        self.btn_delete.setEnabled(False)
+        self.action_toolbar.set_file(None)
+        self.action_toolbar.action_flat_folder.setVisible(False)
+        self.action_toolbar.action_delete.setEnabled(False)
         self._update_metadata_button_visibility()
         self._update_dynamic_plugin_buttons()
 
@@ -537,5 +502,9 @@ class ActionPanel(QWidget):
         act_no = QtGui.QAction("No", self)
         menu.addAction(act_no)
 
-        menu.exec(self.btn_delete.mapToGlobal(QtCore.QPoint(0, self.btn_delete.height())))
+        widget = self.action_toolbar.widgetForAction(self.action_toolbar.action_delete)
+        if widget:
+            menu.exec(widget.mapToGlobal(QtCore.QPoint(0, widget.height())))
+        else:
+            menu.exec(QtGui.QCursor.pos())
 
