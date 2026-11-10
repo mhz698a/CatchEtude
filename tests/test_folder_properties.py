@@ -26,6 +26,7 @@ from folder_properties_dialog import FolderPropertiesDialog, scan_folder_stats, 
 from ntfs_mft import (
     ElevationRequiredError,
     MFTScanner,
+    MFTScanCancelled,
     UnsupportedFilesystemError,
     VolumeInfo,
     parse_usn_enum_buffer,
@@ -59,6 +60,7 @@ class FakeMFTApi:
         self.inaccessible = set(inaccessible)
         self.opened = False
         self.closed = False
+        self.closed_handles = []
         self.file_size_hints = []
         self.records = [
             _usn_v2_record(20, 10, "nested", 0x10),
@@ -86,6 +88,7 @@ class FakeMFTApi:
         return "volume-handle"
 
     def close_handle(self, handle):
+        self.closed_handles.append(handle)
         if handle == "volume-handle":
             self.closed = True
 
@@ -136,7 +139,47 @@ class TestNTFSMFTLibrary(unittest.TestCase):
         self.assertTrue(result.complete)
         self.assertTrue(api.opened)
         self.assertTrue(api.closed)
+        self.assertCountEqual(
+            api.closed_handles, ["directory-hint", "volume-handle"]
+        )
         self.assertEqual(api.file_size_hints, ["directory-hint", "directory-hint"])
+
+    def test_mft_scan_paginates_using_returned_next_file_reference_number(self):
+        class PaginatedApi(FakeMFTApi):
+            def __init__(self):
+                super().__init__()
+                self.requested_start_refs = []
+
+            def enumerate_usn_data(self, volume_handle, start_reference, buffer_size):
+                self.requested_start_refs.append(start_reference)
+                if start_reference == 0:
+                    return _usn_page(100, *self.records[:3])
+                if start_reference == 100:
+                    return _usn_page(1000, *self.records[3:])
+                return None
+
+        api = PaginatedApi()
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / "target"
+            folder.mkdir()
+            result = MFTScanner(api=api).scan_folder(folder)
+
+        self.assertEqual(api.requested_start_refs, [0, 100, 1000])
+        self.assertEqual(result.file_count, 2)
+        self.assertEqual(result.total_size, 30)
+        self.assertEqual(result.records_scanned, 6)
+
+    def test_cancelled_mft_scan_closes_file_and_volume_handles(self):
+        api = FakeMFTApi()
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / "target"
+            folder.mkdir()
+            with self.assertRaises(MFTScanCancelled):
+                MFTScanner(api=api, should_stop=lambda: True).scan_folder(folder)
+
+        self.assertCountEqual(
+            api.closed_handles, ["directory-hint", "volume-handle"]
+        )
 
     def test_mft_scan_reports_unreadable_file_sizes_as_partial(self):
         api = FakeMFTApi(inaccessible={30})
