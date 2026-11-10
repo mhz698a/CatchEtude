@@ -6,6 +6,7 @@ import os
 import sqlite3
 import struct
 import tempfile
+from contextlib import closing
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -175,7 +176,10 @@ class MFTScanner:
             volume_handle = self.api.open_volume(volume)
             with tempfile.TemporaryDirectory(prefix="catchetude-mft-") as temporary:
                 database_path = Path(temporary) / "mft-index.sqlite3"
-                with sqlite3.connect(str(database_path)) as connection:
+                # sqlite3.Connection.__exit__ only manages transactions; it does not
+                # close the handle. Close it before TemporaryDirectory removes the DB,
+                # otherwise Windows raises WinError 32 for the still-open SQLite file.
+                with closing(sqlite3.connect(str(database_path))) as connection:
                     connection.execute("PRAGMA journal_mode=OFF")
                     connection.execute("PRAGMA synchronous=OFF")
                     connection.execute("PRAGMA temp_store=FILE")
