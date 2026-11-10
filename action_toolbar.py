@@ -21,6 +21,7 @@ class ActionToolBar(QToolBar):
         super().__init__("Action ToolBar", parent)
         self.loc = LocalizationManager()
         self._dynamic_actions: list[QtGui.QAction] = []
+        self._dynamic_separator: QtGui.QAction | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -66,8 +67,15 @@ class ActionToolBar(QToolBar):
             action.deleteLater()
         self._dynamic_actions.clear()
 
+        if self._dynamic_separator is not None:
+            self.removeAction(self._dynamic_separator)
+            self._dynamic_separator.deleteLater()
+            self._dynamic_separator = None
+
     def add_dynamic_action(self, text: str) -> QtGui.QAction:
         """Append a plugin QAction to this toolbar and return it for configuration."""
+        if not self._dynamic_actions:
+            self._dynamic_separator = self.addSeparator()
         action = self.addAction(text)
         action.setProperty("catchEtudeDynamicAction", True)
         self._dynamic_actions.append(action)

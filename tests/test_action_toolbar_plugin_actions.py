@@ -1,5 +1,6 @@
 """Regression tests for plugin actions injected into ActionToolBar."""
 
+import ctypes
 import os
 import sys
 import tempfile
@@ -7,6 +8,35 @@ import unittest
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+# Allow importing the Windows-focused UI modules in cross-platform test runs.
+if not hasattr(ctypes, "windll"):
+    class MockWinDLL:
+        def __getattr__(self, name):
+            class MockDLL:
+                def __getattr__(self, func):
+                    return lambda *args, **kwargs: 1
+            return MockDLL()
+    ctypes.windll = MockWinDLL()
+    ctypes.WinDLL = lambda name, **kwargs: MockWinDLL()
+if not hasattr(ctypes, "WINFUNCTYPE"):
+    ctypes.WINFUNCTYPE = ctypes.CFUNCTYPE
+
+for module_name in ("win32file", "win32con", "win32event", "win32api", "win32process"):
+    try:
+        __import__(module_name)
+    except ImportError:
+        sys.modules[module_name] = type("Mock" + module_name, (), {})()
+try:
+    import pywintypes
+except ImportError:
+    sys.modules["pywintypes"] = type("MockPyWinTypes", (), {"error": Exception})
+try:
+    import send2trash
+except ImportError:
+    sys.modules["send2trash"] = type(
+        "MockSend2Trash", (), {"send2trash": staticmethod(lambda path: True)}
+    )
 
 from PyQt6 import QtWidgets
 from PyQt6.QtGui import QAction
@@ -106,6 +136,8 @@ class TestActionToolbarPluginActions(unittest.TestCase):
             ]
             self.assertEqual(len(dynamic_actions), 1)
             self.assertIsNotNone(dynamic_actions[0].menu())
+            toolbar_button = panel.action_toolbar.widgetForAction(dynamic_actions[0])
+            self.assertIsInstance(toolbar_button, QtWidgets.QToolButton)
             self.assertEqual(
                 [action.text() for action in dynamic_actions[0].menu().actions()],
                 ["Convert to PNG", "Convert to JPG"],
