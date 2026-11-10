@@ -38,7 +38,7 @@ except ImportError:
         "MockSend2Trash", (), {"send2trash": staticmethod(lambda path: True)}
     )
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore, QtWidgets
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 import config
@@ -50,6 +50,7 @@ from queue_rename_dialog import QueueRenameDialog
 from state_manager import StateManager, State
 import watcher_mgr
 from watcher_mgr import WatcherHandler
+from selection_panel_mgr import SelectionPanel
 
 try:
     from main_window_mgr import MainWindow
@@ -258,6 +259,39 @@ class TestQueueProgressRegressions(unittest.TestCase):
             self.assertEqual(dialog.new_stem, "original")
             self.assertEqual(dialog.extension_label.text(), ".mp4")
             dialog.close()
+
+    def test_recent_is_decision_zero_before_keep_downloads(self):
+        panel = SelectionPanel()
+        try:
+            role = QtCore.Qt.ItemDataRole.UserRole
+            self.assertEqual(panel.list_type.item(0).data(role), 0)
+            self.assertEqual(panel.list_type.item(1).data(role), 1)
+            self.assertEqual(panel.list_type.currentRow(), 1)
+        finally:
+            panel.close()
+
+    def test_recent_folders_are_mru_capped_at_twenty_and_include_docs(self):
+        panel = SelectionPanel()
+        try:
+            # Type 5 has no year selector but still represents real folders.
+            panel.list_type.setCurrentRow(5)
+            for index in range(21):
+                panel._remember_recent_subfolder(f"folder-{index}")
+
+            self.assertEqual(len(panel._recent_subfolders), 20)
+            self.assertEqual(panel._recent_subfolders[0]["name"], "folder-20")
+            self.assertEqual(panel._recent_subfolders[-1]["name"], "folder-1")
+            self.assertIsNone(panel._recent_subfolders[0]["year"])
+
+            # Reusing a folder moves it to the front rather than duplicating it.
+            panel._remember_recent_subfolder("folder-10")
+            self.assertEqual(panel._recent_subfolders[0]["name"], "folder-10")
+            self.assertEqual(
+                sum(item["name"] == "folder-10" for item in panel._recent_subfolders),
+                1,
+            )
+        finally:
+            panel.close()
 
     def test_watcher_accepts_explicit_candidate_inside_downloads_subfolder(self):
         original_downloads = config.DOWNLOADS
