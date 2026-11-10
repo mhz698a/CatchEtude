@@ -652,7 +652,7 @@ class MainWindow(QWidget):
 
     def retranslate_ui(self):
         self.hide_secure_cb.setText(self.loc.get("btn_secure"))
-        self.chk_auto_run_pendings.setText("Autoexecure Pendings")
+        self.chk_auto_run_pendings.setText("Shedule Pendings")
         self.btn_undo.setText(self.loc.get("btn_history"))
         self.btn_lang.setText(self.loc.get("lang_toggle"))
         self.selection_panel.retranslate_ui()
