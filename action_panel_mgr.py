@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from PyQt6 import QtCore, QtWidgets, QtGui
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileIconProvider
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileIconProvider
 from PyQt6.QtCore import Qt
 
 import config
@@ -67,17 +67,6 @@ class ActionPanel(QWidget):
         self.preview_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.preview_label.mousePressEvent = self._toggle_preview
         layout.addWidget(self.preview_label, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-
-        # Contextual plugin actions use their own two-column grid. Keeping
-        # them separate from Open/Delete prevents three or more buttons from
-        # competing for the narrow width of the action panel.
-        self.dynamic_btn_layout = QtWidgets.QGridLayout()
-        self.dynamic_btn_layout.setContentsMargins(0, 0, 0, 0)
-        self.dynamic_btn_layout.setHorizontalSpacing(8)
-        self.dynamic_btn_layout.setVerticalSpacing(6)
-        self.dynamic_btn_layout.setColumnStretch(0, 1)
-        self.dynamic_btn_layout.setColumnStretch(1, 1)
-        layout.addLayout(self.dynamic_btn_layout)
 
         self.lbl_file_info = QLabel("Waiting for files...")
         self.lbl_file_info.setWordWrap(True)
@@ -385,13 +374,10 @@ class ActionPanel(QWidget):
         self._update_dynamic_plugin_buttons()
 
     def _update_dynamic_plugin_buttons(self):
+        """Inject matching plugin actions directly into ActionToolBar."""
         import sys
-        # Clear previous dynamic buttons
-        while self.dynamic_btn_layout.count():
-            item = self.dynamic_btn_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
 
+        self.action_toolbar.clear_dynamic_actions()
         if not self.filepath:
             return
 
@@ -403,8 +389,6 @@ class ActionPanel(QWidget):
         ext = self.filepath.suffix.lower()
         is_directory = self.filepath.is_dir()
 
-        visible_buttons = []
-
         for btn_def in buttons_def:
             btn_target = btn_def.get("target", "file")
             if btn_target == "subfolder":
@@ -414,64 +398,39 @@ class ActionPanel(QWidget):
             if not is_directory and btn_target == "directory":
                 continue
 
-            exts = btn_def.get("file_extensions")
-            if exts and ext not in [e.lower() for e in exts]:
+            extensions = btn_def.get("file_extensions")
+            if extensions and ext not in [value.lower() for value in extensions]:
                 continue
 
-            btn = QPushButton(btn_def.get("label", "Action"))
-            btn.setFixedHeight(30)
-            btn.setFixedWidth(110)
+            plugin_id = btn_def.get("plugin_id")
+            if not plugin_id:
+                logging.warning("Skipping plugin UI action without plugin_id: %s", btn_def)
+                continue
 
-            plugin_id = btn_def["plugin_id"]
-            menu_items = btn_def.get("menu_items")
+            menu_items = btn_def.get("menu_items") or []
             command = btn_def.get("command")
+            action = self.action_toolbar.add_dynamic_action(
+                btn_def.get("label", "Action")
+            )
+            action.setEnabled(bool(menu_items or command))
+            action.setToolTip(btn_def.get("tooltip", btn_def.get("label", "Action")))
 
             if menu_items:
-                btn.clicked.connect(lambda checked, b=btn, pid=plugin_id, items=menu_items: self._show_dynamic_button_menu(b, pid, items))
-            elif command:
-                btn.clicked.connect(
-                    lambda checked, pid=plugin_id, cmd=command: self._invoke_plugin_command(
-                        plugin_mgr, pid, cmd
+                menu = QtWidgets.QMenu(self.action_toolbar)
+                for item in menu_items:
+                    menu_action = menu.addAction(item.get("label", "Item"))
+                    menu_command = item.get("command", "")
+                    menu_action.setEnabled(bool(menu_command))
+                    menu_action.triggered.connect(
+                        lambda checked=False, pid=plugin_id, cmd=menu_command, mgr=plugin_mgr:
+                            self._invoke_plugin_command(mgr, pid, cmd)
                     )
+                self.action_toolbar.set_dynamic_action_menu(action, menu)
+            elif command:
+                action.triggered.connect(
+                    lambda checked=False, pid=plugin_id, cmd=command, mgr=plugin_mgr:
+                        self._invoke_plugin_command(mgr, pid, cmd)
                 )
-
-            visible_buttons.append(btn)
-
-        # Use at most two buttons per row. A final unpaired button spans the
-        # whole row so it remains centered instead of leaving an empty column.
-        for index, btn in enumerate(visible_buttons):
-            row, column = divmod(index, 2)
-            is_unpaired_last = (
-                len(visible_buttons) % 2 == 1
-                and index == len(visible_buttons) - 1
-            )
-            if is_unpaired_last:
-                self.dynamic_btn_layout.addWidget(
-                    btn, row, 0, 1, 2, Qt.AlignmentFlag.AlignCenter
-                )
-            else:
-                self.dynamic_btn_layout.addWidget(
-                    btn, row, column, Qt.AlignmentFlag.AlignCenter
-                )
-
-    def _show_dynamic_button_menu(self, button, plugin_id: str, items: list):
-        import sys
-        plugin_mgr = getattr(sys.modules.get("__main__"), "plugin_mgr", None)
-        if not plugin_mgr:
-            return
-
-        menu = QtWidgets.QMenu(self)
-        for item in items:
-            act = QtGui.QAction(item.get("label", "Item"), self)
-            cmd = item.get("command", "")
-            act.triggered.connect(
-                lambda checked, pid=plugin_id, c=cmd: self._invoke_plugin_command(
-                    plugin_mgr, pid, c
-                )
-            )
-            menu.addAction(act)
-
-        menu.exec(button.mapToGlobal(QtCore.QPoint(0, button.height())))
 
     def _invoke_plugin_command(self, plugin_mgr, plugin_id: str, command: str):
         """Invoke a contextual plugin action with the selected queue file.
