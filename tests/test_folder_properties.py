@@ -5,7 +5,8 @@ from pathlib import Path
 import tempfile
 import shutil
 import struct
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 if not hasattr(ctypes, 'windll'):
     class MockWinDLL:
@@ -266,31 +267,148 @@ class TestFolderProperties(unittest.TestCase):
         self.assertIsNone(dialog._scan_worker)
         dialog.close()
 
-    def test_mft_button_rejects_non_ntfs_before_checking_elevation(self):
+    def test_mft_button_rejects_non_ntfs_without_launching_uac_helper(self):
         with patch(
             "folder_properties_dialog.get_volume_info",
             return_value=VolumeInfo("exFAT", "E:\\\\", "\\\\.\\E:"),
-        ), patch("folder_properties_dialog.is_process_elevated") as elevation_check, patch.object(
+        ), patch("folder_properties_dialog.MFTFolderStatsWorker") as worker_class, patch.object(
             QtWidgets.QMessageBox, "information", return_value=QtWidgets.QMessageBox.StandardButton.Ok
         ) as information:
             dialog = FolderPropertiesDialog(self.test_folder)
             dialog._start_mft_scan()
-            elevation_check.assert_not_called()
             information.assert_called_once()
+            worker_class.assert_not_called()
             self.assertIsNone(dialog._scan_worker)
             dialog.close()
 
-    def test_mft_button_refuses_to_scan_without_process_elevation(self):
+    def test_mft_button_starts_isolated_elevated_worker_without_elevating_main_app(self):
+        worker = Mock()
         with patch(
             "folder_properties_dialog.get_volume_info",
             return_value=VolumeInfo("NTFS", "E:\\\\", "\\\\.\\E:"),
-        ), patch("folder_properties_dialog.is_process_elevated", return_value=False), patch.object(
-            QtWidgets.QMessageBox, "warning", return_value=QtWidgets.QMessageBox.StandardButton.Ok
-        ) as warning:
+        ), patch(
+            "folder_properties_dialog.MFTFolderStatsWorker", return_value=worker
+        ) as worker_class:
             dialog = FolderPropertiesDialog(self.test_folder)
+            dialog._attach_scan_worker = Mock()
             dialog._start_mft_scan()
-            warning.assert_called_once()
+
+            worker_class.assert_called_once_with(self.test_folder)
+            dialog._attach_scan_worker.assert_called_once_with(worker)
+            worker.progress.connect.assert_called_once()
+            worker.stats_ready.connect.assert_called_once()
+            worker.scan_failed.connect.assert_called_once()
+            worker.scan_cancelled.connect.assert_called_once()
+            self.assertEqual(dialog._scan_mode, "mft")
+            dialog.close()
+
+    def test_build_helper_launch_uses_pythonw_and_module_entrypoint_in_source_mode(self):
+        from ntfs_mft.elevation import build_helper_launch
+
+        with patch("ntfs_mft.elevation.sys.frozen", False, create=True):
+            executable, arguments, working_directory = build_helper_launch()
+
+        self.assertTrue(Path(executable).name.casefold() in ("python.exe", "pythonw.exe"))
+        self.assertEqual(arguments, ["-m", "ntfs_mft.elevated_worker"])
+        self.assertTrue(Path(working_directory).is_dir())
+
+    def test_traditional_scan_uses_valid_character_cache(self):
+        cache = Mock()
+        cache.get_folder_data.return_value = {
+            "mtime_ns": self.test_folder.stat().st_mtime_ns,
+            "entry_count": 4,
+            "file_count": 12,
+            "total_size": 4096,
+        }
+        character = SimpleNamespace(
+            year=2024, num=1, alter="A", name="Test",
+            birthday_iso="1970-01-01", origin_age=0, age_str="",
+        )
+        with patch("character_cache_mgr.CharacterCacheManager", return_value=cache), patch(
+            "folder_properties_dialog.FolderStatsWorker"
+        ) as worker_class:
+            dialog = FolderPropertiesDialog(self.test_folder, char_entry=character)
+            dialog._start_traditional_scan()
+
+            cache.get_folder_data.assert_called_once_with(str(self.test_folder))
+            worker_class.assert_not_called()
+            self.assertEqual(dialog.files_value.text(), "12")
+            self.assertIn("4.0 KB", dialog.size_value.text())
+            self.assertEqual(dialog.status_label.text(), dialog.loc.get("lbl_prop_cache_used"))
             self.assertIsNone(dialog._scan_worker)
+            dialog.close()
+
+    def test_traditional_scan_uses_valid_overworld_cache(self):
+        cache = Mock()
+        cache.get_folder_data.return_value = {
+            "mtime_ns": self.test_folder.stat().st_mtime_ns,
+            "file_count": 7,
+            "total_size": 2048,
+            "size_mb_str": "0.0 MB",
+        }
+        with patch("overworld_cache_mgr.OverworldCacheManager", return_value=cache), patch(
+            "folder_properties_dialog.FolderStatsWorker"
+        ) as worker_class:
+            dialog = FolderPropertiesDialog(self.test_folder, overworld_year=2025)
+            dialog._start_traditional_scan()
+
+            cache.get_folder_data.assert_called_once_with(str(self.test_folder))
+            worker_class.assert_not_called()
+            self.assertEqual(dialog.files_value.text(), "7")
+            self.assertIn("2.0 KB", dialog.size_value.text())
+            self.assertIsNone(dialog._scan_worker)
+            dialog.close()
+
+    def test_stale_character_cache_falls_back_to_traditional_worker(self):
+        cache = Mock()
+        cache.get_folder_data.return_value = {
+            "mtime_ns": self.test_folder.stat().st_mtime_ns - 1,
+            "entry_count": 4,
+            "file_count": 12,
+            "total_size": 4096,
+        }
+        worker = Mock()
+        character = SimpleNamespace(year=2024)
+        with patch("character_cache_mgr.CharacterCacheManager", return_value=cache), patch(
+            "folder_properties_dialog.FolderStatsWorker", return_value=worker
+        ) as worker_class:
+            dialog = FolderPropertiesDialog(self.test_folder, char_entry=character)
+            dialog._attach_scan_worker = Mock()
+            dialog._start_traditional_scan()
+
+            worker_class.assert_called_once_with(self.test_folder)
+            dialog._attach_scan_worker.assert_called_once_with(worker)
+            self.assertEqual(dialog._scan_mode, "traditional")
+            dialog.close()
+
+    def test_mft_success_refreshes_existing_character_cache(self):
+        cache = Mock()
+        character = SimpleNamespace(
+            year=2024, num=2, alter="B", name="Test",
+            birthday_iso="2000-01-01", origin_age=10, age_str="",
+        )
+        with patch("character_cache_mgr.CharacterCacheManager", return_value=cache):
+            dialog = FolderPropertiesDialog(self.test_folder, char_entry=character)
+            dialog._on_mft_scan_ready(5, 8192, 3, 0, 100)
+
+            cache.update_folder.assert_called_once()
+            args = cache.update_folder.call_args.args
+            self.assertEqual(args[0], str(self.test_folder))
+            self.assertEqual(args[2:5], (3, 5, 8192))
+            cache.save.assert_called_once()
+            dialog.close()
+
+    def test_mft_success_refreshes_existing_overworld_cache(self):
+        cache = Mock()
+        with patch("overworld_cache_mgr.OverworldCacheManager", return_value=cache):
+            dialog = FolderPropertiesDialog(self.test_folder, overworld_year=2025)
+            dialog._on_mft_scan_ready(9, 16384, 2, 0, 500)
+
+            cache.update_folder.assert_called_once()
+            args = cache.update_folder.call_args.args
+            self.assertEqual(args[0], str(self.test_folder))
+            self.assertEqual(args[2:4], (9, 16384))
+            cache.save.assert_called_once()
             dialog.close()
 
     def test_properties_dialog_with_character_entry(self):

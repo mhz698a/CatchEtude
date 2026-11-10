@@ -34,7 +34,7 @@ ERROR_CANCELLED = 1223
 class _SHELLEXECUTEINFOW(ctypes.Structure):
     _fields_ = [
         ("cbSize", ctypes.c_uint32),
-        ("fMask", ctypes.c_ulong),
+        ("fMask", ctypes.c_uint32),
         ("hwnd", ctypes.c_void_p),
         ("lpVerb", ctypes.c_wchar_p),
         ("lpFile", ctypes.c_wchar_p),
@@ -58,7 +58,18 @@ def _atomic_write_json(path: Path, payload: dict) -> None:
         json.dump(payload, stream, ensure_ascii=False)
         stream.flush()
         os.fsync(stream.fileno())
-    os.replace(temporary, path)
+
+    # The unelevated parent may briefly have the previous progress file open
+    # while reading it. Retry Windows sharing violations before failing a scan.
+    last_error = None
+    for attempt in range(20):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.01 * (attempt + 1))
+    raise last_error
 
 
 def _pythonw_executable() -> str:

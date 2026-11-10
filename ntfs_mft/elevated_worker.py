@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -21,7 +22,18 @@ def _atomic_write_json(path: Path, payload: dict) -> None:
         json.dump(payload, stream, ensure_ascii=False)
         stream.flush()
         os.fsync(stream.fileno())
-    os.replace(temporary, path)
+
+    # The unelevated parent may briefly have the previous progress file open
+    # while reading it. Retry Windows sharing violations before failing a scan.
+    last_error = None
+    for attempt in range(20):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.01 * (attempt + 1))
+    raise last_error
 
 
 def execute_request(request_path: Path) -> int:
