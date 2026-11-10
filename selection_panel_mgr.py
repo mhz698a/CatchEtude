@@ -30,6 +30,8 @@ from episode_cache_mgr import EpisodeCacheManager
 from overworld_ipc_mgr import OverworldServiceClient
 from subfolder_queue_addmore import populate_add_to_queue_menu
 from ui_utils_mgr import load_stylesheet
+from classification_registry import ClassificationRegistry
+from decision_dispatcher import DecisionDispatcher
 
 class SelectionPanel(QWidget):
     """
@@ -58,17 +60,6 @@ class SelectionPanel(QWidget):
         self.plugin_mgr = plugin_mgr
         self.loc = LocalizationManager()
         self._app_icon = QIcon(config.ICON_PATH)
-        
-        self._type_icon_paths = {
-            1: f"{config.APP_DIR}/assets/descargas.png",
-            2: f"{config.APP_DIR}/assets/me-gusta.png",
-            3: f"{config.APP_DIR}/assets/película.png",
-            4: f"{config.APP_DIR}/assets/música.png",
-            5: f"{config.APP_DIR}/assets/aula-de-google.png",
-            6: f"{config.APP_DIR}/assets/identificación-verificada.png",
-            7: f"{config.APP_DIR}/assets/adobe-acrobat.png",
-            8: f"{config.APP_DIR}/assets/mundo.png",
-        }
         
         self._sub_scanner = None
         self._sub_scanner_workers = set()
@@ -180,15 +171,14 @@ class SelectionPanel(QWidget):
             if recent is not None:
                 self._choose_recent_subfolder(recent)
             return
-        if t == 1:
-            self.keep_action_clicked.emit(name)
-            return
-        if t == 7:
-            self.linear_docs_action_clicked.emit(name)
-            return
+        
+        registry = ClassificationRegistry()
+        decision = registry.get_decision(t)
+        if decision:
+            dispatcher = DecisionDispatcher(self)
+            dispatcher.dispatch_subfolder_click(decision, name)
 
-        self._remember_recent_subfolder(name)
-        self.subfolder_clicked.emit(name)
+
 
     def _remember_recent_subfolder(self, name: str):
         t = self._selected_type_id()
@@ -311,33 +301,27 @@ class SelectionPanel(QWidget):
         t = self._selected_type_id()
         if t == 0:
             return
-        year = self.list_year.current_year() if t in (2, 3, 4, 7, 8) else None
+        
+        registry = ClassificationRegistry()
+        decision = registry.get_decision(t)
+        if not decision:
+            return
+
+        dispatcher = DecisionDispatcher(self)
+        needs_year = dispatcher.requires_year(decision)
+        year = self.list_year.current_year() if needs_year else None
 
         if not force and t == self._last_loaded_type and year == self._last_loaded_year:
-            if t in (2, 3, 4, 8):
-                if year:
-                    self.list_year.setEnabled(True)
-                    self.list_sub.setEnabled(True)
-                else:
-                    self.list_sub.setEnabled(False)
-            elif t == 1:
-                self.list_sub.setEnabled(True)
-                self.list_year.setEnabled(False)
-            elif t == 7:
-                self.list_sub.setEnabled(True)
-                self.list_year.setEnabled(True)
-            elif t in (5, 6):
-                self.list_sub.setEnabled(True)
-                self.list_year.setEnabled(False)
-            else:
-                self.list_sub.setEnabled(False)
-                self.list_year.setEnabled(False)
+            self.list_year.setEnabled(needs_year and (year is not None if decision.get("handler") == "subfolder_year" else True))
+            self.list_sub.setEnabled(True if not needs_year or year else False)
             return
 
         self._last_loaded_type = t
         self._last_loaded_year = year
 
-        if t == 1:
+        handler = decision.get("handler")
+        
+        if handler == "keep":
             self.list_sub.add_subfolders([
                 self.loc.get("keep_this_file"),
                 self.loc.get("keep_this_file_open_file"),
@@ -352,23 +336,23 @@ class SelectionPanel(QWidget):
             ])
             self.list_sub.setEnabled(True)
             self.list_year.setEnabled(False)
-        elif t == 7:
+        elif handler == "linear_docs":
             self.list_sub.add_subfolders([
                 "Guardar en el año seleccionado",
                 "Guardar en el año actual"
             ])
             self.list_sub.setEnabled(True)
             self.list_year.setEnabled(True)
-        elif t in (2, 3, 4, 8):
+        elif handler in ("subfolder_year", "episode", "overworld"):
             if year:
-                base = get_base_path_for_type_year(t, year)
+                base = dispatcher.resolve_base_path(decision, year)
                 self._populate_subfolders(base)
                 self.list_year.setEnabled(True)
             else:
                 self.list_sub.clear()
                 self.list_sub.setEnabled(False)
-        elif t in (5, 6):
-            base = get_base_path_for_docs(t)
+        elif handler == "docs":
+            base = dispatcher.resolve_base_path(decision, None)
             self._populate_subfolders(base)
             self.list_year.setEnabled(False)
         else:
@@ -395,17 +379,19 @@ class SelectionPanel(QWidget):
         generation = self._sub_scan_generation
         self.list_sub.clear()
 
-        if not is_internal_available() and self._selected_type_id() in (2, 3, 4, 7, 8):
+        registry = ClassificationRegistry()
+        t = self._selected_type_id()
+        decision = registry.get_decision(t)
+        handler = decision.get("handler") if decision else None
+
+        if not is_internal_available() and handler in ("subfolder_year", "episode", "overworld", "linear_docs"):
             self.list_sub.setEnabled(False)
             return
 
         try:
-            t = self._selected_type_id()
             year = self.list_year.current_year()
 
-            if t == 3:
-                # Enumerate episode folders in a worker first. The UI creates the buttons
-                # when that result arrives, then a second worker fills each button's line 2.
+            if handler == "episode":
                 self.list_sub.show_loading_placeholder("Cargando...")
                 self.list_sub.setEnabled(True)
                 worker = EpisodeSubfolderListWorker(base)
@@ -421,7 +407,7 @@ class SelectionPanel(QWidget):
                 return
 
             if not base.is_dir():
-                if t == 8:
+                if handler == "overworld":
                     self.list_sub.show_empty_placeholder(self.loc.get("menu_create_folder"))
                     self.list_sub.setEnabled(True)
                     self.subfolders_refreshed.emit()
@@ -439,10 +425,10 @@ class SelectionPanel(QWidget):
                 self.list_sub.add_subfolders(subs)
                 self.list_sub.setEnabled(True)
 
-                if t == 2:
+                if handler == "subfolder_year" and t == 2:
                     self.list_sub.set_loading_placeholder("Cargando...", None, reserve_height=45)
 
-                if t == 8:
+                if handler == "overworld":
                     if getattr(self, "_overworld_refresh_pending", False):
                         self.subfolders_refreshed.emit()
                         return
@@ -458,7 +444,7 @@ class SelectionPanel(QWidget):
                 self.subfolders_refreshed.emit()
                 return
 
-            if t == 8:
+            if handler == "overworld":
                 self.list_sub.show_empty_placeholder(self.loc.get("menu_create_folder"))
                 self.list_sub.setEnabled(True)
                 self.subfolders_refreshed.emit()
@@ -761,23 +747,24 @@ class SelectionPanel(QWidget):
             self.refresh_classification_ui()
 
     def _type_icon_for(self, type_id: int) -> QIcon:
-        path = self._type_icon_paths.get(type_id)
-        if path:
-            p = Path(path)
-            if p.exists():
-                return QIcon(str(p))
+        registry = ClassificationRegistry()
+        decision = registry.get_decision(type_id)
+        if decision and decision.get("icon"):
+            icon_path = Path(config.APP_DIR) / "assets" / decision["icon"]
+            if icon_path.is_file():
+                return QIcon(str(icon_path))
         return self._app_icon
 
     def _fill_type_list(self, selected_row: int | None = None):
         if selected_row is None:
             selected_row = self.list_type.currentRow()
         if selected_row < 0:
-            # Keep the historical initial selection on Keep_downloads (type 1).
             selected_row = 1
 
         self.list_type.blockSignals(True)
         self.list_type.clear()
 
+        # Botón de Recientes (ID 0)
         recent_icon_path = Path(config.APP_DIR) / "assets" / "recently.png"
         recent_icon = QIcon(str(recent_icon_path)) if recent_icon_path.is_file() else self._app_icon
         recent_item = QListWidgetItem(recent_icon, "")
@@ -785,9 +772,18 @@ class SelectionPanel(QWidget):
         recent_item.setToolTip(self.loc.get("btn_recently"))
         self.list_type.addItem(recent_item)
 
-        for type_id in range(1, 9):
-            text = self.loc.get(f"type_{type_id}")
-            item = QListWidgetItem(self._type_icon_for(type_id), '')
+        # Carga dinámica desde el registro JSON
+        registry = ClassificationRegistry()
+        current_lang = self.loc.current_lang() # "es" o "en"
+        
+        for decision in registry.get_active_decisions():
+            type_id = decision["id"]
+            
+            # Obtiene el nombre localizado directamente del JSON según el idioma activo
+            text = registry.get_decision_name(decision, current_lang)
+            icon = self._type_icon_for(type_id)
+            
+            item = QListWidgetItem(icon, '')
             item.setData(QtCore.Qt.ItemDataRole.UserRole, type_id)
             item.setToolTip(text)
             self.list_type.addItem(item)

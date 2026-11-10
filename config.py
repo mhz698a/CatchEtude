@@ -28,6 +28,7 @@ CONFIG_PATH = APPDATA_DIR / "config.json"
 HISTORY_PATH = APPDATA_DIR / "history.json"
 SETTINGS_PATH = APPDATA_DIR / "settings.toml"
 CRASH_REPORT_PATH = APPDATA_DIR / "last_crash.txt"
+CLASSIFICATIONS_JSON_PATH = APPDATA_DIR / "classifications.json"
 
 # Logs Constrains
 LOG_FILENAME = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".log"
