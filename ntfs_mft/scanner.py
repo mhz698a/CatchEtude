@@ -6,9 +6,9 @@ import os
 import sqlite3
 import struct
 import tempfile
-from contextlib import closing
 import time
 from collections import deque
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
