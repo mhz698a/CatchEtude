@@ -323,7 +323,7 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
             file_count, total_size, entry_count, folder_mtime_ns
         )
 
-    @QtCore.pyqtSlot(int, int, int, int, int)
+    @QtCore.pyqtSlot(str)
     def _on_scan_failed(self, error_message: str) -> None:
         self.progress_bar.hide()
         self.status_label.setText(self.loc.get("lbl_prop_scan_error"))
