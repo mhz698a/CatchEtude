@@ -36,8 +36,9 @@ errors, malformed USN records, unsupported record versions, and cancellation.
 ## Preconditions and scope
 
 - Windows with a local NTFS volume mounted directly to a drive letter.
-- The calling process token must be elevated. Membership in the Administrators
-  group without elevation is not sufficient.
+- The MFT library itself must run in an elevated process. CatchEtude starts a
+  short-lived helper with the Windows `runas` verb only after the user selects
+  the MFT scan and accepts the UAC prompt; the main UI remains unelevated.
 - The target must be a directory on the volume being enumerated.
 - Non-NTFS filesystems, network shares, and mounted-volume directory paths are
   rejected rather than silently scanning the wrong volume.
@@ -45,6 +46,11 @@ errors, malformed USN records, unsupported record versions, and cancellation.
   instead of being interpreted with incorrect offsets.
 - The scan is not a filesystem snapshot. Concurrent changes can make individual
   file IDs unavailable; those are reported as partial results.
+
+The elevated helper communicates with the main app using temporary JSON request,
+progress, cancellation and result files under a private per-scan temporary folder.
+The MFT results are returned to the unelevated process, which updates the existing
+character or Overworld cache using the application's established cache managers.
 
 The scanner uses the documented Windows MFT enumeration control code rather than
 assuming that the on-disk `$MFT` stream is contiguous. It does not create, modify,

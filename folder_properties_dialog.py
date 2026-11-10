@@ -16,12 +16,11 @@ from PyQt6 import QtCore, QtWidgets
 
 from localization import LocalizationManager
 from ntfs_mft import (
-    ElevationRequiredError,
+    ElevatedMFTRunner,
+    ElevationCancelledError,
     MFTError,
-    UnsupportedFilesystemError,
+    MFTScanCancelled,
     get_volume_info,
-    is_process_elevated,
-    scan_folder_mft,
 )
 
 
@@ -146,11 +145,12 @@ class FolderStatsWorker(QtCore.QThread):
 
 
 class MFTFolderStatsWorker(QtCore.QThread):
-    """Obtain recursive statistics through NTFS MFT records."""
+    """Run only the MFT operation in a short-lived UAC-elevated process."""
 
     progress = QtCore.pyqtSignal(str, int, int, int)
     stats_ready = QtCore.pyqtSignal(int, int, int, int, int)
     scan_failed = QtCore.pyqtSignal(str)
+    scan_cancelled = QtCore.pyqtSignal()
 
     def __init__(self, folder_path: Path):
         super().__init__()
@@ -158,8 +158,8 @@ class MFTFolderStatsWorker(QtCore.QThread):
 
     def run(self) -> None:
         try:
-            result = scan_folder_mft(
-                self.folder_path,
+            runner = ElevatedMFTRunner(self.folder_path)
+            result = runner.run(
                 progress_callback=self._report_progress,
                 should_stop=self.isInterruptionRequested,
             )
@@ -171,8 +171,11 @@ class MFTFolderStatsWorker(QtCore.QThread):
                     result.inaccessible_count,
                     result.records_scanned,
                 )
+        except (ElevationCancelledError, MFTScanCancelled):
+            if not self.isInterruptionRequested():
+                self.scan_cancelled.emit()
         except Exception as exc:
-            logger.exception("MFT folder properties scan failed for %s", self.folder_path)
+            logger.exception("Elevated MFT scan failed for %s", self.folder_path)
             if not self.isInterruptionRequested():
                 self.scan_failed.emit(str(exc))
 
@@ -349,6 +352,17 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         worker.start()
 
     def _start_traditional_scan(self) -> None:
+        if self._scan_worker is not None:
+            return
+
+        cached = self._read_valid_folder_cache()
+        if cached is not None:
+            file_count, total_size = cached["file_count"], cached["total_size"]
+            self._on_scan_progress(file_count, total_size)
+            self.progress_bar.hide()
+            self.status_label.setText(self.loc.get("lbl_prop_cache_used"))
+            return
+
         if not self._prepare_scan("traditional"):
             return
 
@@ -388,30 +402,8 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
             )
             return
 
-        try:
-            elevated = is_process_elevated()
-        except MFTError as exc:
-            QtWidgets.QMessageBox.warning(
-                self, self.loc.get("dlg_properties_title"), str(exc)
-            )
-            return
-        except OSError as exc:
-            logger.exception("Could not inspect process elevation")
-            QtWidgets.QMessageBox.warning(
-                self,
-                self.loc.get("dlg_properties_title"),
-                self.loc.get("msg_prop_mft_elevation_check_error").format(error=exc),
-            )
-            return
-
-        if not elevated:
-            QtWidgets.QMessageBox.warning(
-                self,
-                self.loc.get("dlg_properties_title"),
-                self.loc.get("msg_prop_admin_required"),
-            )
-            return
-
+        # Request elevation only for this operation. CatchEtude itself remains
+        # unelevated; ShellExecuteEx("runas") starts the isolated helper process.
         if not self._prepare_scan("mft"):
             return
 
@@ -419,7 +411,12 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         worker.progress.connect(self._on_mft_scan_progress)
         worker.stats_ready.connect(self._on_mft_scan_ready)
         worker.scan_failed.connect(self._on_scan_failed)
+        worker.scan_cancelled.connect(self._on_mft_scan_cancelled)
         self._attach_scan_worker(worker)
+
+    def _on_mft_scan_cancelled(self) -> None:
+        self.progress_bar.hide()
+        self.status_label.setText(self.loc.get("lbl_prop_mft_cancelled"))
 
     @QtCore.pyqtSlot()
     def _on_scan_worker_finished(self) -> None:
@@ -505,6 +502,54 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
             self.folder_path,
             error_message,
         )
+
+    def _read_valid_folder_cache(self) -> Optional[dict]:
+        """Return cached counts only when the cached folder timestamp still matches."""
+        try:
+            current_mtime_ns = self.folder_path.stat().st_mtime_ns
+        except OSError:
+            return None
+
+        cache_manager = None
+        cache_kind = None
+        try:
+            if self.overworld_year is not None:
+                from overworld_cache_mgr import OverworldCacheManager
+
+                cache_manager = OverworldCacheManager(self.overworld_year)
+                cache_kind = "overworld"
+            else:
+                year = getattr(self.char_entry, "year", None)
+                if year:
+                    from character_cache_mgr import CharacterCacheManager
+
+                    cache_manager = CharacterCacheManager(year)
+                    cache_kind = "character"
+            if cache_manager is None:
+                return None
+
+            cached = cache_manager.get_folder_data(str(self.folder_path))
+            if not isinstance(cached, dict):
+                return None
+            if int(cached.get("mtime_ns", -1)) != int(current_mtime_ns):
+                return None
+
+            file_count = cached.get("file_count")
+            total_size = cached.get("total_size")
+            if file_count is None or total_size is None:
+                return None
+
+            # Character cache also stores the direct-child count. Overworld's
+            # established schema does not, so keep its cache fields unchanged.
+            entry_count = cached.get("entry_count", 0) if cache_kind == "character" else 0
+            return {
+                "file_count": max(0, int(file_count)),
+                "total_size": max(0, int(total_size)),
+                "entry_count": max(0, int(entry_count)),
+            }
+        except Exception:
+            logger.exception("Could not read folder statistics cache for %s", self.folder_path)
+            return None
 
     def _update_folder_cache(
         self,
