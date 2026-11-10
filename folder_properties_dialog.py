@@ -341,9 +341,12 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
     def _attach_scan_worker(self, worker: QtCore.QThread) -> None:
         self._scan_worker = worker
         _ACTIVE_SCAN_WORKERS.add(worker)
+        # Global cleanup must outlive the dialog; UI updates use a QObject-bound
+        # slot so Qt disconnects them automatically if the dialog is destroyed.
         worker.finished.connect(
-            lambda current=worker: self._on_scan_worker_finished(current)
+            lambda current=worker: _ACTIVE_SCAN_WORKERS.discard(current)
         )
+        worker.finished.connect(self._on_scan_worker_finished)
         worker.start()
 
     def _start_traditional_scan(self) -> None:
@@ -419,9 +422,10 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         worker.scan_failed.connect(self._on_scan_failed)
         self._attach_scan_worker(worker)
 
-    def _on_scan_worker_finished(self, worker: QtCore.QThread) -> None:
-        _ACTIVE_SCAN_WORKERS.discard(worker)
-        if self._scan_worker is worker:
+    @QtCore.pyqtSlot()
+    def _on_scan_worker_finished(self) -> None:
+        worker = self.sender()
+        if worker is self._scan_worker:
             self._scan_worker = None
             self.traditional_scan_button.setEnabled(True)
             self.mft_scan_button.setEnabled(True)
