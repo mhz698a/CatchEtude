@@ -5,6 +5,7 @@ import tempfile
 import threading
 import queue
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -290,6 +291,48 @@ class TestQueueProgressRegressions(unittest.TestCase):
                 sum(item["name"] == "folder-10" for item in panel._recent_subfolders),
                 1,
             )
+        finally:
+            panel.close()
+
+    def test_recent_decision_populates_subfolders_and_selects_the_original_folder(self):
+        panel = SelectionPanel()
+        try:
+            panel._recent_subfolders = [
+                {"type": 5, "year": None, "name": "Internal Documents"},
+                {"type": 2, "year": 2025, "name": "Movies"},
+            ]
+
+            panel.list_type.setCurrentRow(0)
+
+            labels = list(panel.list_sub._buttons)
+            self.assertEqual(len(labels), 2)
+            self.assertIn("Internal Documents", labels[0])
+            self.assertIn("type_5", labels[0])
+            self.assertIn("Movies", labels[1])
+            self.assertIn("2025", labels[1])
+            self.assertFalse(hasattr(panel, "_show_recently_menu"))
+
+            selected = []
+            panel.subfolder_clicked.connect(selected.append)
+            with tempfile.TemporaryDirectory() as temp:
+                with patch(
+                    "selection_panel_mgr.get_base_path_for_docs",
+                    return_value=Path(temp),
+                ):
+                    panel._on_subfolder_clicked(labels[0])
+
+            self.assertEqual(panel._selected_type_id(), 5)
+            self.assertEqual(selected, ["Internal Documents"])
+        finally:
+            panel.close()
+
+    def test_recent_decision_shows_noninteractive_empty_state(self):
+        panel = SelectionPanel()
+        try:
+            panel.list_type.setCurrentRow(0)
+            self.assertEqual(panel.list_sub.layout.count(), 2)  # message + stretch
+            self.assertIsInstance(panel.list_sub._empty_button, QtWidgets.QLabel)
+            self.assertFalse(panel.list_sub._empty_button.isEnabled())
         finally:
             panel.close()
 

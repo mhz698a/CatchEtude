@@ -83,6 +83,7 @@ class SelectionPanel(QWidget):
         self._last_loaded_type = None
         self._last_loaded_year = None
         self._recent_subfolders = []
+        self._recent_items_by_label = {}
         self._build_ui()
 
     def _build_ui(self):
@@ -153,10 +154,13 @@ class SelectionPanel(QWidget):
         layout.addLayout(bottom_h_row)
         
 
-    def retranslate_ui(self):               
+    def retranslate_ui(self):
         curr = self.list_type.currentRow()
         self._fill_type_list(curr)
-        self.refresh_classification_ui(force=True)
+        if self._selected_type_id() == 0:
+            self._populate_recent_subfolders()
+        else:
+            self.refresh_classification_ui(force=True)
 
 
     def _selected_type_id(self) -> int:
@@ -171,6 +175,11 @@ class SelectionPanel(QWidget):
 
     def _on_subfolder_clicked(self, name: str):
         t = self._selected_type_id()
+        if t == 0:
+            recent = self._recent_items_by_label.get(name)
+            if recent is not None:
+                self._choose_recent_subfolder(recent)
+            return
         if t == 1:
             self.keep_action_clicked.emit(name)
             return
@@ -202,34 +211,40 @@ class SelectionPanel(QWidget):
         self._recent_subfolders.insert(0, recent)
         del self._recent_subfolders[20:]
 
-    def _show_recently_menu(self):
-        menu = QtWidgets.QMenu(self)
+    def _recent_subfolder_label(self, recent: dict) -> str:
+        """Build a unique, readable list label while retaining the real folder name."""
+        type_id = recent.get("type")
+        type_label = self.loc.get(f"type_{type_id}")
+        year = recent.get("year")
+        classification = f"{type_label} ({year})" if year is not None else type_label
+        return f'{recent["name"]} — {classification}'
+
+    def _populate_recent_subfolders(self):
+        """Display the MRU folders directly in the subfolder list."""
+        self._cancel_subfolder_scans()
+        self._last_loaded_type = None
+        self._last_loaded_year = None
+        self.list_year.setEnabled(False)
+        self._recent_items_by_label = {}
 
         if not self._recent_subfolders:
-            empty_action = menu.addAction(self.loc.get("menu_no_recently_folders"))
-            empty_action.setEnabled(False)
-        else:
-            for recent in self._recent_subfolders[:20]:
-                year = recent.get("year")
-                label = (
-                    f'{recent["name"]} ({year})'
-                    if year is not None
-                    else recent["name"]
-                )
-                action = menu.addAction(label)
-                action.triggered.connect(
-                    lambda checked=False, item=recent: self._choose_recent_subfolder(item)
-                )
+            self.list_sub.show_message_placeholder(
+                self.loc.get("menu_no_recently_folders")
+            )
+            self.list_sub.setEnabled(True)
+            self.subfolders_refreshed.emit()
+            return
 
-        recent_item = self.list_type.item(0)
-        anchor = self.list_type.visualItemRect(recent_item).bottomLeft()
-        menu.exec(self.list_type.viewport().mapToGlobal(anchor))
+        labels = []
+        for recent in self._recent_subfolders[:20]:
+            label = self._recent_subfolder_label(recent)
+            # The classification/year suffix disambiguates folders with equal names.
+            self._recent_items_by_label[label] = recent
+            labels.append(label)
 
-        # A dismissed menu should not leave the panel on the synthetic decision 0.
-        if self.list_type.currentRow() == 0:
-            self.list_type.blockSignals(True)
-            self.list_type.setCurrentRow(self._last_non_recent_row)
-            self.list_type.blockSignals(False)
+        self.list_sub.add_subfolders(labels)
+        self.list_sub.setEnabled(True)
+        self.subfolders_refreshed.emit()
 
     def _choose_recent_subfolder(self, recent: dict):
         type_id = recent.get("type")
@@ -257,7 +272,7 @@ class SelectionPanel(QWidget):
         if idx < 0:
             return
         if idx == 0:
-            self._show_recently_menu()
+            self._populate_recent_subfolders()
             return
 
         self._last_non_recent_row = idx
