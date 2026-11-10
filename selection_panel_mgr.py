@@ -291,8 +291,19 @@ class SelectionPanel(QWidget):
             self.refresh_classification_ui()
 
     def get_selection(self):
+        type_id = self._selected_type_id()
+        if type_id == 0:
+            # Recent is a navigation view, not a movement destination.
+            previous_item = self.list_type.item(self._last_non_recent_row)
+            if previous_item is not None:
+                type_id = int(
+                    previous_item.data(QtCore.Qt.ItemDataRole.UserRole) or 1
+                )
+            else:
+                type_id = 1
+
         return {
-            'type': self._selected_type_id(),
+            'type': type_id,
             'year': self.list_year.current_year()
         }
 

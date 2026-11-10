@@ -294,6 +294,15 @@ class TestQueueProgressRegressions(unittest.TestCase):
         finally:
             panel.close()
 
+    def test_recent_navigation_does_not_expose_type_zero_to_existing_operations(self):
+        panel = SelectionPanel()
+        try:
+            panel.list_type.setCurrentRow(0)
+            self.assertEqual(panel._selected_type_id(), 0)
+            self.assertEqual(panel.get_selection()["type"], 1)
+        finally:
+            panel.close()
+
     def test_recent_decision_populates_subfolders_and_selects_the_original_folder(self):
         panel = SelectionPanel()
         try:
