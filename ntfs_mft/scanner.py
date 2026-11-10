@@ -14,6 +14,7 @@ from typing import Callable, Optional
 
 from .errors import (
     ElevationRequiredError,
+    MFTAccessError,
     MFTEnumerationError,
     MFTRecordVersionError,
     MFTScanCancelled,
@@ -304,7 +305,7 @@ class MFTScanner:
                     total_size += self.api.get_file_size_by_id(
                         volume_handle, struct.unpack("<Q", child_reference)[0]
                     )
-                except OSError:
+                except (OSError, MFTAccessError):
                     inaccessible_count += 1
 
                 now = time.monotonic()
