@@ -36,6 +36,15 @@ class _TrackedConnection:
     def __getattr__(self, name):
         return getattr(self._connection, name)
 
+    def __enter__(self):
+        self._connection.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Match sqlite3.Connection's transaction-only context manager: it does
+        # not close the underlying file handle.
+        return self._connection.__exit__(exc_type, exc_value, traceback)
+
     def close(self):
         try:
             self._connection.close()
