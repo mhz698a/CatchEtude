@@ -163,6 +163,9 @@ class ElevatedMFTRunner:
         progress_callback: Optional[Callable[[str, int, int, int], None]] = None,
         should_stop: Optional[Callable[[], bool]] = None,
     ) -> MFTScanResult:
+        if should_stop and should_stop():
+            raise MFTScanCancelled("El escaneo MFT fue cancelado antes de solicitar permisos.")
+
         with tempfile.TemporaryDirectory(prefix="catchetude-mft-uac-") as temporary:
             root = Path(temporary)
             request_path = root / "request.json"

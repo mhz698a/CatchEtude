@@ -25,6 +25,7 @@ from PyQt6 import QtWidgets, QtCore
 from character_mgr import CharacterEntry, CharacterDelegate
 from folder_properties_dialog import FolderPropertiesDialog, scan_folder_stats, format_bytes
 from ntfs_mft import (
+    ElevationCancelledError,
     ElevationRequiredError,
     MFTScanner,
     MFTScanCancelled,
@@ -311,6 +312,19 @@ class TestFolderProperties(unittest.TestCase):
         self.assertTrue(Path(executable).is_file())
         self.assertEqual(arguments, ["-m", "ntfs_mft.elevated_worker"])
         self.assertTrue(Path(working_directory).is_dir())
+
+    def test_uac_cancel_is_reported_without_starting_scan(self):
+        from ntfs_mft.elevation import _launch_with_uac
+
+        shell32 = Mock()
+        shell32.ShellExecuteExW.return_value = 0
+        with patch("ntfs_mft.elevation.os.name", "nt"), patch(
+            "ntfs_mft.elevation.ctypes.WinDLL", side_effect=[shell32, Mock()]
+        ), patch("ntfs_mft.elevation.ctypes.get_last_error", return_value=1223):
+            with self.assertRaises(ElevationCancelledError):
+                _launch_with_uac(
+                    "pythonw.exe", ["-m", "ntfs_mft.elevated_worker"], r"C:\\CatchEtude"
+                )
 
     def test_elevated_launcher_requests_runas_and_keeps_process_handle(self):
         from ntfs_mft.elevation import _launch_with_uac

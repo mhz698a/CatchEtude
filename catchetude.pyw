@@ -8,7 +8,11 @@ Inicializa la aplicación, los servicios y la ventana principal de la interfaz.
 
 import sys
 
-if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "--mft-elevated-helper":
+if (
+    __name__ == "__main__"
+    and len(sys.argv) > 1
+    and sys.argv[1] == "--mft-elevated-helper"
+):
     # PyInstaller builds can reuse the same executable for the isolated MFT
     # helper without starting the normal CatchEtude UI or background services.
     from ntfs_mft.elevated_worker import main as _mft_helper_main

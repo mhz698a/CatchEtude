@@ -497,6 +497,7 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
     def _on_scan_failed(self, error_message: str) -> None:
         self.progress_bar.hide()
         self.status_label.setText(self.loc.get("lbl_prop_scan_error"))
+        self.status_label.setToolTip(error_message)
         logger.error(
             "Unable to calculate properties for %s: %s",
             self.folder_path,

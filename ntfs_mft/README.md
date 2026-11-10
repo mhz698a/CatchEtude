@@ -52,6 +52,11 @@ progress, cancellation and result files under a private per-scan temporary folde
 The MFT results are returned to the unelevated process, which updates the existing
 character or Overworld cache using the application's established cache managers.
 
+The traditional scan checks the matching cache entry first. It reuses the cached
+file count and total size only while the folder's `mtime_ns` still matches the
+stored value; otherwise it falls back to `os.walk`. A complete MFT scan refreshes
+the same existing cache format. Partial MFT scans never overwrite cached totals.
+
 The scanner uses the documented Windows MFT enumeration control code rather than
 assuming that the on-disk `$MFT` stream is contiguous. It does not create, modify,
 or enable the USN change journal.
