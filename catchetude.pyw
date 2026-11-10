@@ -5,7 +5,7 @@ CatchEtude - Punto de entrada principal de la aplicación.
 Initializes the application, services, and the main UI window.
 Inicializa la aplicación, los servicios y la ventana principal de la interfaz.
 """
-
+import sys
 import faulthandler
 import logging
 from pathlib import Path
