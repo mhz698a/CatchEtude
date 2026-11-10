@@ -326,12 +326,11 @@ class FolderPropertiesDialog(QtWidgets.QDialog):
         self._scan_mode = mode
         self.files_value.setText("0")
         self.size_value.setText(format_bytes(0))
-        self.status_label.setText(
-            self.loc.get(
-                "lbl_prop_mft_indexing" if mode == "mft"
-                else "lbl_prop_traditional_scanning"
-            )
-        )
+        if mode == "mft":
+            status_text = self.loc.get("lbl_prop_mft_indexing").format(records=0)
+        else:
+            status_text = self.loc.get("lbl_prop_traditional_scanning")
+        self.status_label.setText(status_text)
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
         self.traditional_scan_button.setEnabled(False)

@@ -250,6 +250,15 @@ class TestFolderProperties(unittest.TestCase):
         self.assertFalse(dialog.progress_bar.isVisible())
         dialog.close()
 
+    def test_mft_scan_initial_progress_text_has_no_unformatted_placeholder(self):
+        dialog = FolderPropertiesDialog(self.test_folder)
+        try:
+            self.assertTrue(dialog._prepare_scan("mft"))
+            self.assertNotIn("{records}", dialog.status_label.text())
+            self.assertIn("0", dialog.status_label.text())
+        finally:
+            dialog.close()
+
     def test_opening_properties_does_not_start_a_scan(self):
         dialog = FolderPropertiesDialog(self.test_folder)
         dialog.show()
