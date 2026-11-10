@@ -437,6 +437,18 @@ class TestFolderProperties(unittest.TestCase):
             cache.save.assert_called_once()
             dialog.close()
 
+    def test_partial_mft_result_does_not_overwrite_existing_cache(self):
+        cache = Mock()
+        character = SimpleNamespace(year=2024)
+        with patch("character_cache_mgr.CharacterCacheManager", return_value=cache):
+            dialog = FolderPropertiesDialog(self.test_folder, char_entry=character)
+            dialog._on_mft_scan_ready(5, 8192, 3, 2, 100)
+
+            cache.update_folder.assert_not_called()
+            cache.save.assert_not_called()
+            self.assertIn("2", dialog.status_label.text())
+            dialog.close()
+
     def test_mft_success_refreshes_existing_overworld_cache(self):
         cache = Mock()
         with patch("overworld_cache_mgr.OverworldCacheManager", return_value=cache):
