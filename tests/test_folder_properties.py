@@ -320,7 +320,7 @@ class TestFolderProperties(unittest.TestCase):
         shell32.ShellExecuteExW.return_value = 0
         with patch("ntfs_mft.elevation.os.name", "nt"), patch(
             "ntfs_mft.elevation.ctypes.WinDLL", side_effect=[shell32, Mock()]
-        ), patch("ntfs_mft.elevation.ctypes.get_last_error", return_value=1223):
+        ), patch("ntfs_mft.elevation.ctypes.get_last_error", return_value=1223, create=True):
             with self.assertRaises(ElevationCancelledError):
                 _launch_with_uac(
                     "pythonw.exe", ["-m", "ntfs_mft.elevated_worker"], r"C:\\CatchEtude"

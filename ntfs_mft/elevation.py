@@ -184,10 +184,7 @@ class ElevatedMFTRunner:
             )
 
             executable, base_arguments, working_directory = build_helper_launch()
-            if getattr(sys, "frozen", False):
-                arguments = base_arguments + ["--request", str(request_path)]
-            else:
-                arguments = base_arguments + ["--request", str(request_path)]
+            arguments = base_arguments + ["--request", str(request_path)]
 
             process_handle = None
             kernel32 = None
