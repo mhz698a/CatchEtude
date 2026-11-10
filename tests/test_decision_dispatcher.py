@@ -53,7 +53,7 @@ class TestDecisionDispatcher(unittest.TestCase):
         self.docs=self.root/"Documents"
         self.family=self.root/"Family"
         self.config_path=self.root/"classifications.json"
-        self.original={k:getattr(config,k) for k in ("CLASSIFICATIONS_JSON_PATH","BASE_INTERNAL","CONFLICTS","ONEDRIVE_DOCS","ONEDRIVE_DOCTOS_FAMILIA")}
+        self.original={k:getattr(config,k) for k in ("CLASSIFICATIONS_JSON_PATH","BASE_INTERNAL","CONFLICTS","ONEDRIVE_DOCS","ONEDRIVE_DOCTOS_FAMILIA","IMAGES_FOLDER","MUSIC_FOLDER","OVERWORLD_FOLDER")}
         config.CLASSIFICATIONS_JSON_PATH=self.config_path
         config.BASE_INTERNAL=self.internal
         config.CONFLICTS=self.conflicts
@@ -114,7 +114,7 @@ class TestDecisionDispatcher(unittest.TestCase):
         episodes = registry.get_decision(3)
         custom = registry.get_decision(99)
         self.assertEqual(characters["handler"], "move_to_subfolder")
-        self.assertEqual(characters["folder_contains"], "album")
+        self.assertEqual(characters["folder_contains"], "{IMAGES_FOLDER}")
         self.assertEqual(
             characters["base_path"], "{BASE_INTERNAL}/{year}"
         )
@@ -156,6 +156,31 @@ class TestDecisionDispatcher(unittest.TestCase):
         expected=episode_parent/"Season 01"/"episode-renamed.mkv"
         self.assertEqual(destination,expected)
         self.assertTrue(expected.parent.is_dir())
+
+    def test_default_folder_contains_uses_configurable_folder_names(self):
+        year_dir = self.internal / "2025"
+        year_dir.mkdir()
+        configured_values = {
+            "IMAGES_FOLDER": "custom-images",
+            "MUSIC_FOLDER": "custom-audio",
+            "OVERWORLD_FOLDER": "custom-overworld",
+        }
+        for key, value in configured_values.items():
+            setattr(config, key, value)
+            (year_dir / f"22. {value}").mkdir()
+
+        registry = ClassificationRegistry(self.config_path)
+        dispatcher = DecisionDispatcher(registry=registry)
+        for decision_id, key in (
+            (2, "IMAGES_FOLDER"),
+            (4, "MUSIC_FOLDER"),
+            (8, "OVERWORLD_FOLDER"),
+        ):
+            decision = registry.get_decision(decision_id)
+            self.assertEqual(
+                dispatcher.resolve_base_path(decision, 2025),
+                year_dir / f"22. {configured_values[key]}",
+            )
 
     def test_folder_contains_is_case_insensitive_and_has_fallback(self):
         year_dir=self.internal/"2024"

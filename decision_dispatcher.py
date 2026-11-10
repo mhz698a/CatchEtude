@@ -75,6 +75,13 @@ class DecisionDispatcher:
         contains=decision.get("folder_contains")
         if not contains:
             return parent
+        contains=str(contains)
+        for key,value in context.items():
+            contains=contains.replace("{"+key+"}",value)
+        if "{" in contains or "}" in contains:
+            raise ValueError(
+                f"Unresolved placeholder in folder_contains: {decision.get('folder_contains')}"
+            )
         if parent.is_dir():
             try:
                 matches=sorted(
