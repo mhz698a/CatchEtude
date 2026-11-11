@@ -9,7 +9,12 @@ on:
       - "decision_editor_model.py"
       - "decision_manager_dialog.py"
       - "decision_dispatcher.py"
+      - "selection_panel_mgr.py"
+      - "main_window_mgr.py"
+      - "character_service.pyw"
+      - "character_metadata.py"
       - "tests/test_decision_editor_model.py"
+      - "tests/test_character_metadata.py"
       - ".github/workflows/classification-manager-tests.yml"
   pull_request:
     branches:
@@ -19,7 +24,12 @@ on:
       - "decision_editor_model.py"
       - "decision_manager_dialog.py"
       - "decision_dispatcher.py"
+      - "selection_panel_mgr.py"
+      - "main_window_mgr.py"
+      - "character_service.pyw"
+      - "character_metadata.py"
       - "tests/test_decision_editor_model.py"
+      - "tests/test_character_metadata.py"
   workflow_dispatch:
 
 jobs:
