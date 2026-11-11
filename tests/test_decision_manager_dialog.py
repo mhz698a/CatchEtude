@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6 import QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 from classification_registry import ClassificationRegistry
 from decision_manager_dialog import DecisionManagerDialog
@@ -36,13 +36,15 @@ class TestDecisionManagerDialog(unittest.TestCase):
         self.dialog = DecisionManagerDialog(self.registry, TestLocalization())
 
     def tearDown(self):
-        self.dialog.close()
+        self.dialog.hide()
+        self.dialog.deleteLater()
+        self.app.processEvents()
         self.temp.cleanup()
 
     def _row_for_id(self, decision_id):
         for row in range(self.dialog.list_widget.count()):
             item = self.dialog.list_widget.item(row)
-            if item.data(self.dialog.list_widget.model().index(row, 0).data.__self__.UserRole) == decision_id:
+            if item.data(QtCore.Qt.ItemDataRole.UserRole) == decision_id:
                 return row
         raise AssertionError(f"Classification {decision_id} was not listed")
 
