@@ -59,7 +59,7 @@ class ClassificationRegistry:
         with lock_path.open("a+b") as lock_stream:
             lock_stream.seek(0, os.SEEK_END)
             if lock_stream.tell() == 0:
-                lock_stream.write(b"\\0")
+                lock_stream.write(b"\0")
                 lock_stream.flush()
             lock_stream.seek(0)
 
@@ -208,7 +208,7 @@ class ClassificationRegistry:
                 )
                 temporary_path = Path(temporary_name)
                 with os.fdopen(
-                    file_descriptor, "w", encoding="utf-8", newline="\\n"
+                    file_descriptor, "w", encoding="utf-8", newline="\n"
                 ) as stream:
                     json.dump(
                         {
@@ -219,7 +219,7 @@ class ClassificationRegistry:
                         indent=4,
                         ensure_ascii=False,
                     )
-                    stream.write("\\n")
+                    stream.write("\n")
                     stream.flush()
                     os.fsync(stream.fileno())
 

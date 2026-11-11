@@ -158,6 +158,8 @@ class TestDecisionEditorModel(unittest.TestCase):
             validate_decision_configuration(decision)
 
         decision["year_mode"] = "required"
+        decision["folder_contains"] = None
+        decision["folder_fallback"] = None
         decision["folder_source"] = "none"
         with self.assertRaisesRegex(ValueError, "requires filesystem subfolders"):
             validate_decision_configuration(decision)
@@ -172,6 +174,8 @@ class TestDecisionEditorModel(unittest.TestCase):
         linear = copy.deepcopy(self.model.get_decision(7))
         linear["base_path"] = "{BASE_INTERNAL}/{mtime_year}/{mtime_month}"
         validate_decision_configuration(linear)
+        linear["folder_source"] = "filesystem"
+        linear["folder_contains"] = "archive"
         linear["folder_fallback"] = "{BASE_INTERNAL}/{mtime_year}"
         with self.assertRaisesRegex(ValueError, "only supported in the base path"):
             validate_decision_configuration(linear)
@@ -185,10 +189,6 @@ class TestDecisionEditorModel(unittest.TestCase):
     def test_model_does_not_mutate_registry_input(self):
         self.model.add("No debe modificar el original")
         self.assertEqual(self.original, DEFAULT_DECISIONS)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class TestClassificationRegistryPersistence(unittest.TestCase):
@@ -255,6 +255,10 @@ class TestClassificationRegistryPersistence(unittest.TestCase):
         self.assertTrue(registry.load_error)
         self.assertEqual(self.config_path.read_text(encoding="utf-8"), "{broken")
         self.assertEqual(len(registry.decisions), len(DEFAULT_DECISIONS))
+
+
+if __name__ == "__main__":
+    unittest.main()
 
 
 if __name__ == "__main__":
