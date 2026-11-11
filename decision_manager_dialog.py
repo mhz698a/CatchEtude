@@ -641,7 +641,7 @@ class DecisionManagerDialog(QtWidgets.QDialog):
             if item.data(QtCore.Qt.ItemDataRole.UserRole) != decision.get("id"):
                 continue
             item.setText(
-                f"{self._decision_name(decision)}\\nID {decision['id']} · "
+                f"{self._decision_name(decision)}\nID {decision['id']} · "
                 f"{self._handler_label(decision.get('handler', ''))}"
             )
             item.setIcon(self._decision_icon(decision))
