@@ -20,6 +20,7 @@ from dateutil.relativedelta import relativedelta
 from PyQt6 import QtCore, QtNetwork
 import config
 from character_cache_mgr import CharacterCacheManager
+from character_metadata import parse_character_folder_metadata
 
 SERVICE_MUTEX_NAME = "CatchEtudeCharacterServiceMutex"
 SERVER_NAME = "CatchEtudeCharacterServer"
@@ -297,28 +298,9 @@ class CharacterService(QtCore.QObject):
             self._log_error(f"Error in Character Service loader: {traceback.format_exc()}")
 
     def _parse_name_metadata(self, folder_name: str) -> dict:
-        num = 0; alter = folder_name; name = "_"; birthday_iso = "1970-01-01"; origin_age = 0
-        if '.' in folder_name:
-            try:
-                meta = folder_name.split('.', 1)[1]
-                parts = [p.strip() for p in meta.split(';')]
-                if len(parts) >= 1 and parts[0] != "_" and parts[0].isdigit(): num = int(parts[0])
-                if len(parts) >= 2 and parts[1] != "_": alter = parts[1]
-                if len(parts) >= 3 and parts[2] != "_": name = sys.intern(parts[2]) if hasattr(sys, 'intern') else parts[2]
-                if len(parts) >= 4 and parts[3] not in ("_", None, ""):
-                    try: 
-                        datetime.fromisoformat(parts[3]); birthday_iso = parts[3]
-                    except ValueError as e:
-                        logging.debug(f"Invalid ISO format birthday: {birthday_iso} ({e})")
-                    except Exception as e:
-                        logging.warning(f"Error parsing birthday: {e}")
-                if len(parts) >= 5 and parts[4] != "_" and parts[4].isdigit(): origin_age = int(parts[4])
-            except ValueError as e:
-                logging.debug(f"Error parsing origin age from parts: {parts} ({e})")
-            except Exception as e:
-                logging.warning(f"Unexpected error parsing metadata: {e}")
-        
-        return {"num": num, "alter": alter, "name": name, "birthday_iso": birthday_iso, "origin_age": origin_age}
+        # Keep the character service and generic classification list on the
+        # same permissive parser. A non-character folder is still valid input.
+        return parse_character_folder_metadata(folder_name)
 
     def _format_ui_strings(self, birthday_iso: str, total_size: int) -> tuple[str, str]:
         try: 
