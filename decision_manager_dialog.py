@@ -427,16 +427,25 @@ class DecisionManagerDialog(QtWidgets.QDialog):
             return
         self.accept()
 
+    def _confirm_discard(self) -> bool:
+        if not self._dirty:
+            return True
+        answer = QtWidgets.QMessageBox.question(
+            self,
+            self.loc.get("decision_manager_discard_title"),
+            self.loc.get("decision_manager_discard_confirm"),
+            QtWidgets.QMessageBox.StandardButton.Yes
+            | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        return answer == QtWidgets.QMessageBox.StandardButton.Yes
+
     def reject(self) -> None:
-        if self._dirty:
-            answer = QtWidgets.QMessageBox.question(
-                self,
-                self.loc.get("decision_manager_discard_title"),
-                self.loc.get("decision_manager_discard_confirm"),
-                QtWidgets.QMessageBox.StandardButton.Yes
-                | QtWidgets.QMessageBox.StandardButton.No,
-                QtWidgets.QMessageBox.StandardButton.No,
-            )
-            if answer != QtWidgets.QMessageBox.StandardButton.Yes:
-                return
-        super().reject()
+        if self._confirm_discard():
+            super().reject()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        if self._confirm_discard():
+            event.accept()
+        else:
+            event.ignore()

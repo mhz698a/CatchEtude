@@ -158,9 +158,14 @@ class SelectionPanel(QWidget):
         self._last_loaded_year = None
         self._cancel_subfolder_scans()
         self._fill_type_list(selected_type_id)
+        refreshed_type_id = self._selected_type_id()
 
-        if self._selected_type_id() == 0:
+        if refreshed_type_id == 0:
             self._populate_recent_subfolders()
+        elif refreshed_type_id != selected_type_id:
+            # Mirror a normal type selection so MainWindow can refresh any
+            # type-specific services (for example character metadata).
+            self._on_type_changed(self.list_type.currentRow())
         else:
             self.refresh_classification_ui(force=True)
 
