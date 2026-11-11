@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from character_metadata import is_character_folder_name
+
 
 @dataclass
 class CharacterFolderSyncReport:
@@ -25,6 +27,20 @@ class CharacterFolderSyncReport:
     @property
     def failed_count(self) -> int:
         return len(self.conflicts) + len(self.errors)
+
+
+def is_character_metadata_folder(decision: dict[str, Any] | None, folder_name: str) -> bool:
+    """Whether this folder is eligible for character-only synchronization.
+
+    A decision may use character metadata for generic folder labels too. Those
+    labels still receive a second line, but only encoded character folder names
+    expose the synchronization action.
+    """
+    return bool(
+        decision
+        and decision.get("behaviour_second_line") == "character_metadata"
+        and is_character_folder_name(folder_name)
+    )
 
 
 def validate_character_folder_name(name: str) -> str:
