@@ -3,11 +3,33 @@ import unittest
 
 from character_metadata import (
     format_character_metadata_line,
+    is_character_folder_name,
     parse_character_folder_metadata,
 )
 
 
 class TestCharacterFolderMetadata(unittest.TestCase):
+    def test_character_folder_name_requires_the_encoded_five_field_format(self):
+        self.assertTrue(
+            is_character_folder_name("22. 03;Alter;Name;1990-04-05;18")
+        )
+        self.assertTrue(
+            is_character_folder_name("22. _;_;Name;_;_")
+        )
+
+    def test_generic_or_malformed_folder_names_are_not_character_folders(self):
+        for name in (
+            "Research documents",
+            "Reference",
+            "22. ; ; ; ;invalid",
+            "prefix. 03;Alter;Name;1990-04-05;18",
+            "22. 03;Alter;Name;not-a-date;18",
+            "22. 03;Alter;Name;1990-04-05",
+            "22. 03;Alter;Name;1990-04-05;18;extra",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(is_character_folder_name(name))
+
     def test_non_character_folder_uses_its_name_as_fallback(self):
         self.assertEqual(
             format_character_metadata_line("Research documents", 2025),
