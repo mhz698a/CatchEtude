@@ -34,11 +34,11 @@ def parse_character_folder_metadata(folder_name: str) -> dict:
         raw_metadata = folder_name.split(".", 1)[1]
         parts = [part.strip() for part in raw_metadata.split(";")]
 
-        if len(parts) >= 1 and parts[0] != "_" and parts[0].isdigit():
+        if len(parts) >= 1 and parts[0] not in ("_", "", None) and parts[0].isdigit():
             metadata["num"] = int(parts[0])
-        if len(parts) >= 2 and parts[1] != "_":
+        if len(parts) >= 2 and parts[1] not in ("_", "", None):
             metadata["alter"] = parts[1]
-        if len(parts) >= 3 and parts[2] != "_":
+        if len(parts) >= 3 and parts[2] not in ("_", "", None):
             metadata["name"] = parts[2]
         if len(parts) >= 4 and parts[3] not in ("_", None, ""):
             try:
