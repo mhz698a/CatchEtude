@@ -28,6 +28,12 @@ from ui_utils_mgr import load_stylesheet
 from classification_registry import ClassificationRegistry
 from decision_dispatcher import DecisionDispatcher
 from character_metadata import format_character_metadata_line
+from character_folder_sync import (
+    get_character_metadata_decisions,
+    sync_character_folder_to_others,
+    sync_renamed_character_folder,
+    validate_character_folder_name,
+)
 
 class SelectionPanel(QWidget):
     """
@@ -564,6 +570,14 @@ class SelectionPanel(QWidget):
 
         act_create = menu.addAction(self.loc.get("menu_create_folder")) if decision.get("allow_create", False) else None
         act_rename = menu.addAction(self.loc.get("menu_rename_folder")) if decision.get("allow_rename", False) else None
+        act_sync_characters = None
+        if decision.get("behaviour_second_line") == "character_metadata":
+            act_sync_characters = menu.addAction(
+                self.loc.get("menu_sync_character_folders")
+            )
+            act_sync_characters.setEnabled(
+                len(get_character_metadata_decisions(self.classification_registry)) > 1
+            )
         state_mgr = getattr(self.window(), "state_manager", None)
         if state_mgr:
             populate_add_to_queue_menu(self, menu, target_folder, state_mgr, status_callback=self.status_requested.emit)
@@ -596,6 +610,10 @@ class SelectionPanel(QWidget):
             self.copy_to_subfolder_clicked.emit(str(target_folder))
         elif act_rename is not None and action == act_rename:
             self._handle_rename_folder(target_folder)
+        elif act_sync_characters is not None and action == act_sync_characters:
+            self._synchronize_character_folder(
+                name, year, decision["id"], base
+            )
         elif act_delete is not None and action == act_delete:
             self._handle_delete_folder(target_folder)
         elif action == act_move_open_file:
@@ -694,19 +712,108 @@ class SelectionPanel(QWidget):
             except Exception:
                 logging.exception(f"Failed to create folder: {new_path}")
 
+    def _show_character_folder_sync_report(self, report):
+        message = self.loc.get("status_character_folder_sync").format(
+            created=len(report.created),
+            renamed=len(report.renamed),
+            existing=len(report.existing),
+            failed=report.failed_count,
+        )
+        for detail in report.conflicts + report.errors:
+            logging.warning("Character folder synchronization issue: %s", detail)
+        self.status_requested.emit(message)
+
+    def _synchronize_character_folder(
+        self, folder_name: str, year: int | None, source_decision_id: int,
+        source_base: Path,
+    ):
+        if year is None:
+            self.status_requested.emit(
+                self.loc.get("status_character_folder_sync_requires_year")
+            )
+            return
+
+        try:
+            report = sync_character_folder_to_others(
+                self.classification_registry,
+                self.decision_dispatcher,
+                year,
+                folder_name,
+                source_decision_id,
+                source_base,
+            )
+        except (OSError, ValueError) as exc:
+            logging.exception("Could not synchronize character folder %s", folder_name)
+            self.status_requested.emit(
+                self.loc.get("status_character_folder_sync_failed").format(error=exc)
+            )
+            return
+
+        self._show_character_folder_sync_report(report)
+        self.refresh_classification_ui(force=True)
+        self.folder_structure_changed.emit()
+
     def _handle_rename_folder(self, folder_path: Path):
         name, ok = QtWidgets.QInputDialog.getText(
             self, self.loc.get("dlg_rename_title"), self.loc.get("dlg_rename_label"),
             text=folder_path.name
         )
-        if ok and name and name != folder_path.name:
-            new_path = folder_path.parent / name
+        if not ok or not name:
+            return
+
+        decision = self.get_current_decision() or {}
+        is_character_folder = (
+            decision.get("behaviour_second_line") == "character_metadata"
+        )
+        year = self.list_year.current_year() if is_character_folder else None
+        if is_character_folder:
             try:
-                folder_path.rename(new_path)
-                self.refresh_classification_ui(force=True)
-                self.folder_structure_changed.emit()
-            except Exception:
-                logging.exception(f"Failed to rename folder: {folder_path} -> {new_path}")
+                name = validate_character_folder_name(name)
+            except ValueError:
+                self.status_requested.emit(
+                    self.loc.get("status_character_folder_sync_invalid_name")
+                )
+                return
+            if year is None:
+                self.status_requested.emit(
+                    self.loc.get("status_character_folder_sync_requires_year")
+                )
+                return
+
+        old_name = folder_path.name
+        if name == old_name:
+            return
+
+        new_path = folder_path.parent / name
+        try:
+            folder_path.rename(new_path)
+        except Exception:
+            logging.exception("Failed to rename folder: %s -> %s", folder_path, new_path)
+            self.status_requested.emit(
+                self.loc.get("status_character_folder_rename_failed").format(error=name)
+            )
+            return
+
+        if is_character_folder:
+            try:
+                report = sync_renamed_character_folder(
+                    self.classification_registry,
+                    self.decision_dispatcher,
+                    year,
+                    old_name,
+                    name,
+                    decision["id"],
+                    folder_path.parent,
+                )
+                self._show_character_folder_sync_report(report)
+            except (OSError, ValueError) as exc:
+                logging.exception("Folder was renamed but synchronization failed: %s", new_path)
+                self.status_requested.emit(
+                    self.loc.get("status_character_folder_sync_failed").format(error=exc)
+                )
+
+        self.refresh_classification_ui(force=True)
+        self.folder_structure_changed.emit()
 
     def _handle_delete_folder(self, folder_path: Path):
         res = QtWidgets.QMessageBox.question(
