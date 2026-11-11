@@ -55,6 +55,8 @@ class SubfolderButton(QtWidgets.QPushButton):
     def set_data(self, line2=None, line3=None):
         if line2 is not None:
             self.lbl_extra1.setText(line2)
+            if line2:
+                self._stable_height = max(self._stable_height, 45)
             if line2 or self._stable_height > 30:
                 self.lbl_extra1.show()
             else:
@@ -62,6 +64,8 @@ class SubfolderButton(QtWidgets.QPushButton):
 
         if line3 is not None:
             self.lbl_extra2.setText(line3)
+            if line3:
+                self._stable_height = max(self._stable_height, 60)
             if line3 or self._stable_height == 60:
                 self.lbl_extra2.show()
             else:
