@@ -257,8 +257,6 @@ class TestClassificationRegistryPersistence(unittest.TestCase):
         self.assertEqual(len(registry.decisions), len(DEFAULT_DECISIONS))
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 if __name__ == "__main__":
