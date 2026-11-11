@@ -787,10 +787,10 @@ class SelectionPanel(QWidget):
         new_path = folder_path.parent / name
         try:
             folder_path.rename(new_path)
-        except Exception:
+        except Exception as exc:
             logging.exception("Failed to rename folder: %s -> %s", folder_path, new_path)
             self.status_requested.emit(
-                self.loc.get("status_character_folder_rename_failed").format(error=name)
+                self.loc.get("status_character_folder_rename_failed").format(error=exc)
             )
             return
 
@@ -806,7 +806,7 @@ class SelectionPanel(QWidget):
                     folder_path.parent,
                 )
                 self._show_character_folder_sync_report(report)
-            except (OSError, ValueError) as exc:
+            except Exception as exc:
                 logging.exception("Folder was renamed but synchronization failed: %s", new_path)
                 self.status_requested.emit(
                     self.loc.get("status_character_folder_sync_failed").format(error=exc)
