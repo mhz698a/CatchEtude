@@ -648,8 +648,12 @@ class SelectionPanel(QWidget):
         overworld_year = year if secondary == "overworld_metadata" else None
         char_entry = None
         if secondary == "character_metadata" and hasattr(self.window(), "queue_panel"):
+            target_path = os.path.normcase(os.path.abspath(str(target_folder)))
             for character in self.window().queue_panel.get_characters():
-                if Path(character.path).name == name or character.path == str(target_folder):
+                character_path = os.path.normcase(
+                    os.path.abspath(str(character.path))
+                )
+                if character_path == target_path:
                     char_entry = character
                     break
         dialog = FolderPropertiesDialog(target_folder,char_entry=char_entry,parent=self,loc=self.loc,overworld_year=overworld_year)
