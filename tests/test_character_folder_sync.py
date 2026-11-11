@@ -9,6 +9,7 @@ from classification_registry import ClassificationRegistry
 from decision_dispatcher import DecisionDispatcher
 from character_folder_sync import (
     get_character_metadata_decisions,
+    is_character_metadata_folder,
     sync_character_folder_to_others,
     sync_renamed_character_folder,
 )
@@ -74,6 +75,25 @@ class TestCharacterFolderSync(unittest.TestCase):
             "allow_rename": True,
             "allow_delete": True,
         }
+
+    def test_sync_eligibility_requires_a_character_metadata_decision_and_character_name(self):
+        decision = self._decision(20, "Characters")
+
+        self.assertTrue(
+            is_character_metadata_folder(
+                decision, "22. 03;Alter;Name;1990-04-05;18"
+            )
+        )
+        for name in ("Research documents", "Reference", "22. ; ; ; ;invalid"):
+            with self.subTest(name=name):
+                self.assertFalse(is_character_metadata_folder(decision, name))
+
+        generic_decision = dict(decision, behaviour_second_line="last_file")
+        self.assertFalse(
+            is_character_metadata_folder(
+                generic_decision, "22. 03;Alter;Name;1990-04-05;18"
+            )
+        )
 
     def test_sync_creates_empty_folder_without_copying_source_contents(self):
         registry, dispatcher = self._registry(
