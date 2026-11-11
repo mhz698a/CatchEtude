@@ -3,7 +3,10 @@ import copy
 import unittest
 
 from classification_registry import ClassificationRegistry, DEFAULT_DECISIONS
-from decision_editor_model import DecisionEditorModel
+from decision_editor_model import (
+    DecisionEditorModel,
+    validate_decision_configuration,
+)
 
 
 class TestDecisionEditorModel(unittest.TestCase):
@@ -83,6 +86,67 @@ class TestDecisionEditorModel(unittest.TestCase):
             {item["id"] for item in decisions},
             {item["id"] for item in self.original},
         )
+
+    def test_update_fields_changes_route_and_behavior(self):
+        self.model.update_fields(3, {
+            "name": "Series",
+            "base_path": "{BASE_INTERNAL}/{year}",
+            "folder_contains": "___[",
+            "folder_fallback": "{BASE_INTERNAL}/{year}",
+            "behaviour_second_line": "last_file",
+        })
+        episode = self.model.get_decision(3)
+        self.assertEqual(episode["name"], "Series")
+        self.assertEqual(episode["folder_contains"], "___[")
+        self.assertEqual(episode["behaviour_second_line"], "last_file")
+        validate_decision_configuration(episode)
+
+    def test_update_fields_can_clear_optional_folder_rules(self):
+        self.model.update_fields(3, {
+            "folder_contains": None,
+            "folder_fallback": None,
+            "behaviour_second_line": None,
+        })
+        episode = self.model.get_decision(3)
+        self.assertNotIn("folder_contains", episode)
+        self.assertNotIn("folder_fallback", episode)
+        self.assertNotIn("behaviour_second_line", episode)
+        validate_decision_configuration(episode)
+
+    def test_all_builtin_decisions_pass_editor_validation(self):
+        for decision in DEFAULT_DECISIONS:
+            with self.subTest(decision_id=decision["id"]):
+                validate_decision_configuration(decision)
+
+    def test_localized_names_are_valid(self):
+        episode = copy.deepcopy(self.model.get_decision(3))
+        episode["name"] = {"es": "Episodios", "en": "Episodes"}
+        validate_decision_configuration(episode)
+
+    def test_year_placeholder_requires_year_mode(self):
+        episode = copy.deepcopy(self.model.get_decision(3))
+        episode["year_mode"] = "none"
+        with self.assertRaisesRegex(ValueError, "year variables require"):
+            validate_decision_configuration(episode)
+
+    def test_unknown_path_placeholder_is_rejected(self):
+        episode = copy.deepcopy(self.model.get_decision(3))
+        episode["base_path"] = "{BASE_INTERNAL}/{unknown_value}"
+        with self.assertRaisesRegex(ValueError, "unknown path variable"):
+            validate_decision_configuration(episode)
+
+    def test_folder_fallback_requires_folder_contains(self):
+        episode = copy.deepcopy(self.model.get_decision(3))
+        episode.pop("folder_contains", None)
+        episode["folder_fallback"] = "{BASE_INTERNAL}/{year}"
+        with self.assertRaisesRegex(ValueError, "fallback requires"):
+            validate_decision_configuration(episode)
+
+    def test_linear_docs_must_keep_year_selection(self):
+        linear = copy.deepcopy(self.model.get_decision(7))
+        linear["year_mode"] = "none"
+        with self.assertRaisesRegex(ValueError, "requires year selection"):
+            validate_decision_configuration(linear)
 
     def test_model_does_not_mutate_registry_input(self):
         self.model.add("No debe modificar el original")
