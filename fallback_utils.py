@@ -47,116 +47,33 @@ def safe_move_to_conflicts(p: Path):
 
 
 def compute_destination(decision: dict, src: Path) -> Path:
-    """
-    Computes the final destination path based on the user's decision.
-    Calcula la ruta de destino final basada en la decisión del usuario.
-    """
-    movement_type = decision.get('movement_type', 1)
-    year = decision.get('year', None)
-    sub = decision.get('sub', None)
-    newname = decision.get('new_name', src.stem)
-    ext = src.suffix
-    
-    # Sanitize the new name
-    newname = sanitize_windows_filename(newname)
-    final = newname + ext
-    
-    # Check internal storage availability for dependent types
-    if movement_type in (2, 3, 4, 7, 8) and not config.BASE_INTERNAL.exists():
-        logging.error("BASE_INTERNAL not available in compute_destination")
-        return config.CONFLICTS / final
-    
-    if movement_type == 1: # Keep in Downloads (actually moved to conflicts for tracking)
-        return config.CONFLICTS / final
-    
-    if movement_type == 2: # Characters and Screenshots
-        prefix = f"{year - 2003:02d}"
-        year_dir = config.BASE_INTERNAL / str(year)
-        target = None
-        if year_dir.exists() and year_dir.is_dir():
-            for child in sorted(year_dir.iterdir()):
-                if child.is_dir():
-                    name = child.name.lower()
-                    if (prefix in name and config.IMAGES_FOLDER in name) or (config.IMAGES_FOLDER in name):
-                        target = child
-                        break
-        if target is None:
-            target = year_dir / f"{prefix}. {config.IMAGES_FOLDER}"
-        dest_dir = (target / sub) if sub else target
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        return dest_dir / final
-    
-    if movement_type == 3: # Episodes
-        year_dir = config.BASE_INTERNAL / str(year)
-        target = None
-        if year_dir.exists() and year_dir.is_dir():
-            for child in sorted(year_dir.iterdir()):
-                if child.is_dir() and '___[' in child.name:
-                    target = child
-                    break
-        if target is None:
-            target = year_dir
-        dest_dir = (target / sub) if sub else target
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        return dest_dir / final
-    
-    if movement_type == 4: # Music
-        prefix = f"{year - 2003:02d}"
-        year_dir = config.BASE_INTERNAL / str(year)
-        target = None
-        if year_dir.exists() and year_dir.is_dir():
-            for child in sorted(year_dir.iterdir()):
-                if child.is_dir():
-                    name = child.name.lower()
-                    if (prefix in name and config.MUSIC_FOLDER in name) or (config.MUSIC_FOLDER in name):
-                        target = child
-                        break
-        if target is None:
-            target = year_dir / f"{prefix}. {config.MUSIC_FOLDER}"
-        dest_dir = (target / sub) if sub else target
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        return dest_dir / final
-    
-    if movement_type == 5: # Academic (OneDrive)
-        dest_dir = (config.ONEDRIVE_DOCS / sub) if sub else config.ONEDRIVE_DOCS
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        return dest_dir / final
-        
-    if movement_type == 6: # Family and Procedures (OneDrive)
-        dest_dir = (config.ONEDRIVE_DOCTOS_FAMILIA / sub) if sub else config.ONEDRIVE_DOCTOS_FAMILIA
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        return dest_dir / final
-    
-    if movement_type == 7: # Linear Documentation
-        dt = datetime.fromtimestamp(src.stat().st_mtime)        
-        target_year = dt.year
-        base_year_folder = config.BASE_INTERNAL / str(target_year)
-        if not base_year_folder.exists():
-            target_year = datetime.now().year
-            base_year_folder = config.BASE_INTERNAL / str(target_year)
-        
-        prefix = f"{target_year - 2003:02d}"
-        base = base_year_folder / f"{prefix}. {config.ACROBAT_FOLDER}"
-        month_folder = dt.strftime("%Y-%m")
-        dest_dir = base / month_folder
-        dest_dir.mkdir(parents=True, exist_ok=True)        
-        return dest_dir / final
-    
-    if movement_type == 8: # Overworld
-        prefix = f"{year - 2003:02d}"
-        year_dir = config.BASE_INTERNAL / str(year)
-        target = None
-        if year_dir.exists() and year_dir.is_dir():
-            for child in sorted(year_dir.iterdir()):
-                if child.is_dir():
-                    name = child.name.lower()
-                    if (prefix in name and config.OVERWORLD_FOLDER in name) or (config.OVERWORLD_FOLDER in name):
-                        target = child
-                        break
-        if target is None:
-            target = year_dir / f"{prefix}. {config.OVERWORLD_FOLDER}"
-        dest_dir = (target / sub) if sub else target
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        return dest_dir / final
-    
-    return config.CONFLICTS / final
+    """Resolve destinations through the JSON classification registry."""
+    from classification_registry import ClassificationRegistry
+    from decision_dispatcher import DecisionDispatcher
+
+    movement_type = decision.get("movement_type", 1)
+    new_name = sanitize_windows_filename(
+        decision.get("new_name") or Path(src).stem
+    )
+    try:
+        registry = ClassificationRegistry()
+        definition = registry.get_decision(movement_type)
+        if definition is None:
+            raise ValueError(
+                f"No classification definition exists for ID {movement_type!r}"
+            )
+        dispatcher = DecisionDispatcher(registry=registry)
+        return dispatcher.resolve_destination(
+            definition,
+            Path(src),
+            year=decision.get("year"),
+            subfolder=decision.get("sub"),
+            new_name=new_name,
+        )
+    except Exception:
+        logging.exception(
+            "Could not resolve destination for classification %r; "
+            "using Conflicts as a safety fallback",
+            movement_type,
+        )
+        return config.CONFLICTS / f"{new_name}{Path(src).suffix}"

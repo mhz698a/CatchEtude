@@ -166,53 +166,31 @@ class SubfolderScanner(QtCore.QThread):
         except Exception:
             logging.exception("Error in SubfolderScanner")
 
-def get_base_path_for_type_year(movement_type: int, year: int) -> Path:
-    """Calculates the base folder for subfolder listing."""
-    year_dir = config.BASE_INTERNAL / str(year)
-    if not (year_dir.exists() and year_dir.is_dir()):
-        logging.warning(f"Year directory not found: {year_dir}")
-        return year_dir
-        
-    prefix = f"{year - 2003:02d}"
-    base = None
-    
-    try:
-        for child in sorted(year_dir.iterdir()):
-            if not child.is_dir():
-                continue
-            
-            name = child.name.lower()
-            if movement_type == 2: # Characters
-                if (prefix in name and config.IMAGES_FOLDER in name) or (config.IMAGES_FOLDER in name):
-                    base = child
-                    break
-            elif movement_type == 3: # Episodes
-                if '___[' in name:
-                    base = child
-                    break
-            elif movement_type == 4: # Music
-                if (prefix in name and config.MUSIC_FOLDER in name) or (config.MUSIC_FOLDER in name):
-                    base = child
-                    break
-            elif movement_type == 8: # Overworld
-                if (prefix in name and config.OVERWORLD_FOLDER in name) or (config.OVERWORLD_FOLDER in name):
-                    base = child
-                    break
-    except Exception:
-        logging.exception(f"Error accessing year directory: {year_dir}")
 
-    if base is None:
-        if movement_type == 2:
-            base = year_dir / f"{prefix}. {config.IMAGES_FOLDER}"
-        elif movement_type == 4:
-            base = year_dir / f"{prefix}. {config.MUSIC_FOLDER}"
-        elif movement_type == 8:
-            base = year_dir / f"{prefix}. {config.OVERWORLD_FOLDER}"
-        else:
-            base = year_dir
-            
-    return base
+def get_base_path_for_type_year(movement_type: int, year: int) -> Path:
+    """Backward-compatible wrapper around the JSON-driven base-path resolver."""
+    from classification_registry import ClassificationRegistry
+    from decision_dispatcher import DecisionDispatcher
+
+    registry = ClassificationRegistry()
+    decision = registry.get_decision(movement_type)
+    if decision is None:
+        logging.warning("No classification definition for ID %s", movement_type)
+        return config.BASE_INTERNAL / str(year)
+    return DecisionDispatcher(registry=registry).resolve_base_path(decision, year) or (
+        config.BASE_INTERNAL / str(year)
+    )
 
 def get_base_path_for_docs(movement_type: int) -> Path:
-    """Returns base path for OneDrive documents."""
-    return config.ONEDRIVE_DOCS if movement_type == 5 else config.ONEDRIVE_DOCTOS_FAMILIA
+    """Backward-compatible wrapper; the destination is defined in classifications.json."""
+    from classification_registry import ClassificationRegistry
+    from decision_dispatcher import DecisionDispatcher
+
+    registry = ClassificationRegistry()
+    decision = registry.get_decision(movement_type)
+    if decision is None:
+        raise ValueError(f"No classification definition for ID {movement_type}")
+    base = DecisionDispatcher(registry=registry).resolve_base_path(decision, None)
+    if base is None:
+        raise ValueError(f"Classification {movement_type} does not define a folder path")
+    return base
