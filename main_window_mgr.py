@@ -1679,13 +1679,7 @@ class MainWindow(QWidget):
         selected_year = self.selection_panel.get_selection().get("year")
         if selected_year is None:
             return
-        try:
-            base = self.selection_panel.decision_dispatcher.resolve_base_path(
-                decision, selected_year
-            )
-        except (OSError, ValueError):
-            logging.exception("Could not resolve the active folder for character metadata")
-            return
+        base = self.selection_panel.get_active_subfolder_base()
         if base is None:
             return
 
