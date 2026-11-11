@@ -10,6 +10,7 @@ on:
       - "decision_manager_dialog.py"
       - "decision_dispatcher.py"
       - "selection_panel_mgr.py"
+      - "subfolder_list_mgr.py"
       - "main_window_mgr.py"
       - "character_service.pyw"
       - "character_metadata.py"
