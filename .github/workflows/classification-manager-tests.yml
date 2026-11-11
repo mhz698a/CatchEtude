@@ -38,3 +38,5 @@ jobs:
         run: python -m unittest discover -s tests -p "test_decision_editor_model.py" -v
       - name: Test JSON decision dispatcher regressions
         run: python -m unittest discover -s tests -p "test_decision_dispatcher.py" -v
+      - name: Test classification manager dialog
+        run: python -m unittest discover -s tests -p "test_decision_manager_dialog.py" -v
