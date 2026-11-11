@@ -901,6 +901,21 @@ class MainWindow(QWidget):
         if hasattr(self, 'tray_mgr'):
             self.tray_mgr.build_tray()
 
+    def _show_decision_manager(self):
+        """Open the visual classification manager over the active registry."""
+        from decision_manager_dialog import DecisionManagerDialog
+
+        dialog = DecisionManagerDialog(
+            self.selection_panel.classification_registry,
+            self.loc,
+            self,
+        )
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.selection_panel.on_classification_registry_changed()
+            self.show_status(
+                self.loc.get("decision_manager_saved_status"), 5000
+            )
+
     def _show_plugin_manager(self):
         if hasattr(self, "_plugin_dialog") and self._plugin_dialog is not None and self._plugin_dialog.isVisible():
             self._plugin_dialog.raise_()

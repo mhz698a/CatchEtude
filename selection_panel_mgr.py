@@ -143,6 +143,27 @@ class SelectionPanel(QWidget):
         
 
 
+    def on_classification_registry_changed(self):
+        """Refresh the selection panel after the registry has been saved."""
+        selected_type_id = self._selected_type_id()
+        existing_ids = {
+            decision["id"] for decision in self.classification_registry.decisions
+        }
+        self._recent_subfolders = [
+            recent for recent in self._recent_subfolders
+            if recent.get("type") in existing_ids
+        ]
+        self._recent_items_by_label = {}
+        self._last_loaded_type = None
+        self._last_loaded_year = None
+        self._cancel_subfolder_scans()
+        self._fill_type_list(selected_type_id)
+
+        if self._selected_type_id() == 0:
+            self._populate_recent_subfolders()
+        else:
+            self.refresh_classification_ui(force=True)
+
     def retranslate_ui(self):
         selected_type_id = self._selected_type_id()
         self._fill_type_list(selected_type_id)
@@ -731,6 +752,6 @@ class SelectionPanel(QWidget):
         self.list_type.setCurrentRow(selected_row)
         if selected_type_id in active_ids:
             self._last_non_recent_type_id = selected_type_id
-        elif not getattr(self,"_last_non_recent_type_id",None):
+        elif getattr(self, "_last_non_recent_type_id", None) not in active_ids:
             self._last_non_recent_type_id = active[0]["id"] if active else None
         self.list_type.blockSignals(False)
