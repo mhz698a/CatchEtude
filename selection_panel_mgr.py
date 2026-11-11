@@ -63,6 +63,7 @@ class SelectionPanel(QWidget):
         self._sub_scanner_workers = set()
         self._episode_list_workers = set()
         self._sub_scan_generation = 0
+        self._active_subfolder_base: Path | None = None
         self._overworld_client = OverworldServiceClient(self)
         self._overworld_client.result_ready.connect(self._on_overworld_result)
         self._overworld_client.finished_ready.connect(
@@ -307,6 +308,10 @@ class SelectionPanel(QWidget):
             type_id = getattr(self, "_last_non_recent_type_id", None)
         return self.classification_registry.get_decision(type_id)
 
+    def get_active_subfolder_base(self) -> Path | None:
+        """Return the already-resolved base used by the currently displayed list."""
+        return self._active_subfolder_base
+
     def get_selection(self):
         type_id = self._selected_type_id()
         if type_id == 0:
@@ -387,6 +392,7 @@ class SelectionPanel(QWidget):
         self._cancel_subfolder_scans()
         generation = self._sub_scan_generation
         self.list_sub.clear()
+        self._active_subfolder_base = Path(base) if base is not None else None
         if base is None:
             self.list_sub.setEnabled(False)
             return
