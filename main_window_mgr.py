@@ -1676,6 +1676,29 @@ class MainWindow(QWidget):
         decision=self.selection_panel.get_current_decision()
         if not decision or decision.get("behaviour_second_line")!="character_metadata":
             return
+        selected_year = self.selection_panel.get_selection().get("year")
+        if selected_year is None:
+            return
+        try:
+            base = self.selection_panel.decision_dispatcher.resolve_base_path(
+                decision, selected_year
+            )
+        except (OSError, ValueError):
+            logging.exception("Could not resolve the active folder for character metadata")
+            return
+        if base is None:
+            return
+
+        # Character-service entries belong to a specific root. Match the full
+        # parent path, not just the folder name, or another classification with
+        # an equally named folder could receive unrelated character metadata.
+        character_parent = os.path.normcase(
+            os.path.abspath(str(Path(c.path).parent))
+        )
+        selected_base = os.path.normcase(os.path.abspath(str(base)))
+        if character_parent != selected_base:
+            return
+
         folder_name=Path(c.path).name
         try:
             birthday=datetime.fromisoformat(c.birthday_iso)
