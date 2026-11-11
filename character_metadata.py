@@ -61,6 +61,45 @@ def parse_character_folder_metadata(folder_name: str) -> dict:
     return metadata
 
 
+def is_character_folder_name(folder_name: str) -> bool:
+    """Return whether a folder name follows the encoded character convention.
+
+    Character folders use a numeric prefix followed by five semicolon-separated
+    fields: number, alias, display name, ISO birthday (or '_'), and origin age
+    (or '_'). The second-line formatter remains permissive; this predicate is
+    only for deciding whether character-specific actions should be offered.
+    """
+    if not isinstance(folder_name, str) or not folder_name:
+        return False
+
+    prefix, separator, raw_metadata = folder_name.partition(".")
+    if not separator or not prefix.isdigit():
+        return False
+
+    parts = [part.strip() for part in raw_metadata.split(";")]
+    if len(parts) != 5:
+        return False
+
+    number, alias, display_name, birthday_iso, origin_age = parts
+    if number != "_" and not number.isdigit():
+        return False
+    if not alias or not display_name:
+        return False
+
+    if birthday_iso not in ("", "_"):
+        try:
+            birthday = datetime.fromisoformat(birthday_iso)
+        except (TypeError, ValueError):
+            return False
+        if birthday.date().isoformat() != birthday_iso:
+            return False
+
+    if origin_age not in ("", "_") and not origin_age.isdigit():
+        return False
+
+    return True
+
+
 def format_character_metadata_line(folder_name: str, year: int | str) -> str:
     """Format the second line, falling back to the raw folder name.
 
