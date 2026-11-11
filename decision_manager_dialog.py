@@ -383,7 +383,7 @@ class DecisionManagerDialog(QtWidgets.QDialog):
         for row, decision in enumerate(self.model.decisions):
             item = QtWidgets.QListWidgetItem(
                 self._decision_icon(decision),
-                f"{self._decision_name(decision)}\\nID {decision['id']} · "
+                f"{self._decision_name(decision)}\nID {decision['id']} · "
                 f"{self._handler_label(decision.get('handler', ''))}",
             )
             item.setData(QtCore.Qt.ItemDataRole.UserRole, decision["id"])
@@ -773,7 +773,7 @@ class DecisionManagerDialog(QtWidgets.QDialog):
             else "decision_manager_preview_not_exists"
         )
         self.preview_label.setText(
-            f"{resolved}\\n{self.loc.get(status_key)}"
+            f"{resolved}\n{self.loc.get(status_key)}"
         )
 
     def _save(self) -> None:
