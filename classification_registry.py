@@ -1,11 +1,19 @@
 """Persistent, validated classification definitions for CatchEtude."""
 from __future__ import annotations
+
 import copy
+import hashlib
 import json
 import logging
+import os
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
 import config
+
+_UNSET_FINGERPRINT = object()
 
 DEFAULT_DECISIONS: list[dict[str, Any]] = [
  {"id":1,"name_key":"type_1","icon":"descargas.png","enabled":True,"order":1,"handler":"keep","year_mode":"none","folder_source":"none","requires_internal":False,"allow_create":False,"allow_rename":False,"allow_delete":False},
@@ -26,10 +34,52 @@ class ClassificationRegistry:
     def __init__(self, settings_path: Path | None=None):
         self.settings_path=Path(settings_path if settings_path is not None else config.CLASSIFICATIONS_JSON_PATH)
         self.decisions: list[dict[str,Any]]=[]
+        self.last_save_error: str | None = None
+        self.last_save_message: str | None = None
+        self.load_error: str | None = None
         self.load_config()
 
     def get_config_path(self)->Path:
         return self.settings_path
+
+    def get_config_fingerprint(self) -> str | None:
+        """Return a content hash, or None when the configuration does not exist."""
+        try:
+            payload = self.get_config_path().read_bytes()
+        except FileNotFoundError:
+            return None
+        return hashlib.sha256(payload).hexdigest()
+
+    @staticmethod
+    @contextmanager
+    def _configuration_lock(path: Path):
+        """Serialize registry writers across CatchEtude processes."""
+        lock_path = path.with_name(path.name + ".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as lock_stream:
+            lock_stream.seek(0, os.SEEK_END)
+            if lock_stream.tell() == 0:
+                lock_stream.write(b"\\0")
+                lock_stream.flush()
+            lock_stream.seek(0)
+
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(lock_stream.fileno(), msvcrt.LK_LOCK, 1)
+                try:
+                    yield
+                finally:
+                    lock_stream.seek(0)
+                    msvcrt.locking(lock_stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_stream.fileno(), fcntl.LOCK_UN)
 
     @staticmethod
     def _default_by_id():
@@ -63,6 +113,7 @@ class ClassificationRegistry:
         return decision
 
     def load_config(self):
+        self.load_error = None
         path=self.get_config_path()
         if not path.exists():
             self.decisions=copy.deepcopy(DEFAULT_DECISIONS)
@@ -83,7 +134,8 @@ class ClassificationRegistry:
                 or migrated != data["decisions"]
             ):
                 self.save_config()
-        except Exception:
+        except Exception as exc:
+            self.load_error = str(exc)
             logging.exception("Could not load %s; built-in classifications remain available",path)
             # Preserve a corrupt or recoverable file; never overwrite it on parse failure.
             self.decisions=copy.deepcopy(DEFAULT_DECISIONS)
@@ -124,20 +176,81 @@ class ClassificationRegistry:
                 if flag in d and not isinstance(d[flag],bool):
                     raise ValueError(f"{flag} for decision {ident} must be boolean")
 
-    def save_config(self)->bool:
+    def save_config(self, expected_fingerprint=_UNSET_FINGERPRINT) -> bool:
+        """Persist decisions atomically, optionally rejecting stale editor state.
+
+        The optional fingerprint protects a dialog that remained open while
+        another process or editor changed the configuration file.
+        Registry writers also share a sidecar OS-level lock.
+        """
+        self.last_save_error = None
+        self.last_save_message = None
+        temporary_path: Path | None = None
         try:
             self.validate_decisions(self.decisions)
-            path=self.get_config_path()
-            path.parent.mkdir(parents=True,exist_ok=True)
-            temp=path.with_suffix(path.suffix+".tmp")
-            with temp.open("w",encoding="utf-8",newline="\n") as stream:
-                json.dump({"schema_version":self.SCHEMA_VERSION,"decisions":self.decisions},stream,indent=4,ensure_ascii=False)
-                stream.write("\n")
-            temp.replace(path)
+            path = self.get_config_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            with self._configuration_lock(path):
+                current_fingerprint = self.get_config_fingerprint()
+                if (
+                    expected_fingerprint is not _UNSET_FINGERPRINT
+                    and current_fingerprint != expected_fingerprint
+                ):
+                    self.last_save_error = "conflict"
+                    self.last_save_message = "Classification configuration changed on disk."
+                    return False
+
+                file_descriptor, temporary_name = tempfile.mkstemp(
+                    prefix=path.name + ".",
+                    suffix=".tmp",
+                    dir=str(path.parent),
+                )
+                temporary_path = Path(temporary_name)
+                with os.fdopen(
+                    file_descriptor, "w", encoding="utf-8", newline="\\n"
+                ) as stream:
+                    json.dump(
+                        {
+                            "schema_version": self.SCHEMA_VERSION,
+                            "decisions": self.decisions,
+                        },
+                        stream,
+                        indent=4,
+                        ensure_ascii=False,
+                    )
+                    stream.write("\\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+
+                # Check again immediately before replacement. External editors
+                # do not honor the sidecar lock, but this catches intervening edits.
+                current_fingerprint = self.get_config_fingerprint()
+                if (
+                    expected_fingerprint is not _UNSET_FINGERPRINT
+                    and current_fingerprint != expected_fingerprint
+                ):
+                    self.last_save_error = "conflict"
+                    self.last_save_message = "Classification configuration changed on disk."
+                    return False
+
+                os.replace(temporary_path, path)
+                temporary_path = None
             return True
-        except Exception:
+        except Exception as exc:
+            self.last_save_error = "io_error"
+            self.last_save_message = str(exc)
             logging.exception("Failed to save classification configuration")
             return False
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                except OSError:
+                    logging.warning(
+                        "Could not remove temporary classification file %s",
+                        temporary_path,
+                    )
 
     def get_active_decisions(self):
         return sorted((d for d in self.decisions if d.get("enabled",True)),key=lambda d:(d.get("order",0),d["id"]))

@@ -72,6 +72,36 @@ def validate_decision_configuration(decision: dict[str, Any]) -> None:
         None, "", "character_metadata", "last_file", "overworld_metadata"
     }:
         raise ValueError(f"Decision {decision_id}: unsupported second-line behavior")
+    if second_line in {"character_metadata", "overworld_metadata"}:
+        if year_mode != "required":
+            raise ValueError(
+                f"Decision {decision_id}: {second_line} requires year selection"
+            )
+        if handler != "move_to_subfolder" or folder_source != "filesystem":
+            raise ValueError(
+                f"Decision {decision_id}: {second_line} requires filesystem subfolders"
+            )
+    elif second_line == "last_file" and folder_source != "filesystem":
+        raise ValueError(
+            f"Decision {decision_id}: last_file requires filesystem subfolders"
+        )
+    if handler != "move_to_subfolder" and second_line not in {None, ""}:
+        raise ValueError(
+            f"Decision {decision_id}: this handler does not support a second-line behavior"
+        )
+
+    if folder_source == "none":
+        if contains or fallback or second_line:
+            raise ValueError(
+                f"Decision {decision_id}: folder matching and secondary behavior require filesystem subfolders"
+            )
+        if any(
+            decision.get(flag, False)
+            for flag in ("allow_create", "allow_rename", "allow_delete")
+        ):
+            raise ValueError(
+                f"Decision {decision_id}: subfolder permissions require filesystem subfolders"
+            )
 
     templates = {
         key: decision.get(key)
@@ -90,6 +120,20 @@ def validate_decision_configuration(decision: dict[str, Any]) -> None:
     ):
         raise ValueError(
             "File modification date variables are only supported by linear documentation"
+        )
+    if handler == "linear_docs" and any(
+        token in str(templates[key] or "")
+        for key in ("folder_contains", "folder_fallback")
+        for token in ("{mtime_year}", "{mtime_month}")
+    ):
+        raise ValueError(
+            "File modification date variables are only supported in the base path"
+        )
+    if not decision.get("requires_internal", False) and "{BASE_INTERNAL}" in str(
+        decision.get("base_path") or ""
+    ):
+        raise ValueError(
+            f"Decision {decision_id}: a BASE_INTERNAL path requires the internal drive"
         )
 
     for key, template in templates.items():

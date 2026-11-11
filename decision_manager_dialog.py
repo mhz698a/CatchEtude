@@ -32,6 +32,7 @@ class DecisionManagerDialog(QtWidgets.QDialog):
         self._dirty = False
         self._loading_editor = False
         self._current_editor_id: int | None = None
+        self._source_fingerprint = registry.get_config_fingerprint()
 
         self.setWindowTitle(self.loc.get("decision_manager_title"))
         self.setWindowIcon(QtGui.QIcon(config.ICON_PATH))
@@ -557,16 +558,22 @@ class DecisionManagerDialog(QtWidgets.QDialog):
             names = {
                 language: value
                 for language, value in existing.items()
-                if isinstance(value, str)
+                if isinstance(value, str) and value.strip()
             }
         elif isinstance(existing, str) and existing.strip():
             names = {"es": existing, "en": existing}
         else:
-            key = decision.get("name_key")
-            names = {
-                language: STRINGS.get(language, {}).get(key, key or edited_name)
-                for language in ("es", "en")
-            }
+            names = {}
+
+        key = decision.get("name_key")
+        fallback = next(iter(names.values()), edited_name)
+        for language in ("es", "en"):
+            if not names.get(language):
+                names[language] = (
+                    STRINGS.get(language, {}).get(key)
+                    or fallback
+                    or edited_name
+                )
         names[self.loc.current_lang()] = edited_name
         return names
 
@@ -574,6 +581,8 @@ class DecisionManagerDialog(QtWidgets.QDialog):
         handler = decision.get("handler")
         fields: dict[str, Any] = {}
         edited_name = self.name_edit.text().strip()
+        if not edited_name:
+            raise ValueError(self.loc.get("decision_manager_name_required"))
         if edited_name != self._decision_name(decision):
             fields["name"] = self._localized_name_value(decision, edited_name)
 
@@ -626,17 +635,44 @@ class DecisionManagerDialog(QtWidgets.QDialog):
             })
         return fields
 
-    def _commit_current_editor(self) -> None:
+    def _update_list_item(self, decision: dict[str, Any]) -> None:
+        for row in range(self.list_widget.count()):
+            item = self.list_widget.item(row)
+            if item.data(QtCore.Qt.ItemDataRole.UserRole) != decision.get("id"):
+                continue
+            item.setText(
+                f"{self._decision_name(decision)}\\nID {decision['id']} · "
+                f"{self._handler_label(decision.get('handler', ''))}"
+            )
+            item.setIcon(self._decision_icon(decision))
+            return
+
+    def _commit_current_editor(self) -> bool:
         decision = self.model.get_decision(self._current_editor_id)
         if decision is None:
-            return
-        if self.model.update_fields(
-            decision["id"], self._collect_editor_fields(decision)
-        ):
+            return True
+        try:
+            fields = self._collect_editor_fields(decision)
+            changed = self.model.update_fields(decision["id"], fields)
+        except (TypeError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                self.loc.get("decision_manager_title"),
+                self.loc.get("decision_manager_invalid_editor_value").format(error=str(exc)),
+            )
+            self.name_edit.setFocus()
+            return False
+        if changed:
             self._mark_dirty()
+            self._update_list_item(self.model.get_decision(decision["id"]))
+        return True
 
     def _on_current_item_changed(self, current, previous) -> None:
-        self._commit_current_editor()
+        if not self._commit_current_editor():
+            self.list_widget.blockSignals(True)
+            self.list_widget.setCurrentItem(previous)
+            self.list_widget.blockSignals(False)
+            return
         self._refresh_details()
         self._refresh_controls()
         decision_id = (
@@ -662,13 +698,15 @@ class DecisionManagerDialog(QtWidgets.QDialog):
         )
 
     def _add_decision(self) -> None:
-        self._commit_current_editor()
+        if not self._commit_current_editor():
+            return
         decision_id = self.model.add(self.loc.get("decision_manager_new_name"))
         self._refresh_list(decision_id)
         self._mark_dirty()
 
     def _duplicate_decision(self) -> None:
-        self._commit_current_editor()
+        if not self._commit_current_editor():
+            return
         decision_id = self._current_id()
         decision = self.model.get_decision(decision_id)
         if decision is None or decision.get("handler") == "keep":
@@ -688,7 +726,8 @@ class DecisionManagerDialog(QtWidgets.QDialog):
         self._mark_dirty()
 
     def _remove_decision(self) -> None:
-        self._commit_current_editor()
+        if not self._commit_current_editor():
+            return
         decision_id = self._current_id()
         decision = self.model.get_decision(decision_id)
         if decision is None or decision.get("handler") == "keep":
@@ -717,7 +756,8 @@ class DecisionManagerDialog(QtWidgets.QDialog):
         self._mark_dirty()
 
     def _move_decision(self, offset: int) -> None:
-        self._commit_current_editor()
+        if not self._commit_current_editor():
+            return
         decision_id = self._current_id()
         if decision_id is None:
             return
@@ -739,8 +779,8 @@ class DecisionManagerDialog(QtWidgets.QDialog):
         if decision is None:
             return
         candidate = copy.deepcopy(decision)
-        candidate.update(self._collect_editor_fields(candidate))
         try:
+            candidate.update(self._collect_editor_fields(candidate))
             validate_decision_configuration(candidate)
             if any(
                 token in str(candidate.get(key) or "")
@@ -777,7 +817,17 @@ class DecisionManagerDialog(QtWidgets.QDialog):
         )
 
     def _save(self) -> None:
-        self._commit_current_editor()
+        if not self._commit_current_editor():
+            return
+        if self.registry.load_error:
+            QtWidgets.QMessageBox.critical(
+                self,
+                self.loc.get("decision_manager_title"),
+                self.loc.get("decision_manager_config_unreadable").format(
+                    error=self.registry.load_error
+                ),
+            )
+            return
         if not self._dirty:
             self.accept()
             return
@@ -794,14 +844,23 @@ class DecisionManagerDialog(QtWidgets.QDialog):
 
         previous = copy.deepcopy(self.registry.decisions)
         self.registry.decisions = candidate
-        if not self.registry.save_config():
+        if not self.registry.save_config(
+            expected_fingerprint=self._source_fingerprint
+        ):
             self.registry.decisions = previous
+            if self.registry.last_save_error == "conflict":
+                message = self.loc.get("decision_manager_config_conflict")
+            else:
+                message = self.loc.get("decision_manager_save_failed").format(
+                    error=self.registry.last_save_message or ""
+                )
             QtWidgets.QMessageBox.critical(
                 self,
                 self.loc.get("decision_manager_title"),
-                self.loc.get("decision_manager_save_failed"),
+                message,
             )
             return
+        self._source_fingerprint = self.registry.get_config_fingerprint()
         self.accept()
 
     def _confirm_discard(self) -> bool:

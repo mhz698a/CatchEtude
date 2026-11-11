@@ -1,6 +1,9 @@
 """Unit tests for the non-Qt classification editor model."""
 import copy
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from classification_registry import ClassificationRegistry, DEFAULT_DECISIONS
 from decision_editor_model import (
@@ -148,9 +151,110 @@ class TestDecisionEditorModel(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires year selection"):
             validate_decision_configuration(linear)
 
+    def test_character_metadata_requires_year_and_filesystem_subfolders(self):
+        decision = copy.deepcopy(self.model.get_decision(2))
+        decision["year_mode"] = "none"
+        with self.assertRaisesRegex(ValueError, "requires year selection"):
+            validate_decision_configuration(decision)
+
+        decision["year_mode"] = "required"
+        decision["folder_source"] = "none"
+        with self.assertRaisesRegex(ValueError, "requires filesystem subfolders"):
+            validate_decision_configuration(decision)
+
+    def test_overworld_metadata_requires_year_and_filesystem_subfolders(self):
+        decision = copy.deepcopy(self.model.get_decision(8))
+        decision["year_mode"] = "none"
+        with self.assertRaisesRegex(ValueError, "requires year selection"):
+            validate_decision_configuration(decision)
+
+    def test_file_date_placeholders_only_work_in_linear_base_path(self):
+        linear = copy.deepcopy(self.model.get_decision(7))
+        linear["base_path"] = "{BASE_INTERNAL}/{mtime_year}/{mtime_month}"
+        validate_decision_configuration(linear)
+        linear["folder_fallback"] = "{BASE_INTERNAL}/{mtime_year}"
+        with self.assertRaisesRegex(ValueError, "only supported in the base path"):
+            validate_decision_configuration(linear)
+
+    def test_base_internal_path_requires_internal_drive_flag(self):
+        decision = copy.deepcopy(self.model.get_decision(3))
+        decision["requires_internal"] = False
+        with self.assertRaisesRegex(ValueError, "requires the internal drive"):
+            validate_decision_configuration(decision)
+
     def test_model_does_not_mutate_registry_input(self):
         self.model.add("No debe modificar el original")
         self.assertEqual(self.original, DEFAULT_DECISIONS)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestClassificationRegistryPersistence(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.config_path = Path(self.temp.name) / "classifications.json"
+        self.registry = ClassificationRegistry(self.config_path)
+        self.initial_fingerprint = self.registry.get_config_fingerprint()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_save_config_uses_atomic_json_and_updates_fingerprint(self):
+        decisions = self.registry.decisions
+        decisions[0]["enabled"] = False
+        self.registry.decisions = decisions
+
+        self.assertTrue(
+            self.registry.save_config(expected_fingerprint=self.initial_fingerprint)
+        )
+        self.assertIsNone(self.registry.last_save_error)
+        self.assertNotEqual(
+            self.registry.get_config_fingerprint(), self.initial_fingerprint
+        )
+        stored = json.loads(self.config_path.read_text(encoding="utf-8"))
+        self.assertFalse(stored["decisions"][0]["enabled"])
+        self.assertEqual(stored["schema_version"], ClassificationRegistry.SCHEMA_VERSION)
+        self.assertFalse(list(self.config_path.parent.glob("classifications.json.*.tmp")))
+
+    def test_save_refuses_to_overwrite_external_changes(self):
+        external_data = json.loads(self.config_path.read_text(encoding="utf-8"))
+        external_data["external_marker"] = "preserve me"
+        self.config_path.write_text(
+            json.dumps(external_data, ensure_ascii=False), encoding="utf-8"
+        )
+        external_bytes = self.config_path.read_bytes()
+
+        decisions = self.registry.decisions
+        decisions[0]["enabled"] = False
+        self.registry.decisions = decisions
+        result = self.registry.save_config(
+            expected_fingerprint=self.initial_fingerprint
+        )
+
+        self.assertFalse(result)
+        self.assertEqual(self.registry.last_save_error, "conflict")
+        self.assertEqual(self.config_path.read_bytes(), external_bytes)
+        self.assertEqual(
+            json.loads(self.config_path.read_text(encoding="utf-8"))["external_marker"],
+            "preserve me",
+        )
+
+    def test_save_without_expected_fingerprint_remains_backward_compatible(self):
+        decisions = self.registry.decisions
+        decisions[0]["enabled"] = False
+        self.registry.decisions = decisions
+        self.assertTrue(self.registry.save_config())
+        reloaded = ClassificationRegistry(self.config_path)
+        self.assertFalse(reloaded.get_decision(1)["enabled"])
+
+    def test_corrupt_file_is_reported_and_preserved_on_load(self):
+        self.config_path.write_text("{broken", encoding="utf-8")
+        registry = ClassificationRegistry(self.config_path)
+        self.assertTrue(registry.load_error)
+        self.assertEqual(self.config_path.read_text(encoding="utf-8"), "{broken")
+        self.assertEqual(len(registry.decisions), len(DEFAULT_DECISIONS))
 
 
 if __name__ == "__main__":
