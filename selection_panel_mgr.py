@@ -27,6 +27,7 @@ from subfolder_queue_addmore import populate_add_to_queue_menu
 from ui_utils_mgr import load_stylesheet
 from classification_registry import ClassificationRegistry
 from decision_dispatcher import DecisionDispatcher
+from character_metadata import format_character_metadata_line
 
 class SelectionPanel(QWidget):
     """
@@ -432,7 +433,16 @@ class SelectionPanel(QWidget):
                 self.list_sub.add_subfolders(subs)
                 self.list_sub.setEnabled(True)
                 if secondary == "character_metadata":
-                    self.list_sub.set_loading_placeholder("Cargando...", None, reserve_height=45)
+                    # Metadata is encoded in each folder name. Parse it for the
+                    # actual decision path so non-character folders never remain
+                    # stuck on a placeholder while the character service scans
+                    # its separate character library.
+                    for folder_name in subs:
+                        self.list_sub.update_button(
+                            folder_name,
+                            format_character_metadata_line(folder_name, year),
+                            "",
+                        )
                 if secondary == "overworld_metadata":
                     if getattr(self, "_overworld_refresh_pending", False):
                         self.subfolders_refreshed.emit()
