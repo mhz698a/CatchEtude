@@ -30,6 +30,7 @@ from decision_dispatcher import DecisionDispatcher
 from character_metadata import format_character_metadata_line
 from character_folder_sync import (
     get_character_metadata_decisions,
+    is_character_metadata_folder,
     sync_character_folder_to_others,
     sync_renamed_character_folder,
     validate_character_folder_name,
@@ -571,7 +572,7 @@ class SelectionPanel(QWidget):
         act_create = menu.addAction(self.loc.get("menu_create_folder")) if decision.get("allow_create", False) else None
         act_rename = menu.addAction(self.loc.get("menu_rename_folder")) if decision.get("allow_rename", False) else None
         act_sync_characters = None
-        if decision.get("behaviour_second_line") == "character_metadata":
+        if is_character_metadata_folder(decision, name):
             act_sync_characters = menu.addAction(
                 self.loc.get("menu_sync_character_folders")
             )
@@ -762,8 +763,11 @@ class SelectionPanel(QWidget):
             return
 
         decision = self.get_current_decision() or {}
-        is_character_folder = (
-            decision.get("behaviour_second_line") == "character_metadata"
+        # Only folders that already follow the character naming convention
+        # propagate their rename. Generic folders still keep their metadata
+        # second line but do not participate in character synchronization.
+        is_character_folder = is_character_metadata_folder(
+            decision, folder_path.name
         )
         year = self.list_year.current_year() if is_character_folder else None
         if is_character_folder:
