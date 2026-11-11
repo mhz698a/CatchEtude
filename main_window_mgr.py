@@ -901,6 +901,21 @@ class MainWindow(QWidget):
         if hasattr(self, 'tray_mgr'):
             self.tray_mgr.build_tray()
 
+    def _show_decision_manager(self):
+        """Open the visual classification manager over the active registry."""
+        from decision_manager_dialog import DecisionManagerDialog
+
+        dialog = DecisionManagerDialog(
+            self.selection_panel.classification_registry,
+            self.loc,
+            self,
+        )
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self.selection_panel.on_classification_registry_changed()
+            self.show_status(
+                self.loc.get("decision_manager_saved_status"), 5000
+            )
+
     def _show_plugin_manager(self):
         if hasattr(self, "_plugin_dialog") and self._plugin_dialog is not None and self._plugin_dialog.isVisible():
             self._plugin_dialog.raise_()
@@ -1661,6 +1676,23 @@ class MainWindow(QWidget):
         decision=self.selection_panel.get_current_decision()
         if not decision or decision.get("behaviour_second_line")!="character_metadata":
             return
+        selected_year = self.selection_panel.get_selection().get("year")
+        if selected_year is None:
+            return
+        base = self.selection_panel.get_active_subfolder_base()
+        if base is None:
+            return
+
+        # Character-service entries belong to a specific root. Match the full
+        # parent path, not just the folder name, or another classification with
+        # an equally named folder could receive unrelated character metadata.
+        character_parent = os.path.normcase(
+            os.path.abspath(str(Path(c.path).parent))
+        )
+        selected_base = os.path.normcase(os.path.abspath(str(base)))
+        if character_parent != selected_base:
+            return
+
         folder_name=Path(c.path).name
         try:
             birthday=datetime.fromisoformat(c.birthday_iso)

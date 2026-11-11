@@ -101,6 +101,13 @@ class TrayMenuManager:
 
         self._build_or_update_plugins_submenu()
 
+        self.tray_menu.addSeparator()
+        decision_manager_action = QAction(
+            loc.get("tray_decision_manager"), mw
+        )
+        decision_manager_action.triggered.connect(mw._show_decision_manager)
+        self.tray_menu.addAction(decision_manager_action)
+
         appdta_folder_action = QAction("Open Appdata Folder", mw)
         appdta_folder_action.triggered.connect(mw._open_appdta_folder)
         self.tray_menu.addAction(appdta_folder_action)

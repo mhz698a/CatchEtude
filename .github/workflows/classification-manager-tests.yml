@@ -1,0 +1,66 @@
+name: Classification manager tests
+
+on:
+  push:
+    branches:
+      - feature/decision-manager-stage1
+    paths:
+      - "classification_registry.py"
+      - "decision_editor_model.py"
+      - "decision_manager_dialog.py"
+      - "decision_dispatcher.py"
+      - "selection_panel_mgr.py"
+      - "subfolder_list_mgr.py"
+      - "main_window_mgr.py"
+      - "character_service.pyw"
+      - "character_metadata.py"
+      - "character_folder_sync.py"
+      - "tests/test_character_folder_sync.py"
+      - "localization.py"
+      - "tests/test_decision_editor_model.py"
+      - "tests/test_character_metadata.py"
+      - ".github/workflows/classification-manager-tests.yml"
+  pull_request:
+    branches:
+      - decition-subfolders-manager
+    paths:
+      - "classification_registry.py"
+      - "decision_editor_model.py"
+      - "decision_manager_dialog.py"
+      - "decision_dispatcher.py"
+      - "selection_panel_mgr.py"
+      - "main_window_mgr.py"
+      - "character_service.pyw"
+      - "character_metadata.py"
+      - "localization.py"
+      - "tests/test_character_folder_sync.py"
+      - "character_folder_sync.py"
+      - "subfolder_list_mgr.py"
+      - "tests/test_decision_editor_model.py"
+      - "tests/test_character_metadata.py"
+  workflow_dispatch:
+
+jobs:
+  classification-manager:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip PyQt6 send2trash
+      - name: Compile changed runtime modules
+        run: python -m py_compile character_metadata.py character_folder_sync.py character_service.pyw selection_panel_mgr.py main_window_mgr.py subfolder_list_mgr.py localization.py
+      - name: Test classification editor model and registry
+        run: python -m unittest discover -s tests -p "test_decision_editor_model.py" -v
+      - name: Test JSON decision dispatcher regressions
+        run: python -m unittest discover -s tests -p "test_decision_dispatcher.py" -v
+      - name: Test generic second-line folder metadata
+        run: python -m unittest discover -s tests -p "test_character_metadata.py" -v
+      - name: Test character folder synchronization
+        run: python -m unittest discover -s tests -p "test_character_folder_sync.py" -v
+      - name: Test classification manager dialog
+        run: python -m unittest discover -s tests -p "test_decision_manager_dialog.py" -v

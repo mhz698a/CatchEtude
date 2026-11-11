@@ -27,6 +27,14 @@ from subfolder_queue_addmore import populate_add_to_queue_menu
 from ui_utils_mgr import load_stylesheet
 from classification_registry import ClassificationRegistry
 from decision_dispatcher import DecisionDispatcher
+from character_metadata import format_character_metadata_line
+from character_folder_sync import (
+    get_character_metadata_decisions,
+    is_character_metadata_folder,
+    sync_character_folder_to_others,
+    sync_renamed_character_folder,
+    validate_character_folder_name,
+)
 
 class SelectionPanel(QWidget):
     """
@@ -62,6 +70,7 @@ class SelectionPanel(QWidget):
         self._sub_scanner_workers = set()
         self._episode_list_workers = set()
         self._sub_scan_generation = 0
+        self._active_subfolder_base: Path | None = None
         self._overworld_client = OverworldServiceClient(self)
         self._overworld_client.result_ready.connect(self._on_overworld_result)
         self._overworld_client.finished_ready.connect(
@@ -142,6 +151,32 @@ class SelectionPanel(QWidget):
         layout.addLayout(bottom_h_row)
         
 
+
+    def on_classification_registry_changed(self):
+        """Refresh the selection panel after the registry has been saved."""
+        selected_type_id = self._selected_type_id()
+        existing_ids = {
+            decision["id"] for decision in self.classification_registry.decisions
+        }
+        self._recent_subfolders = [
+            recent for recent in self._recent_subfolders
+            if recent.get("type") in existing_ids
+        ]
+        self._recent_items_by_label = {}
+        self._last_loaded_type = None
+        self._last_loaded_year = None
+        self._cancel_subfolder_scans()
+        self._fill_type_list(selected_type_id)
+        refreshed_type_id = self._selected_type_id()
+
+        if refreshed_type_id == 0:
+            self._populate_recent_subfolders()
+        elif refreshed_type_id != selected_type_id:
+            # Mirror a normal type selection so MainWindow can refresh any
+            # type-specific services (for example character metadata).
+            self._on_type_changed(self.list_type.currentRow())
+        else:
+            self.refresh_classification_ui(force=True)
 
     def retranslate_ui(self):
         selected_type_id = self._selected_type_id()
@@ -280,6 +315,10 @@ class SelectionPanel(QWidget):
             type_id = getattr(self, "_last_non_recent_type_id", None)
         return self.classification_registry.get_decision(type_id)
 
+    def get_active_subfolder_base(self) -> Path | None:
+        """Return the already-resolved base used by the currently displayed list."""
+        return self._active_subfolder_base
+
     def get_selection(self):
         type_id = self._selected_type_id()
         if type_id == 0:
@@ -360,6 +399,7 @@ class SelectionPanel(QWidget):
         self._cancel_subfolder_scans()
         generation = self._sub_scan_generation
         self.list_sub.clear()
+        self._active_subfolder_base = Path(base) if base is not None else None
         if base is None:
             self.list_sub.setEnabled(False)
             return
@@ -406,7 +446,16 @@ class SelectionPanel(QWidget):
                 self.list_sub.add_subfolders(subs)
                 self.list_sub.setEnabled(True)
                 if secondary == "character_metadata":
-                    self.list_sub.set_loading_placeholder("Cargando...", None, reserve_height=45)
+                    # Metadata is encoded in each folder name. Parse it for the
+                    # actual decision path so non-character folders never remain
+                    # stuck on a placeholder while the character service scans
+                    # its separate character library.
+                    for folder_name in subs:
+                        self.list_sub.update_button(
+                            folder_name,
+                            format_character_metadata_line(folder_name, year),
+                            "",
+                        )
                 if secondary == "overworld_metadata":
                     if getattr(self, "_overworld_refresh_pending", False):
                         self.subfolders_refreshed.emit()
@@ -522,6 +571,14 @@ class SelectionPanel(QWidget):
 
         act_create = menu.addAction(self.loc.get("menu_create_folder")) if decision.get("allow_create", False) else None
         act_rename = menu.addAction(self.loc.get("menu_rename_folder")) if decision.get("allow_rename", False) else None
+        act_sync_characters = None
+        if is_character_metadata_folder(decision, name):
+            act_sync_characters = menu.addAction(
+                self.loc.get("menu_sync_character_folders")
+            )
+            act_sync_characters.setEnabled(
+                len(get_character_metadata_decisions(self.classification_registry)) > 1
+            )
         state_mgr = getattr(self.window(), "state_manager", None)
         if state_mgr:
             populate_add_to_queue_menu(self, menu, target_folder, state_mgr, status_callback=self.status_requested.emit)
@@ -554,6 +611,10 @@ class SelectionPanel(QWidget):
             self.copy_to_subfolder_clicked.emit(str(target_folder))
         elif act_rename is not None and action == act_rename:
             self._handle_rename_folder(target_folder)
+        elif act_sync_characters is not None and action == act_sync_characters:
+            self._synchronize_character_folder(
+                name, year, decision["id"], base
+            )
         elif act_delete is not None and action == act_delete:
             self._handle_delete_folder(target_folder)
         elif action == act_move_open_file:
@@ -612,8 +673,12 @@ class SelectionPanel(QWidget):
         overworld_year = year if secondary == "overworld_metadata" else None
         char_entry = None
         if secondary == "character_metadata" and hasattr(self.window(), "queue_panel"):
+            target_path = os.path.normcase(os.path.abspath(str(target_folder)))
             for character in self.window().queue_panel.get_characters():
-                if Path(character.path).name == name or character.path == str(target_folder):
+                character_path = os.path.normcase(
+                    os.path.abspath(str(character.path))
+                )
+                if character_path == target_path:
                     char_entry = character
                     break
         dialog = FolderPropertiesDialog(target_folder,char_entry=char_entry,parent=self,loc=self.loc,overworld_year=overworld_year)
@@ -648,19 +713,111 @@ class SelectionPanel(QWidget):
             except Exception:
                 logging.exception(f"Failed to create folder: {new_path}")
 
+    def _show_character_folder_sync_report(self, report):
+        message = self.loc.get("status_character_folder_sync").format(
+            created=len(report.created),
+            renamed=len(report.renamed),
+            existing=len(report.existing),
+            failed=report.failed_count,
+        )
+        for detail in report.conflicts + report.errors:
+            logging.warning("Character folder synchronization issue: %s", detail)
+        self.status_requested.emit(message)
+
+    def _synchronize_character_folder(
+        self, folder_name: str, year: int | None, source_decision_id: int,
+        source_base: Path,
+    ):
+        if year is None:
+            self.status_requested.emit(
+                self.loc.get("status_character_folder_sync_requires_year")
+            )
+            return
+
+        try:
+            report = sync_character_folder_to_others(
+                self.classification_registry,
+                self.decision_dispatcher,
+                year,
+                folder_name,
+                source_decision_id,
+                source_base,
+            )
+        except (OSError, ValueError) as exc:
+            logging.exception("Could not synchronize character folder %s", folder_name)
+            self.status_requested.emit(
+                self.loc.get("status_character_folder_sync_failed").format(error=exc)
+            )
+            return
+
+        self._show_character_folder_sync_report(report)
+        self.refresh_classification_ui(force=True)
+        self.folder_structure_changed.emit()
+
     def _handle_rename_folder(self, folder_path: Path):
         name, ok = QtWidgets.QInputDialog.getText(
             self, self.loc.get("dlg_rename_title"), self.loc.get("dlg_rename_label"),
             text=folder_path.name
         )
-        if ok and name and name != folder_path.name:
-            new_path = folder_path.parent / name
+        if not ok or not name:
+            return
+
+        decision = self.get_current_decision() or {}
+        # Only folders that already follow the character naming convention
+        # propagate their rename. Generic folders still keep their metadata
+        # second line but do not participate in character synchronization.
+        is_character_folder = is_character_metadata_folder(
+            decision, folder_path.name
+        )
+        year = self.list_year.current_year() if is_character_folder else None
+        if is_character_folder:
             try:
-                folder_path.rename(new_path)
-                self.refresh_classification_ui(force=True)
-                self.folder_structure_changed.emit()
-            except Exception:
-                logging.exception(f"Failed to rename folder: {folder_path} -> {new_path}")
+                name = validate_character_folder_name(name)
+            except ValueError:
+                self.status_requested.emit(
+                    self.loc.get("status_character_folder_sync_invalid_name")
+                )
+                return
+            if year is None:
+                self.status_requested.emit(
+                    self.loc.get("status_character_folder_sync_requires_year")
+                )
+                return
+
+        old_name = folder_path.name
+        if name == old_name:
+            return
+
+        new_path = folder_path.parent / name
+        try:
+            folder_path.rename(new_path)
+        except Exception as exc:
+            logging.exception("Failed to rename folder: %s -> %s", folder_path, new_path)
+            self.status_requested.emit(
+                self.loc.get("status_character_folder_rename_failed").format(error=exc)
+            )
+            return
+
+        if is_character_folder:
+            try:
+                report = sync_renamed_character_folder(
+                    self.classification_registry,
+                    self.decision_dispatcher,
+                    year,
+                    old_name,
+                    name,
+                    decision["id"],
+                    folder_path.parent,
+                )
+                self._show_character_folder_sync_report(report)
+            except Exception as exc:
+                logging.exception("Folder was renamed but synchronization failed: %s", new_path)
+                self.status_requested.emit(
+                    self.loc.get("status_character_folder_sync_failed").format(error=exc)
+                )
+
+        self.refresh_classification_ui(force=True)
+        self.folder_structure_changed.emit()
 
     def _handle_delete_folder(self, folder_path: Path):
         res = QtWidgets.QMessageBox.question(
@@ -731,6 +888,6 @@ class SelectionPanel(QWidget):
         self.list_type.setCurrentRow(selected_row)
         if selected_type_id in active_ids:
             self._last_non_recent_type_id = selected_type_id
-        elif not getattr(self,"_last_non_recent_type_id",None):
+        elif getattr(self, "_last_non_recent_type_id", None) not in active_ids:
             self._last_non_recent_type_id = active[0]["id"] if active else None
         self.list_type.blockSignals(False)
