@@ -32,6 +32,10 @@ on:
       - "main_window_mgr.py"
       - "character_service.pyw"
       - "character_metadata.py"
+      - "localization.py"
+      - "tests/test_character_folder_sync.py"
+      - "character_folder_sync.py"
+      - "subfolder_list_mgr.py"
       - "tests/test_decision_editor_model.py"
       - "tests/test_character_metadata.py"
   workflow_dispatch:
