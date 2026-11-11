@@ -45,6 +45,8 @@ jobs:
           python-version: "3.12"
       - name: Install test dependencies
         run: python -m pip install --upgrade pip PyQt6 send2trash
+      - name: Compile changed runtime modules
+        run: python -m py_compile character_metadata.py character_service.pyw selection_panel_mgr.py main_window_mgr.py subfolder_list_mgr.py
       - name: Test classification editor model and registry
         run: python -m unittest discover -s tests -p "test_decision_editor_model.py" -v
       - name: Test JSON decision dispatcher regressions
